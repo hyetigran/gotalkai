@@ -21,11 +21,17 @@ function useElapsedClock() {
   return `${minutes}:${seconds}`;
 }
 
+/** After the last turn lands, how long to let it sit before moving on to Debrief. */
+const AUTO_DEBRIEF_DELAY_MS = 1500;
+
 /**
  * The Converse screen — scripted demo, no live pipeline yet (ticket #3).
  * Layout, states, and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
- * ("2. Converse").
+ * ("2. Converse"). Part of the daily loop (ticket #9): back and "End" both
+ * return to Open/advance to Debrief via the real router; reaching the end
+ * of the scripted turns also auto-advances to Debrief after a short delay,
+ * so finishing the script isn't a dead end if the learner doesn't tap "End".
  */
 export function ConverseScreen() {
   const router = useRouter();
@@ -37,16 +43,24 @@ export function ConverseScreen() {
     holdSeen,
     revealed,
     chipsVisible,
+    scriptExhausted,
     speak,
     holdOn,
     holdOff,
     toggleReveal,
   } = useConverseSession();
 
+  React.useEffect(() => {
+    if (!scriptExhausted)
+      return undefined;
+    const timeoutId = setTimeout(() => router.replace('/debrief'), AUTO_DEBRIEF_DELAY_MS);
+    return () => clearTimeout(timeoutId);
+  }, [scriptExhausted, router]);
+
   return (
     <View className="flex-1 bg-paper">
       <View className="flex-row items-center justify-between px-[22px] pt-[60px] pb-[12px]">
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="back">
+        <Pressable onPress={() => router.replace('/open')} accessibilityRole="button" accessibilityLabel="back">
           <Text className="text-[15px] text-accent">‹</Text>
         </Pressable>
         <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
@@ -74,7 +88,7 @@ export function ConverseScreen() {
           {holdSeen && (
             <HoldToThinkButton holding={holding} onHoldOn={holdOn} onHoldOff={holdOff} />
           )}
-          <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="end">
+          <Pressable onPress={() => router.replace('/debrief')} accessibilityRole="button" accessibilityLabel="end">
             <Text className="w-[62px] text-right text-[13px] text-ink/50">End</Text>
           </Pressable>
         </View>

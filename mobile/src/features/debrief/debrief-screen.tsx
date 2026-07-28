@@ -7,8 +7,8 @@ import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
  * The Debrief screen — fixture data only (no live session assembly yet).
  * Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
- * ("3. Debrief"). Reachable at the temporary route `/debrief`, ahead of
- * ticket #8's real navigation wiring.
+ * ("3. Debrief"). Part of the daily loop (ticket #9): reached from
+ * Converse and advances to Tomorrow via the real router.
  *
  * Deliberately absent, per the ticket and PRD §6.3: any streak counter,
  * accuracy percentage, grade, or badge. Progress is expressed only through
@@ -62,7 +62,7 @@ export function DebriefScreen() {
       </View>
 
       <Pressable
-        onPress={() => router.push('/tomorrow')}
+        onPress={() => router.replace('/tomorrow')}
         accessibilityRole="button"
         accessibilityLabel="Tomorrow"
         className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"

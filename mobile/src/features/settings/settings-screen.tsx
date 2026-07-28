@@ -75,7 +75,7 @@ export function SettingsScreen() {
       </View>
 
       <Pressable
-        onPress={() => router.push('/open')}
+        onPress={() => router.back()}
         accessibilityRole="button"
         accessibilityLabel={copy.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"

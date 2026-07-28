@@ -11,8 +11,8 @@ import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
  * The Open screen — scripted content only (no live session assembly yet).
  * Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
- * ("1. Open"). Reachable at the temporary route `/open`, ahead of ticket
- * #8's real navigation wiring.
+ * ("1. Open"). The app's real entry point (`src/app/index.tsx` redirects
+ * here) and the head of the daily loop (ticket #9).
  */
 export function OpenScreen() {
   const router = useRouter();
@@ -21,7 +21,9 @@ export function OpenScreen() {
   const handleAnswer = React.useCallback(() => {
     if (isFirstSession)
       setIsFirstSession(false);
-    router.push('/converse');
+    // The loop's forward steps replace rather than push, so a repeating
+    // daily loop doesn't grow the navigation stack without bound.
+    router.replace('/converse');
   }, [isFirstSession, setIsFirstSession, router]);
 
   return (
@@ -31,8 +33,9 @@ export function OpenScreen() {
           {openData.openDay}
         </Text>
         <View className="flex-row items-baseline gap-[14px]">
-          {/* No Address-book screen exists yet to link to — left inert rather than pointed at nothing. */}
-          <Text className="text-[13px] text-accent">{openData.whoElse}</Text>
+          <Pressable onPress={() => router.push('/address-book')} accessibilityRole="button" accessibilityLabel={openData.whoElse}>
+            <Text className="text-[13px] text-accent">{openData.whoElse}</Text>
+          </Pressable>
           <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel={openData.settingsLink}>
             <Text className="text-[13px] text-ink/42">{openData.settingsLink}</Text>
           </Pressable>
