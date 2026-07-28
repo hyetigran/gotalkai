@@ -2,50 +2,46 @@ import type { ConversePhase } from '../use-converse-session';
 import * as React from 'react';
 import { Animated, Text, View } from 'react-native';
 
-import { motion } from '@/components/ui/design-tokens';
-
 /**
  * README: "10 bars, 3px wide, 4px gap, radius 2px, heights derived from
- * amplitude (mock uses the ratio set [...] × 34px)". The mock's animation
- * is indicative only — real amplitude comes later, per a live mic input
- * (not this ticket, which has "no live pipeline yet").
+ * amplitude". Per-bar values give the meter visual variety (a "skyline"
+ * silhouette) — every bar still tracks the same live `amplitude` value
+ * (ticket #10), since expo-audio's recorder exposes one scalar metering
+ * reading, not true per-frequency-band data.
  */
 const BAR_HEIGHT_RATIOS = [0.42, 0.68, 1, 0.84, 0.55, 0.9, 0.6, 0.34, 0.72, 0.46];
 const METER_HEIGHT_PX = 34;
 const HELD_HEIGHT_RATIO = 0.16;
+/** Floor scale at silence — a fully zero-height bar reads as broken, not idle. */
+const IDLE_MIN_SCALE = 0.08;
+/** How long to animate toward each new metering reading. */
+const AMPLITUDE_TRANSITION_MS = 150;
 
 type MeterBarProps = {
-  index: number;
   ratio: number;
   /** Animated (idle/listening) vs frozen (her turn, or held). */
   live: boolean;
   held: boolean;
+  /** Real mic amplitude, 0-1, only meaningful while `live`. */
+  amplitude: number;
   colorClassName: string;
 };
 
-function MeterBar({ index, ratio, live, held, colorClassName }: MeterBarProps) {
+function MeterBar({ ratio, live, held, amplitude, colorClassName }: MeterBarProps) {
   const scale = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
     if (!live) {
       scale.stopAnimation();
       scale.setValue(1);
-      return undefined;
+      return;
     }
-    const durationMs = motion.barLoopMinMs
-      + (index % 4) * ((motion.barLoopMaxMs - motion.barLoopMinMs) / 3);
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scale, { toValue: 0.18, duration: durationMs / 2, useNativeDriver: true }),
-        Animated.timing(scale, { toValue: 1, duration: durationMs / 2, useNativeDriver: true }),
-      ]),
-    );
-    const startTimeout = setTimeout(() => loop.start(), index * motion.barLoopStaggerMs);
-    return () => {
-      clearTimeout(startTimeout);
-      loop.stop();
-    };
-  }, [live, index, scale]);
+    Animated.timing(scale, {
+      toValue: Math.max(IDLE_MIN_SCALE, amplitude),
+      duration: AMPLITUDE_TRANSITION_MS,
+      useNativeDriver: true,
+    }).start();
+  }, [live, amplitude, scale]);
 
   const heightPx = held ? METER_HEIGHT_PX * HELD_HEIGHT_RATIO : METER_HEIGHT_PX * ratio;
 
@@ -60,16 +56,19 @@ function MeterBar({ index, ratio, live, held, colorClassName }: MeterBarProps) {
 type LevelMeterProps = {
   phase: ConversePhase;
   holding: boolean;
+  /** Real mic amplitude, 0-1 (ticket #10) — see `use-mic-capture.ts`. */
+  amplitude: number;
 };
 
 /**
  * The Converse screen's level meter — per the README, "the highest-leverage
- * element on the Converse screen" and, in the real app, "a pure output
- * driven by mic amplitude". The mockup makes the meter tappable to simulate
- * a turn; that's explicitly prototype-only and is not carried over here —
- * suggestion chips are the only turn-advance affordance in this ticket.
+ * element on the Converse screen" and "a pure output driven by mic
+ * amplitude" (ticket #10 replaces the ticket #3 mock's fake animated
+ * loop with this). The mockup makes the meter tappable to simulate a turn;
+ * that's explicitly prototype-only and is not carried over here —
+ * suggestion chips are the only turn-advance affordance.
  */
-export function LevelMeter({ phase, holding }: LevelMeterProps) {
+export function LevelMeter({ phase, holding, amplitude }: LevelMeterProps) {
   const live = !holding && phase !== 'thinking';
   const barColorClassName = holding
     ? 'bg-ink/18'
@@ -96,10 +95,10 @@ export function LevelMeter({ phase, holding }: LevelMeterProps) {
           <MeterBar
             // eslint-disable-next-line react/no-array-index-key
             key={index}
-            index={index}
             ratio={ratio}
             live={live}
             held={holding}
+            amplitude={amplitude}
             colorClassName={barColorClassName}
           />
         ))}

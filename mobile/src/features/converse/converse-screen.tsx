@@ -1,12 +1,44 @@
+import type { MediaStream } from 'react-native-webrtc';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
 import { HoldToThinkButton } from './components/hold-to-think-button';
 import { LevelMeter } from './components/level-meter';
 import { SuggestionChips } from './components/suggestion-chips';
 import { Transcript } from './components/transcript';
 import { useConverseSession } from './use-converse-session';
+import { useMicCapture } from './use-mic-capture';
+
+/**
+ * Acquires the react-native-webrtc AEC-path audio stream for the screen's
+ * lifetime (ticket #10) — see `webrtc-local-audio-stream.ts` for why this
+ * exists even though nothing plays it back yet.
+ */
+function useWebrtcAecStream() {
+  React.useEffect(() => {
+    let stream: MediaStream | undefined;
+    let cancelled = false;
+    acquireLocalAudioStream().then((acquired) => {
+      if (cancelled) {
+        releaseLocalAudioStream(acquired);
+        return;
+      }
+      stream = acquired;
+    }).catch(() => {
+      // This stream is groundwork for a later pipeline ticket — nothing in
+      // this ticket depends on it, so a failure here (e.g. no hardware mic
+      // available, as in this environment's simulator) shouldn't block the
+      // screen or the expo-audio-driven level meter from working.
+    });
+    return () => {
+      cancelled = true;
+      if (stream)
+        releaseLocalAudioStream(stream);
+    };
+  }, []);
+}
 
 function useElapsedClock() {
   const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
@@ -25,13 +57,16 @@ function useElapsedClock() {
 const AUTO_DEBRIEF_DELAY_MS = 1500;
 
 /**
- * The Converse screen — scripted demo, no live pipeline yet (ticket #3).
- * Layout, states, and copy per
+ * The Converse screen — turn-taking is still the scripted demo (ticket
+ * #3), no live STT/LLM/TTS pipeline yet. Layout, states, and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
  * ("2. Converse"). Part of the daily loop (ticket #9): back and "End" both
  * return to Open/advance to Debrief via the real router; reaching the end
  * of the scripted turns also auto-advances to Debrief after a short delay,
  * so finishing the script isn't a dead end if the learner doesn't tap "End".
+ *
+ * The level meter is now driven by real microphone amplitude (ticket #10)
+ * instead of a fake animated loop — see `use-mic-capture.ts`.
  */
 export function ConverseScreen() {
   const router = useRouter();
@@ -49,6 +84,8 @@ export function ConverseScreen() {
     holdOff,
     toggleReveal,
   } = useConverseSession();
+  const { amplitude } = useMicCapture({ paused: holding });
+  useWebrtcAecStream();
 
   React.useEffect(() => {
     if (!scriptExhausted)
@@ -81,7 +118,7 @@ export function ConverseScreen() {
 
         {chipsVisible && <SuggestionChips onPress={speak} />}
 
-        <LevelMeter phase={phase} holding={holding} />
+        <LevelMeter phase={phase} holding={holding} amplitude={amplitude} />
 
         <View className="mt-[14px] min-h-[56px] flex-row items-center justify-between gap-[12px]">
           <View className="w-[62px]" />
