@@ -14,8 +14,8 @@ export const SCRIPTED_OPEN_DATA = {
   settingsLink: 'Settings',
   personaName: 'Валентина Сергеевна',
   personaMeta: '78 · Yaroslavl · retired librarian',
-  callbackLine: '«Ну наконе́ц-то ты позвони́л. Ты говори́л, что соба́ка пропа́ла — нашла́сь?»',
-  scenarioLine: 'Tea on the porch · she will ask about the dog',
+  callbackLine: '«Ну наконе́ц-то ты позвони́л! Сади́сь, я чай поста́вила. Как вы́ходные?»',
+  scenarioLine: 'Tea on the porch · she’ll ask how your weekend was',
   openMicLine: 'She’ll hear you the whole time. Just talk.',
   answer: 'Pick up',
 } as const;

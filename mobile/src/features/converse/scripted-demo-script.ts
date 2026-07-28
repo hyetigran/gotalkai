@@ -24,8 +24,8 @@ export type ScriptedTurn = {
 export const CONVERSE_SCRIPT: ScriptedTurn[] = [
   {
     who: 'her',
-    ru: '«Ну наконе́ц-то ты позвони́л! Сади́сь, я чай поста́вила. Так что с соба́кой-то?»',
-    en: 'Finally you called! Sit down, I’ve put the kettle on. So what happened with the dog?',
+    ru: '«Ну наконе́ц-то ты позвони́л! Сади́сь, я чай поста́вила. Как вы́ходные?»',
+    en: 'Finally you called! Sit down, I’ve put the kettle on. How was your weekend?',
   },
   {
     who: 'you',
