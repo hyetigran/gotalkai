@@ -20,7 +20,9 @@ export { ErrorBoundary } from 'expo-router';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const unstable_settings = {
-  initialRouteName: '(app)',
+  // `index` (redirects to `/open`) is the true root now — `(app)` no longer
+  // implicitly owns `/` since its own index route was renamed to `feed`.
+  initialRouteName: 'index',
 };
 
 hydrateAuth();
@@ -49,11 +51,10 @@ export default function RootLayout() {
 
   return (
     <Providers>
-      <Stack>
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-      </Stack>
+      {/* Every screen in this app builds its own header per the design mockup
+          — the native Stack header defaults to visible per-route, which was
+          stacking a second, unstyled header above each one. */}
+      <Stack screenOptions={{ headerShown: false }} />
     </Providers>
   );
 }

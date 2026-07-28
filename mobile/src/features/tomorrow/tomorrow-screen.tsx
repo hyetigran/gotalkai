@@ -54,7 +54,7 @@ export function TomorrowScreen() {
       </Text>
 
       <Pressable
-        onPress={() => router.push('/open')}
+        onPress={() => router.replace('/open')}
         accessibilityRole="button"
         accessibilityLabel={fixture.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"
