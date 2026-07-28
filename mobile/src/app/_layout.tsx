@@ -9,7 +9,7 @@ import FlashMessage from 'react-native-flash-message';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useThemeConfig } from '@/components/ui/use-theme-config';
-import { hydrateAuth } from '@/features/auth/use-auth-store';
+import { hydrateAuth, useAuthStore as useAuth } from '@/features/auth/use-auth-store';
 
 import { APIProvider } from '@/lib/api';
 import { loadSelectedTheme } from '@/lib/hooks/use-selected-theme';
@@ -34,6 +34,19 @@ SplashScreen.setOptions({
 });
 
 export default function RootLayout() {
+  // This effect lives here (not in a route-group layout like `(app)`) because
+  // routes can be unmounted by navigation before their own effects fire — a
+  // fresh install redirects out of `(app)` on its very first render, which
+  // was cancelling a splash-hide timer placed there before it ever ran. The
+  // root layout is mounted for the app's entire lifetime, so it's the only
+  // safe place to guarantee this fires exactly once.
+  const status = useAuth.use.status();
+  React.useEffect(() => {
+    if (status !== 'idle') {
+      SplashScreen.hideAsync();
+    }
+  }, [status]);
+
   return (
     <Providers>
       <Stack>
