@@ -136,7 +136,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     expoFontPluginConfig,
     'expo-asset',
-    'expo-audio',
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Валентина needs to hear you to have a conversation.',
+      },
+    ],
     'expo-localization',
     'expo-router',
     ['app-icon-badge', appIconBadgeConfig],
