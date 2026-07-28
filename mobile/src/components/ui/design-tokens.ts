@@ -35,6 +35,8 @@ export const colors = {
    * stripe width) from the Open-screen portrait hatch above.
    */
   addressBookDiscHatch: { stop1: '#EFE7D9', stop2: '#E4D9C4' },
+  /** Address-book disc hatch for next/sealed entries — a faint neutral tint, not the accent-toned reached hatch above. */
+  addressBookDiscHatchLocked: { stop1: 'rgba(35,31,24,0.04)', stop2: 'rgba(35,31,24,0.08)' },
 } as const;
 
 /**

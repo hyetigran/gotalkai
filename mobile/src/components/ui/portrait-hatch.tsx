@@ -14,10 +14,9 @@ type PortraitHatchProps = {
  * stripeWidth stripeWidth*2)`). "Replace with the persona portrait image"
  * per the mockup — this is deliberately a placeholder, not final art.
  *
- * Two call sites use this with different colors/stripe widths: the Open
- * screen's portrait area (`colors.portraitHatch`, 7px) and the Address
- * book's discs (`colors.addressBookDiscHatch`, 6px) — hence a shared,
- * parameterized component rather than a one-off inline gradient per screen.
+ * Shared between the Open screen's portrait area (`colors.portraitHatch`,
+ * 7px) and the Address book's discs (`colors.addressBookDiscHatch`, 6px,
+ * plus a faint neutral variant for next/sealed entries).
  */
 export function PortraitHatch({ stop1, stop2, stripeWidth }: PortraitHatchProps) {
   const tile = stripeWidth * 2 * Math.SQRT2;
