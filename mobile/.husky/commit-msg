@@ -1,0 +1,6 @@
+# $1 is a path relative to where git invoked this hook (the repo root, since
+# mobile/ is a subdirectory here, not the git root) — resolve it to an
+# absolute path before cd-ing into mobile/ for pnpm to find package.json.
+COMMIT_MSG_FILE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+cd "$(dirname "$0")/.." || exit 1
+pnpm commitlint --edit "$COMMIT_MSG_FILE"
