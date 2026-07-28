@@ -105,6 +105,13 @@ export const shadows = {
     shadowOpacity: 0.14,
     shadowRadius: 0,
   },
+  /** Hold-to-think button, rest state only — held state has no shadow. */
+  holdToThinkRest: {
+    shadowColor: colors.ink,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+  },
 } as const;
 
 /**
