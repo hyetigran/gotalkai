@@ -3,8 +3,8 @@ import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { colors, shadows } from '@/components/ui/design-tokens';
+import { PortraitHatch } from '@/components/ui/portrait-hatch';
 import { useIsFirstSession } from '@/lib/hooks/use-is-first-session';
-import { PortraitHatch } from './components/portrait-hatch';
 import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
 
 /**
