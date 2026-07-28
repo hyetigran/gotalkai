@@ -41,7 +41,7 @@ export function AddressBookScreen() {
         </Text>
       </View>
 
-      <ScrollView className="mt-[16px] flex-1" contentContainerClassName="gap-[10px]">
+      <ScrollView className="mt-[16px] flex-1" contentContainerClassName="gap-[10px] pb-[10px]">
         {CAST_FIXTURE.map((member, index) => (
           <AddressBookEntry
             key={member.name}
@@ -55,8 +55,6 @@ export function AddressBookScreen() {
           />
         ))}
       </ScrollView>
-
-      <Text className="mt-[14px] font-mono text-[11px] leading-[17px] text-ink/42">{copy.tapHint}</Text>
     </View>
   );
 }

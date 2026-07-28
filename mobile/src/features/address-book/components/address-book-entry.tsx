@@ -1,7 +1,8 @@
 import type { CastMember, EntryStatus } from '../address-book-fixture';
+import { AnimatePresence, MotiView } from 'moti';
 import { Pressable, Text, View } from 'react-native';
 
-import { colors, shadows } from '@/components/ui/design-tokens';
+import { colors, motion, shadows } from '@/components/ui/design-tokens';
 import { PortraitHatch } from '@/components/ui/portrait-hatch';
 import { ADDRESS_BOOK_COPY as copy } from '../address-book-fixture';
 import { EntryExpandedBody } from './entry-expanded-body';
@@ -47,7 +48,7 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
 
       <Pressable
         onPress={onToggle}
-        className={`flex-1 rounded-[18px] bg-white ${expanded ? 'px-[18px] pt-[17px] pb-[18px]' : 'px-[16px] py-[14px]'} ${
+        className={`flex-1 rounded-[18px] bg-white px-[16px] py-[14px] ${
           next ? 'border border-dashed border-accent/50' : 'border border-ink/11'
         }`}
         style={reached ? shadows.reachedEntry : undefined}
@@ -96,9 +97,22 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
           </View>
         </View>
 
-        {expanded && (
-          <EntryExpandedBody member={member} status={status} onTalkPress={onTalkPress} />
-        )}
+        <AnimatePresence initial={false}>
+          {expanded
+            ? (
+                <MotiView
+                  key="expanded"
+                  from={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ type: 'timing', duration: motion.castExpandMs }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <EntryExpandedBody member={member} status={status} onTalkPress={onTalkPress} />
+                </MotiView>
+              )
+            : null}
+        </AnimatePresence>
       </Pressable>
     </View>
   );

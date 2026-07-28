@@ -219,6 +219,7 @@ export const motion = {
   barLoopMaxMs: 1100,
   barLoopStaggerMs: 70,
   buttonFadeInMs: 320,
+  castExpandMs: 280,
   fillerBlinkMs: 1100,
   meterTransitionMs: 200,
 } as const;

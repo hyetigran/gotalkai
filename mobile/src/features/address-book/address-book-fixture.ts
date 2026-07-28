@@ -85,7 +85,6 @@ export const CAST_FIXTURE: readonly CastMember[] = [
 export const ADDRESS_BOOK_COPY = {
   castHead: 'Who to talk to',
   bookHead: 'Your address book',
-  tapHint: 'Tap an entry to see the register it trains.',
   axisFormal: 'formal',
   axisCasual: 'casual',
   axisTransactional: 'transactional',
