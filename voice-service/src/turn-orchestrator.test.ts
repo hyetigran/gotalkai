@@ -273,4 +273,57 @@ describe('TurnOrchestrator', () => {
 
     expect(deps.createSttSession).toHaveBeenCalledTimes(1);
   });
+
+  it('auto-releases a hold after ~45s if hold_end never arrives — a server-side backstop for a dropped/crashed client (PRD §7.9)', () => {
+    jest.useFakeTimers();
+    try {
+      const waiter = createMessageWaiter();
+      const { deps } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      orchestrator.holdStart();
+      orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
+      expect(deps.createSttSession).not.toHaveBeenCalled(); // still held
+
+      jest.advanceTimersByTime(45_000);
+      orchestrator.pushAudioFrame(loudFrame(), 'loud-after-release', 8000);
+      expect(deps.createSttSession).toHaveBeenCalledTimes(1); // auto-released, now processes audio
+    }
+    finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('an explicit holdEnd before the 45s backstop cancels it — no late, spurious auto-release', () => {
+    jest.useFakeTimers();
+    try {
+      const waiter = createMessageWaiter();
+      const { deps } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      orchestrator.holdStart();
+      orchestrator.holdEnd();
+      orchestrator.holdStart(); // hold again, well within the first backstop's original window
+      jest.advanceTimersByTime(20_000);
+      orchestrator.holdEnd();
+      jest.advanceTimersByTime(30_000); // past the original (cancelled) 45s deadline
+
+      orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
+      expect(deps.createSttSession).toHaveBeenCalledTimes(1); // not held — the stale timer never fired
+    }
+    finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('forwards STT partial transcripts to the client (PRD §6.2 live "what did I just say" feedback)', () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
+    sttHandlers[0]?.onPartialTranscript?.('Прив');
+
+    expect(waiter.messages).toContainEqual({ type: 'transcript_partial', text: 'Прив' });
+  });
 });

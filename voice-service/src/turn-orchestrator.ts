@@ -66,6 +66,9 @@ function averageLogprob(words: SttWord[]): number {
   return scored.reduce((sum, word) => sum + word.logprob, 0) / scored.length;
 }
 
+/** PRD §7.9: "A learner who holds and puts the phone down must not hang the session." Mirrors the client's own ~45s auto-release (mobile/src/features/converse/use-live-converse-session.ts) as a server-side backstop for when hold_end never arrives at all — a dropped connection or crashed client, not just a slow one. */
+const HOLD_AUTO_RELEASE_MS = 45_000;
+
 export type OrchestratorState = 'listening' | 'processing' | 'speaking';
 
 /**
@@ -83,6 +86,7 @@ export class TurnOrchestrator {
   private generationToken = 0;
   private sttSession: ReturnType<TurnOrchestratorDeps['createSttSession']> | null = null;
   private pendingTranscript: { resolve: (transcript: SttTranscript) => void; reject: (error: Error) => void } | null = null;
+  private holdAutoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: TurnOrchestratorDeps) {
     this.vadGate = new VadGate(deps.vadConfig ?? DEFAULT_VAD_CONFIG);
@@ -95,10 +99,19 @@ export class TurnOrchestrator {
   /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. */
   holdStart(): void {
     this.held = true;
+    if (this.holdAutoReleaseTimer)
+      clearTimeout(this.holdAutoReleaseTimer);
+    this.holdAutoReleaseTimer = setTimeout(() => this.holdEnd(), HOLD_AUTO_RELEASE_MS);
+    // Node-only: doesn't block process shutdown while a hold is outstanding.
+    this.holdAutoReleaseTimer.unref?.();
   }
 
   holdEnd(): void {
     this.held = false;
+    if (this.holdAutoReleaseTimer) {
+      clearTimeout(this.holdAutoReleaseTimer);
+      this.holdAutoReleaseTimer = null;
+    }
   }
 
   /**
@@ -131,6 +144,12 @@ export class TurnOrchestrator {
     if (!this.sttSession) {
       this.state = 'listening';
       this.sttSession = this.deps.createSttSession(this.deps.elevenLabsApiKey, {
+        // PRD §6.2's live "what did I just say" feedback — see messages.ts's
+        // transcript_partial doc comment. Not authoritative; transcript_final
+        // (sent once STT resolves, below) is what actually drives the turn.
+        onPartialTranscript: (text) => {
+          this.deps.sendMessage({ type: 'transcript_partial', text });
+        },
         onFinalTranscript: (transcript) => {
           this.pendingTranscript?.resolve(transcript);
           this.pendingTranscript = null;
@@ -233,22 +252,19 @@ export class TurnOrchestrator {
         if (myToken !== this.generationToken)
           return;
         t5FirstAudio ??= now();
-        this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: (chunk as { audioBase64: string }).audioBase64 });
+        this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: chunk.audioBase64 });
       },
     });
     if (myToken !== this.generationToken)
       return;
 
-    this.deps.sendMessage({
-      type: 'turn_complete',
-      timestamps: {
-        t0TurnDetected,
-        t1SttFinal,
-        t2PersonaStart,
-        t3PersonaComplete,
-        t4StressAnnotated,
-        t5FirstAudio: t5FirstAudio ?? t4StressAnnotated,
-      },
+    this.sendTurnComplete({
+      t0TurnDetected,
+      t1SttFinal,
+      t2PersonaStart,
+      t3PersonaComplete,
+      t4StressAnnotated,
+      t5FirstAudio: t5FirstAudio ?? t4StressAnnotated,
     });
     this.state = 'listening';
   }
@@ -259,11 +275,13 @@ export class TurnOrchestrator {
     const now = this.deps.now ?? Date.now;
     const timestamp = t1SttFinal ?? now();
     this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_CATCH_THAT_LINE, comprehension: 'not_understood', affect: 'concerned' });
-    this.deps.sendMessage({
-      type: 'turn_complete',
-      timestamps: { t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp },
-    });
+    // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
+    this.sendTurnComplete({ t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp });
     this.state = 'listening';
+  }
+
+  private sendTurnComplete(timestamps: TurnTimestamps): void {
+    this.deps.sendMessage({ type: 'turn_complete', timestamps });
   }
 }
 

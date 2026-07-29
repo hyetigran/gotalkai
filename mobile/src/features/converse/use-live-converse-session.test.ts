@@ -136,12 +136,31 @@ describe('useLiveConverseSession hold-to-think and lifecycle', () => {
     expect(result.current.hasFloor).toBe(false);
 
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
-    // hasFloor requires holdSeen AND phase !== 'thinking' — filler just set phase to 'thinking'.
+    // hasFloor requires holdSeen AND phase === 'listening' — filler just set phase to 'thinking'.
     expect(result.current.hasFloor).toBe(false);
 
     const timestamps = { t0TurnDetected: 0, t1SttFinal: 1, t2PersonaStart: 2, t3PersonaComplete: 3, t4StressAnnotated: 4, t5FirstAudio: 5 };
     act(() => latestSocket().simulateMessage({ type: 'turn_complete', timestamps }));
     expect(result.current.hasFloor).toBe(true);
+  });
+
+  it('does not have the floor while she is speaking (tts audio playing), not just while thinking', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
+    const timestamps = { t0TurnDetected: 0, t1SttFinal: 1, t2PersonaStart: 2, t3PersonaComplete: 3, t4StressAnnotated: 4, t5FirstAudio: 5 };
+    act(() => latestSocket().simulateMessage({ type: 'turn_complete', timestamps }));
+    expect(result.current.hasFloor).toBe(true); // floor established after her first turn
+
+    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Сейчас…' }));
+    act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
+    act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
+    act(() => latestSocket().simulateMessage({ type: 'tts_chunk', sentenceIndex: 0, audioBase64: 'abc' }));
+    expect(result.current.phase).toBe('speaking');
+    expect(result.current.hasFloor).toBe(false);
+
+    act(() => result.current.holdOn());
+    expect(result.current.holding).toBe(false); // holdOn must be a no-op mid-speech
   });
 
   it('sends hold_start/hold_end over the wire and auto-releases after 45s', () => {

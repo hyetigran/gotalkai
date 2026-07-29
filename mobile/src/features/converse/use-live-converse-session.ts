@@ -106,7 +106,12 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
   const holdingRef = React.useRef(false);
   const { enqueue: enqueueTts, stopAndClear: stopTts } = useTtsPlayback();
 
-  const hasFloor = state.phase !== 'thinking' && state.holdSeen;
+  // docs/adr/0002: holding does nothing during her turn. The scripted demo's
+  // `phase` only ever had 'thinking' cover her whole turn; this hook splits
+  // that into 'thinking' (generating) and 'speaking' (TTS audio playing), so
+  // both must be excluded here, not just 'thinking' — otherwise a hold could
+  // start while she's still mid-line.
+  const hasFloor = state.phase === 'listening' && state.holdSeen;
 
   React.useEffect(() => {
     const connection = new VoiceConnection({
