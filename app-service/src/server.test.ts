@@ -2,6 +2,7 @@ import type { Env } from './env';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { applySchema } from './schema';
+import { seedScenarios } from './seed-scenarios';
 import { startServer } from './server';
 
 /**
@@ -103,6 +104,9 @@ describe('app service server', () => {
     it('POST /learners then POST /sessions creates real rows usable by the observations endpoint', async () => {
       const pool = new Pool({ connectionString: DATABASE_URL });
       await applySchema(pool);
+      // POST /sessions runs real scenario selection (ticket #21), which
+      // requires at least one seeded scenario to exist.
+      await seedScenarios(pool);
       const handle = await startServer(testEnv(), pool);
 
       const learnerResponse = await post(handle.port, '/learners', {});
@@ -207,6 +211,44 @@ describe('app service server', () => {
       expect((response.body?.debriefItems as unknown[]).length).toBe(1);
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('session scenario endpoint', () => {
+    it('GET /sessions/:id/scenario returns the session\'s real, selected scenario content', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      const sessionResponse = await post(handle.port, '/sessions', { learnerId });
+      const sessionId = sessionResponse.body?.id as string;
+
+      const response = await get(handle.port, `/sessions/${sessionId}/scenario`);
+      expect(response.statusCode).toBe(200);
+      const scenario = response.body?.scenario as Record<string, unknown>;
+      expect(typeof scenario.title).toBe('string');
+      expect(Array.isArray(scenario.ladder)).toBe(true);
+      expect((scenario.ladder as unknown[]).length).toBeGreaterThan(0);
+      expect(scenario.currentStepIndex).toBe(0); // first-ever session for this learner
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /sessions/:id/scenario returns 404 for a nonexistent session', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/scenario');
+      expect(response.statusCode).toBe(404);
+
       await handle.close();
       await pool.end();
     });

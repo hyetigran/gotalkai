@@ -26,9 +26,8 @@ CREATE TABLE IF NOT EXISTS learners (
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
-  -- No FK yet: the scenarios table is ticket #21's job ("Scenario
-  -- selection"), not this schema ticket's — adding a constraint now would
-  -- mean guessing its shape. Plain UUID until #21 lands.
+  -- The FK to scenarios(id) is added below, after that table exists —
+  -- can't forward-reference a table defined later in this same file.
   scenario_id UUID,
   -- Repetition-exposure signal (PRD §8: "sessions-since-last-use, to
   -- measure repetition exposure against abandonment"). Computed by the
@@ -146,3 +145,44 @@ CREATE TABLE IF NOT EXISTS persona_world_state (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- === scenarios / scenario_complications ========================================
+-- Deferred here from ticket #19 ("no FK yet; scenarios table lands in
+-- ticket #21"). Authored content (PRD §5.3: "Authored once, yields a
+-- curriculum") — hand-seeded fixtures for now (src/seed-scenarios.ts),
+-- not LLM-generated; there's no persona LLM pipeline yet (tickets
+-- #13/#14).
+CREATE TABLE IF NOT EXISTS scenarios (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Stable content identifier for seeding/lookups, independent of the
+  -- DB-generated id — e.g. 'cat_vet_visit'.
+  scene_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per complication level for a scenario — "the same underlying
+-- scene scales in complication, not vocabulary, across levels" (PRD
+-- §5.3's tea example; ticket #21 AC #2). `level` is 0-indexed to match
+-- the Tomorrow screen's existing `currentStepIndex` fixture shape.
+CREATE TABLE IF NOT EXISTS scenario_complications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scenario_id UUID NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+  level INTEGER NOT NULL CHECK (level >= 0),
+  label TEXT NOT NULL,
+  intro TEXT NOT NULL,
+  UNIQUE (scenario_id, level)
+);
+
+-- sessions.scenario_id had no FK when that table was created (ticket
+-- #19) because this table didn't exist yet — add it now that it does.
+-- DROP+ADD rather than a guarded `IF NOT EXISTS` (Postgres has no such
+-- clause for constraints) keeps this idempotent.
+--
+-- Deliberately no ON DELETE clause, unlike every other FK in this file:
+-- session history (and everything that cascades from it — turns,
+-- observations, debrief_items) must survive even if a scenario row is
+-- ever removed, so the default NO ACTION (blocking the delete instead of
+-- cascading data loss) is the right behavior here, not an oversight.
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_scenario_id_fkey;
+ALTER TABLE sessions ADD CONSTRAINT sessions_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES scenarios(id);

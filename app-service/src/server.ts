@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from 'node:http';
 
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
 import { recordObservationsRequestSchema } from './observations-request';
+import { getScenarioViewForSession } from './scenario-view';
 import { createLearner, createSession, createSessionRequestSchema } from './sessions';
 
 export type AppServiceHandle = {
@@ -36,6 +37,7 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 const SESSION_OBSERVATIONS_PATH = /^\/sessions\/([^/]+)\/observations$/;
 const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
+const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool): Promise<void> {
   const url = req.url ?? '';
@@ -126,6 +128,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     return;
   }
 
+  const scenarioMatch = SESSION_SCENARIO_PATH.exec(url);
+  if (req.method === 'GET' && scenarioMatch) {
+    const sessionId = scenarioMatch[1] as string;
+    try {
+      const scenario = await getScenarioViewForSession(pool, sessionId);
+      if (!scenario) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok', scenario });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
   sendJson(res, 404, { status: 'not found' });
 }
 
@@ -133,14 +152,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * Starts the app service. Endpoints:
  * - `GET /health` — round-trips a real query through the Postgres pool
  *   (`SELECT now()`) rather than returning a stubbed response.
- * - `POST /learners`, `POST /sessions` — minimal creation, just enough
- *   to exercise the endpoints below end to end (see src/sessions.ts —
- *   not the real onboarding/session-assembly flow, tickets #30/#21).
+ * - `POST /learners` — minimal creation, just enough to exercise the
+ *   endpoints below end to end (see src/sessions.ts — not the real
+ *   onboarding flow, ticket #30).
+ * - `POST /sessions` — creates a session AND runs scenario selection
+ *   (ticket #21) against the learner's real learner_structures/session
+ *   history, writing the result onto the new row.
  * - `POST /sessions/:id/observations` — writes every observation the
  *   caller reports, then ranks and promotes the top patterns into
  *   `debrief_items` (PRD §5.4, ticket #20).
  * - `GET /sessions/:id/debrief` — the promoted `debrief_items` for a
  *   session, for the Debrief screen to render.
+ * - `GET /sessions/:id/scenario` — the session's assigned scenario
+ *   resolved into full content (title/ladder/intro), for the Tomorrow
+ *   screen to render (ticket #21).
  *
  * Everything else (auth, persona LLM output, memory) is later ticket
  * work (ARCHITECTURE.md §3.2).

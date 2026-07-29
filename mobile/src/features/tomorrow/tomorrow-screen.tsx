@@ -1,16 +1,43 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
+import { useSessionScenario } from './api';
 import { TOMORROW_FIXTURE as fixture } from './tomorrow-fixture';
 
 /**
- * The Tomorrow screen — fixture data only. Layout and copy per
+ * The Tomorrow screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
  * ("4. Tomorrow"). `bg-paper-stepped` is the one background change in the
  * product, marking "session over" — every other screen uses `bg-paper`.
+ *
+ * The scenario title/intro/ladder/currentStepIndex render real, selected
+ * scenario data (PRD §5.3, ticket #21) when a `sessionId` route param is
+ * present — falls back to fixture content only when there's no
+ * `sessionId` at all, matching the pattern established (and
+ * bug-fixed — see ticket #20's review) on the Debrief screen: never
+ * silently substitutes fixture content for a loading, errored, or
+ * genuinely-different real result. `content` is `null` whenever a real
+ * session's data isn't ready yet (loading/errored) — every render below
+ * that would otherwise show stale/wrong fixture text falls through to an
+ * explicit loading/error message instead. `eyebrow`/`homework`/`close`
+ * stay fixture-driven regardless — static copy, not scenario content.
  */
+type TomorrowContent = { title: string; intro: string; ladder: string[]; currentStepIndex: number };
+
 export function TomorrowScreen() {
   const router = useRouter();
+  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  const hasRealSession = Boolean(sessionId);
+  const { data: scenario, isLoading, isError } = useSessionScenario({
+    variables: { sessionId: sessionId ?? '' },
+    enabled: hasRealSession,
+  });
+
+  const content: TomorrowContent | null = !hasRealSession
+    ? { title: fixture.title, intro: fixture.intro, ladder: [...fixture.ladder], currentStepIndex: fixture.currentStepIndex }
+    : (scenario && !isLoading && !isError
+        ? { title: scenario.title, intro: scenario.intro, ladder: scenario.ladder.map(step => step.label), currentStepIndex: scenario.currentStepIndex }
+        : null);
 
   return (
     <View className="flex-1 bg-paper-stepped px-[22px] pt-[66px] pb-[44px]">
@@ -18,18 +45,24 @@ export function TomorrowScreen() {
         {fixture.eyebrow}
       </Text>
       <Text className="mt-[16px] font-serif text-[27px] leading-[35px] text-ink">
-        {fixture.title}
+        {content ? content.title : (isLoading ? 'Loading…' : 'Couldn\'t load tomorrow\'s scenario')}
       </Text>
       <Text className="mt-[12px] text-[16px] leading-[24px] text-ink/60">
-        {fixture.intro}
+        {content?.intro ?? ''}
       </Text>
 
       <View className="mt-[28px] rounded-[18px] border border-ink/10 bg-white p-[19px]">
         <Text className="font-mono-medium mb-[14px] text-[10px] tracking-widest text-ink/42 uppercase">
           {fixture.ladderHeading}
         </Text>
-        {fixture.ladder.map((label, index) => {
-          const isCurrent = index === fixture.currentStepIndex;
+        {!content && isLoading && (
+          <Text className="text-[13px] text-ink/55">Loading tomorrow's scenario…</Text>
+        )}
+        {!content && isError && (
+          <Text className="text-[13px] text-ink/55">Couldn't load tomorrow's scenario — check your connection and try again.</Text>
+        )}
+        {content?.ladder.map((label, index) => {
+          const isCurrent = index === content.currentStepIndex;
           return (
             <View key={label} className="flex-row items-center gap-[12px] py-[9px]">
               <View
