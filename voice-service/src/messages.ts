@@ -93,4 +93,13 @@ export type ServerMessage
     /** All of this turn's audio has been sent; also carries the six-timestamp log for this turn. */
     | { type: 'turn_complete'; timestamps: TurnTimestamps }
     /** The learner started speaking while she was still talking — stop local playback immediately (PRD §7.10: "interruption must stop playback, cancel in-flight TTS, cancel LLM generation, and reset stream state"). The cancellation itself happens server-side; this tells the client to react. */
-    | { type: 'barge_in' };
+    | { type: 'barge_in' }
+    /**
+     * Ticket #27 / PRD §12.1: the out-of-character safety escape hatch —
+     * serious distress disclosure or an attempt to sexualize the persona.
+     * A distinct message type, not a `persona_turn` variant, because this
+     * is deliberately *not* Валентина speaking in character (see
+     * safety-detection.ts); `text` is still followed by real `tts_chunk`
+     * audio and a `turn_complete`, same as any other turn.
+     */
+    | { type: 'safety_response'; category: 'distress' | 'sexualization'; text: string };

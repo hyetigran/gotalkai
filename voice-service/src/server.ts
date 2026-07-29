@@ -8,6 +8,7 @@ import type { Env } from './env';
 import type { ServerMessage } from './messages';
 import { clientMessageSchema } from './messages';
 import { generatePersonaTurn } from './persona-turn';
+import { detectSafetyTrigger } from './safety-detection';
 import { annotateText } from './stress/stress-annotation';
 import { createSttSession } from './stt';
 import { synthesizeSpeech } from './tts';
@@ -85,6 +86,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
       const orchestrator = new TurnOrchestrator({
         createSttSession,
         generatePersonaTurn,
+        detectSafetyTrigger,
         annotateText,
         synthesizeSpeech,
         anthropicClient,
