@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "debug:persona-turn": "tsx src/debug-persona-turn.ts",
     "eval": "tsx src/eval/run-eval.ts",
-    "eval:golden-set-append-only": "tsx src/eval/append-only.ts"
+    "eval:golden-set-append-only": "tsx src/eval/append-only.ts",
+    "eval:canary": "tsx src/eval/run-canary.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

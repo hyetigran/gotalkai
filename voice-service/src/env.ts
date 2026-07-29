@@ -43,6 +43,23 @@ const envSchema = z.object({
    * it yet, rather than synthesizing with an arbitrary default voice.
    */
   ELEVENLABS_VALENTINA_VOICE_ID: z.string().min(1, 'ELEVENLABS_VALENTINA_VOICE_ID is required'),
+  /**
+   * Ticket #29 / docs/adr/0022: where `app-service-client.ts` posts turn
+   * artefacts (ARCHITECTURE.md §3's "posts turn artefacts / timings back
+   * through app service after turns"). Defaults to app-service's own
+   * local dev port (its env.ts's own `PORT` default) — not a secret,
+   * just a same-machine service address in local/dev; a real deployment
+   * sets this to app-service's real internal URL.
+   */
+  APP_SERVICE_URL: z.string().url().default('http://localhost:8081'),
+  /**
+   * Ticket #29 AC #1: the hourly production canary (eval/run-canary.ts)
+   * pages here on a real golden-set failure — see docs/adr/0022 for why
+   * this is a generic webhook, not a real paging-vendor integration
+   * (none exists in this environment). Optional: unset means the canary
+   * still runs and logs, it just doesn't attempt delivery anywhere.
+   */
+  HEALTH_ALERT_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

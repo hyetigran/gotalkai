@@ -91,7 +91,20 @@ export type GeneratePersonaTurnResult = {
   fellBackToFiller: boolean;
   /** The raw (possibly incomplete or invalid) JSON text the model produced, always captured independently of whether structured-output validation succeeded — this is what PRD §7.8 means by "log the raw output" on failure, and is empty only if the stream produced no text at all. */
   rawOutput: string;
+  /**
+   * Ticket #29 / docs/adr/0022: captured from the Anthropic response's
+   * own `usage` field (real billing data, not a token-count estimate),
+   * for `cost.ts`'s `estimateLlmCostUsd`. Zeroed out only when the
+   * stream itself threw before `finalMessage()` ever resolved — a real
+   * call still happened and still cost something in that case, but no
+   * usage figure is recoverable from a thrown stream; this is a
+   * disclosed undercount for that one failure path, not a claim of
+   * zero spend.
+   */
+  usage: { inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number };
 };
+
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
 
 /**
  * Ticket #14: generates one Валентина turn from a fixed transcript (AC
@@ -141,6 +154,12 @@ export async function generatePersonaTurn(
 
   try {
     const message = await stream.finalMessage();
+    const usage = {
+      inputTokens: message.usage.input_tokens ?? 0,
+      outputTokens: message.usage.output_tokens,
+      cacheCreationInputTokens: message.usage.cache_creation_input_tokens ?? 0,
+      cacheReadInputTokens: message.usage.cache_read_input_tokens ?? 0,
+    };
     if (!message.parsed_output) {
       // Defensive: the SDK's own contract is that `finalMessage()` throws
       // when structured-output parsing fails (zodOutputFormat's `.parse`
@@ -149,12 +168,12 @@ export async function generatePersonaTurn(
       // to every path that produces a filler turn, not just the one the SDK
       // is documented to take, so it gets the same logging as the catch below.
       console.error('[persona-turn] falling back to filler line: stream resolved without parsed_output', { rawOutput });
-      return { turn: buildFallbackTurn(), fellBackToFiller: true, rawOutput };
+      return { turn: buildFallbackTurn(), fellBackToFiller: true, rawOutput, usage };
     }
-    return { turn: message.parsed_output, fellBackToFiller: false, rawOutput };
+    return { turn: message.parsed_output, fellBackToFiller: false, rawOutput, usage };
   }
   catch (error) {
     console.error('[persona-turn] falling back to filler line', { rawOutput, error });
-    return { turn: buildFallbackTurn(), fellBackToFiller: true, rawOutput };
+    return { turn: buildFallbackTurn(), fellBackToFiller: true, rawOutput, usage: ZERO_USAGE };
   }
 }

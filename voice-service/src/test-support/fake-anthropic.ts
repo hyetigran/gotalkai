@@ -13,18 +13,24 @@ import type Anthropic from '@anthropic-ai/sdk';
 
 export type TextListener = (delta: string, snapshot: string) => void;
 
-export type FakeStreamOutcome<T> = { parsedOutput: T | null } | { error: Error };
+/** Shape of the real SDK's `Usage` field that production code (persona-turn.ts's cost capture, ticket #29) actually reads. */
+export type FakeUsage = { input_tokens: number | null; output_tokens: number; cache_creation_input_tokens: number | null; cache_read_input_tokens: number | null };
+const ZERO_USAGE: FakeUsage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+
+export type FakeStreamOutcome<T> = { parsedOutput: T | null; usage?: FakeUsage } | { error: Error };
 
 export type FakeMessageStream<T> = {
   on: (event: 'text', cb: TextListener) => unknown;
-  finalMessage: () => Promise<{ parsed_output: T | null }>;
+  finalMessage: () => Promise<{ parsed_output: T | null; usage: FakeUsage }>;
 };
 
 /**
  * A fake `MessageStream`-shaped object: `.on('text', cb)` replays
  * `deltas` through the registered listener (accumulating a snapshot,
  * matching the real SDK's `(delta, snapshot)` event shape) before
- * `.finalMessage()` resolves or rejects per `outcome`.
+ * `.finalMessage()` resolves or rejects per `outcome`. `usage` defaults
+ * to all-zero when a test doesn't care about cost capture specifically —
+ * only tests exercising ticket #29's cost path need to set it.
  */
 export function fakeMessageStream<T>(deltas: string[], outcome: FakeStreamOutcome<T>): FakeMessageStream<T> {
   let listener: TextListener | undefined;
@@ -41,7 +47,7 @@ export function fakeMessageStream<T>(deltas: string[], outcome: FakeStreamOutcom
       }
       if ('error' in outcome)
         throw outcome.error;
-      return { parsed_output: outcome.parsedOutput };
+      return { parsed_output: outcome.parsedOutput, usage: outcome.usage ?? ZERO_USAGE };
     },
   };
 }

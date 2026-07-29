@@ -12,6 +12,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     ELEVENLABS_API_KEY: 'el-test-key',
     ELEVENLABS_VALENTINA_VOICE_ID: 'voice-test-id',
+    APP_SERVICE_URL: 'http://127.0.0.1:1', // deliberately unreachable — recording failures must not affect the live pipeline (ticket #29)
     ...overrides,
   };
 }

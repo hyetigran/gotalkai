@@ -14,6 +14,7 @@ image: node:20
 
 stages:
   - eval
+  - observability
 
 variables:
   # GitLab's default shallow clone can omit the target-branch history the
@@ -61,3 +62,60 @@ eval:harness:
     - cd voice-service && pnpm install --frozen-lockfile
   script:
     - pnpm eval
+
+# Ticket #29 AC #2 (PRD §11): "point the eval harness at production ...
+# five golden cases against the live endpoint hourly." Triggered by a
+# GitLab CI Pipeline Schedule (Settings > CI/CD > Schedules, "hourly",
+# targeting main) — not expressible in this file alone, has to be
+# configured in project settings. `$CANARY_SCHEDULE` is a custom
+# schedule variable set on that schedule (not a GitLab-provided one) so
+# this job runs only for the scheduled canary trigger, not on every
+# ordinary pipeline (which would silently multiply spend far past the
+# "~$0.20/day" budget the five-entry canary set is sized for).
+# `allow_failure: false` deliberately, unlike eval:harness above — a
+# canary gate failure is meant to fail this pipeline loudly (it also
+# separately pages via HEALTH_ALERT_WEBHOOK_URL, see run-canary.ts), not
+# be waved through the way a missing ANTHROPIC_API_KEY locally is.
+#
+# Same disclosed limitation as eval:harness/docs/adr/0012 above: no CI
+# runners are registered on this project, so neither the schedule nor
+# this job have been verified to actually execute here.
+eval:canary:
+  stage: eval
+  rules:
+    - if: '$CANARY_SCHEDULE'
+  before_script:
+    - corepack enable
+    - cd voice-service && pnpm install --frozen-lockfile
+  script:
+    - pnpm eval:canary
+
+# Ticket #29 AC #4/#5 (PRD §11): "alerting when a user crosses their
+# subscription price" and "alerting configured on P95, never mean" — the
+# other half of this ticket's periodic checks (app-service's
+# run-checks.ts), same trigger shape as eval:canary above: a GitLab CI
+# Pipeline Schedule (Settings > CI/CD > Schedules — hourly or daily,
+# targeting main) sets `$OBSERVABILITY_SCHEDULE`, a custom variable (not
+# GitLab-provided), so this job runs only on that schedule, not on every
+# ordinary pipeline. Also sends the unconditional weekly quality digest
+# in the same run (run-checks.ts's own `sendQualityReport` call) — one
+# scheduled job covers all three of this ticket's periodic checks
+# (P95, cost, quality digest), since all three read the same `turns`
+# data and there's no reason to pay three separate `pnpm install`s to
+# split them.
+#
+# Same disclosed limitation as eval:canary/docs/adr/0012 above: no CI
+# runners are registered on this project, so neither the schedule nor
+# this job have been verified to actually execute here. Needs
+# `DATABASE_URL` (and optionally `HEALTH_ALERT_WEBHOOK_URL`/
+# `QUALITY_REPORT_WEBHOOK_URL`) configured as CI/CD variables — app-service's
+# own env.ts requirement, unchanged by this ticket.
+observability:run-checks:
+  stage: observability
+  rules:
+    - if: '$OBSERVABILITY_SCHEDULE'
+  before_script:
+    - corepack enable
+    - cd app-service && pnpm install --frozen-lockfile
+  script:
+    - pnpm observability:run-checks

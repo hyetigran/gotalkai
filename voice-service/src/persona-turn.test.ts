@@ -83,7 +83,29 @@ describe('generatePersonaTurn', () => {
   it('returns the validated turn on success, with fellBackToFiller false', async () => {
     const client = fakeClient([JSON.stringify(validTurn)], { parsedOutput: validTurn });
     const result = await generatePersonaTurn(client, transcript);
-    expect(result).toEqual({ turn: validTurn, fellBackToFiller: false, rawOutput: JSON.stringify(validTurn) });
+    expect(result).toEqual({
+      turn: validTurn,
+      fellBackToFiller: false,
+      rawOutput: JSON.stringify(validTurn),
+      usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+    });
+  });
+
+  it('captures real Anthropic usage for cost.ts\'s estimateLlmCostUsd (ticket #29)', async () => {
+    const client = fakeAnthropicClient({
+      stream: () => fakeMessageStream([JSON.stringify(validTurn)], {
+        parsedOutput: validTurn,
+        usage: { input_tokens: 120, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 1000 },
+      }),
+    });
+    const result = await generatePersonaTurn(client, transcript);
+    expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 40, cacheCreationInputTokens: 0, cacheReadInputTokens: 1000 });
+  });
+
+  it('zeroes usage when the stream itself throws — no message ever resolved to read usage from', async () => {
+    const client = fakeClient([], { error: new Error('network error') });
+    const result = await generatePersonaTurn(client, transcript);
+    expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
   });
 
   it('calls onPartial once per field, exactly when each first becomes available, not repeatedly', async () => {

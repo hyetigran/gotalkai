@@ -108,6 +108,37 @@ CREATE TABLE IF NOT EXISTS turns (
 
 CREATE INDEX IF NOT EXISTS idx_turns_session_id ON turns (session_id);
 
+-- Ticket #29 (PRD §11): "cost, live" and false-interruption-rate (docs/adr/0022).
+-- Both added on the existing table via the same information_schema-guarded
+-- idiom as learners.audio_sampling_consent_at above, for the same
+-- deadlock-avoidance reason — `turns` is the highest-write-volume table
+-- in the schema, so an unconditional ALTER TABLE would take that lock on
+-- every single applySchema call.
+--
+-- `cost_usd`: this row's own attributable vendor-cost estimate (STT for
+-- a learner row; persona LLM + TTS for a persona row) — NULL where no
+-- cost was ever computed for the row (e.g. rows written before this
+-- ticket), not 0, so "no data" and "genuinely free" stay distinguishable.
+-- `interrupted_after_ms`: set only on a persona row that was barge-in'd
+-- while its audio was playing — the elapsed ms from that turn's own
+-- `t5FirstAudio` to the interruption. NULL means "never interrupted,"
+-- not "interrupted at time zero."
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'turns' AND column_name = 'cost_usd'
+  ) THEN
+    ALTER TABLE turns ADD COLUMN cost_usd NUMERIC;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'turns' AND column_name = 'interrupted_after_ms'
+  ) THEN
+    ALTER TABLE turns ADD COLUMN interrupted_after_ms INTEGER;
+  END IF;
+END $$;
+
 -- === learner_structures ========================================================
 -- The engine table (PRD §8): "Scenario selection reads it; the debrief
 -- writes it. Everything else is plumbing around this table."
