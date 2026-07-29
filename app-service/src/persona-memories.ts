@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { inspect } from 'node:util';
 
 const REDACTED = '[REDACTED:persona_memory]';
@@ -52,11 +52,9 @@ export type PersonaMemoryRow = {
 };
 
 /**
- * The only query in this ticket's scope against `persona_memories` — it
- * exists so the redaction wrapper above has a real call site proving the
+ * Exists so the redaction wrapper above has a real call site proving the
  * table can be read without the raw content ever sitting in a plain
- * string outside this function. The full callback-mechanic feature
- * (writing memories, selecting which to surface) is later ticket work.
+ * string outside this function.
  */
 export async function getPersonaMemoriesForLearner(pool: Pool, learnerId: string): Promise<PersonaMemoryRow[]> {
   const result = await pool.query<{
@@ -76,4 +74,59 @@ export async function getPersonaMemoriesForLearner(pool: Pool, learnerId: string
     createdAt: row.created_at,
     lastReferencedAt: row.last_referenced_at,
   }));
+}
+
+/**
+ * Writes a memory (ticket #22 AC #1: "persona_memories written
+ * during/after real sessions when something memorable happens"). The
+ * decision of *what* is memorable — for now, whatever the caller passes
+ * as `content` — is deliberately not this function's job: the ticket's
+ * own AC says the mechanism "can start simple... and is refined later."
+ * Today's caller is a debug harness or a direct API call standing in for
+ * the eventual analyser (ticket #14+); this function only owns the
+ * write itself being real, not the judgment of what counts.
+ *
+ * Accepts a `Pool` or a checked-out `PoolClient` so callers that need
+ * this write inside a larger transaction (e.g. seeding starter memories
+ * alongside the learner row that owns them) can pass their transaction's
+ * client instead of a fresh pool connection.
+ */
+export async function recordPersonaMemory(pool: Pool | PoolClient, learnerId: string, content: string): Promise<string> {
+  const result = await pool.query<{ id: string }>(
+    'INSERT INTO persona_memories (learner_id, content) VALUES ($1, $2) RETURNING id',
+    [learnerId, content],
+  );
+  const row = result.rows[0];
+  if (!row)
+    throw new Error('insert did not return a row');
+  return row.id;
+}
+
+/**
+ * Picks the memory to open tomorrow's session with (ticket #22 AC #2)
+ * and marks it referenced so the same memory doesn't repeat every day —
+ * least-recently-referenced first, never-referenced (`NULL`) ahead of
+ * any that have been used before. Returns null if the learner has no
+ * memories at all (shouldn't happen once seeding — AC #3 — runs at
+ * learner creation, but the Open screen still needs a defined fallback
+ * for it).
+ *
+ * Returns the raw string, not the redacted wrapper: this function's
+ * entire purpose is producing the literal line shown to the learner —
+ * the one legitimate reveal site for a callback memory, same as the
+ * class's own doc comment describes for the persona-prompt case.
+ */
+export async function selectAndMarkCallbackMemory(pool: Pool, learnerId: string): Promise<string | null> {
+  const result = await pool.query<{ id: string; content: string }>(
+    `SELECT id, content FROM persona_memories
+     WHERE learner_id = $1
+     ORDER BY last_referenced_at ASC NULLS FIRST, created_at ASC
+     LIMIT 1`,
+    [learnerId],
+  );
+  const row = result.rows[0];
+  if (!row)
+    return null;
+  await pool.query('UPDATE persona_memories SET last_referenced_at = now() WHERE id = $1', [row.id]);
+  return row.content;
 }

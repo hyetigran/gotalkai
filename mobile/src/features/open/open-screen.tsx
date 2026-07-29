@@ -1,21 +1,48 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { colors, shadows } from '@/components/ui/design-tokens';
 import { PortraitHatch } from '@/components/ui/portrait-hatch';
 import { useIsFirstSession } from '@/lib/hooks/use-is-first-session';
+import { useCallbackLine } from './api';
 import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
 
 /**
- * The Open screen — scripted content only (no live session assembly yet).
- * Layout and copy per
+ * The Open screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
  * ("1. Open"). The app's real entry point (`src/app/index.tsx` redirects
  * here) and the head of the daily loop (ticket #9).
+ *
+ * `callbackLine` renders a real, rotating `persona_memories` entry (PRD
+ * risk #2, ticket #22) when a `learnerId` route param is present —
+ * falls back to scripted copy only when there's no `learnerId` at all,
+ * matching the pattern established on the Debrief/Tomorrow screens
+ * (tickets #20/#21): never silently substitutes scripted text for a
+ * loading, errored, or genuinely-different real result. Everything else
+ * on this screen stays scripted — out of this ticket's scope.
  */
 export function OpenScreen() {
   const router = useRouter();
+  const { learnerId } = useLocalSearchParams<{ learnerId?: string }>();
+  const hasRealLearner = Boolean(learnerId);
+  const { data: realCallbackLine, isLoading, isError } = useCallbackLine({
+    variables: { learnerId: learnerId ?? '' },
+    enabled: hasRealLearner,
+  });
+  // Four distinct states, not collapsed into one fallback: no real
+  // learner (scripted copy), still loading, errored, or a successful
+  // real response that's genuinely empty (a learner with zero memories —
+  // shouldn't happen once seeding runs, but is a real, non-alarming
+  // server response, not a network failure) versus one with content.
+  const callbackLineStatusText = !hasRealLearner
+    ? null
+    : (isLoading
+        ? 'Loading…'
+        : (isError
+            ? 'Could not load her line — check your connection and try again.'
+            : (realCallbackLine ? null : 'No memories yet.')));
+  const callbackLine = !hasRealLearner ? openData.callbackLine : (realCallbackLine ?? null);
   const [isFirstSession, setIsFirstSession] = useIsFirstSession();
 
   const handleAnswer = React.useCallback(() => {
@@ -63,7 +90,7 @@ export function OpenScreen() {
             <Text className="mt-[6px] font-mono text-[12px] text-ink/50">{openData.personaMeta}</Text>
             <View className="mt-[18px] border-t border-ink/9 pt-[18px]">
               <Text className="font-serif text-[19px] leading-[27px] text-ink">
-                {openData.callbackLine}
+                {callbackLine ?? callbackLineStatusText}
               </Text>
             </View>
           </View>

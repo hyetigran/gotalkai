@@ -253,4 +253,75 @@ describe('app service server', () => {
       await pool.end();
     });
   });
+
+  describe('persona memory endpoints', () => {
+    it('POST /learners seeds starter memories, and GET /learners/:id/callback returns a real one for session one', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      // Session one — no prior real session, but never cold (ticket #22 AC #3).
+      const response = await get(handle.port, `/learners/${learnerId}/callback`);
+      expect(response.statusCode).toBe(200);
+      expect(typeof response.body?.callbackLine).toBe('string');
+      expect((response.body?.callbackLine as string).length).toBeGreaterThan(0);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/memories writes a real, later-readable memory', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const memoryResponse = await post(handle.port, `/learners/${learnerId}/memories`, {
+        content: 'Она упомянула поездку в Ярославль.',
+      });
+      expect(memoryResponse.statusCode).toBe(201);
+      expect(typeof memoryResponse.body?.id).toBe('string');
+
+      const stored = await pool.query('SELECT content FROM persona_memories WHERE id = $1', [memoryResponse.body?.id]);
+      expect(stored.rows).toEqual([{ content: 'Она упомянула поездку в Ярославль.' }]);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/memories rejects a request body missing content', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/learners/00000000-0000-0000-0000-000000000000/memories', {});
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/callback returns null for a learner with no memories (defensive fallback, not expected once seeding runs)', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const learner = await pool.query<{ id: string }>('INSERT INTO learners DEFAULT VALUES RETURNING id');
+      const learnerId = learner.rows[0]?.id as string;
+
+      const response = await get(handle.port, `/learners/${learnerId}/callback`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body?.callbackLine).toBeNull();
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
 });
