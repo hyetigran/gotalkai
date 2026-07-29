@@ -29,6 +29,11 @@ const envSchema = z.object({
    * than produce confusing 401s from every persona-turn call later.
    */
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
+  /**
+   * Ticket #15/#17: ElevenLabs for both STT and TTS (docs/adr/0013 —
+   * deadline-driven, bake-off skipped). No default — a real secret.
+   */
+  ELEVENLABS_API_KEY: z.string().min(1, 'ELEVENLABS_API_KEY is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;
