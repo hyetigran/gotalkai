@@ -108,4 +108,91 @@ describe('voice service server', () => {
     const closeEvent = await once<{ code: number }>(ws, 'close');
     expect(closeEvent).toBeDefined();
   });
+
+  describe('pipeline messages (ticket #18)', () => {
+    /** Sends `type: 'ping'` and awaits the matching pong — a clean way to prove the connection is still alive/responsive after some other message, without an arbitrary timeout. */
+    async function assertStillResponsive(ws: WebSocket): Promise<void> {
+      ws.send(JSON.stringify({ type: 'ping', requestId: 'still-alive' }));
+      const raw = await once<Buffer>(ws, 'message');
+      const response = JSON.parse(raw.toString());
+      expect(response).toMatchObject({ type: 'pong', requestId: 'still-alive' });
+    }
+
+    // Silent (all-zero) PCM — VadGate never reaches 'speech', so no STT
+    // session opens and no real network call to ElevenLabs/Anthropic is
+    // attempted. Real-pipeline behavior (loud audio, a full turn) is
+    // exercised in turn-orchestrator.test.ts against fakes; this suite
+    // only proves server.ts's message routing itself doesn't crash —
+    // this environment has no real vendor credentials to test the full
+    // path end to end (docs/adr/0017).
+    function silentAudioChunkMessage(): string {
+      const silentSamples = new Int16Array(160); // all zeros
+      const pcmBase64 = Buffer.from(silentSamples.buffer).toString('base64');
+      return JSON.stringify({ type: 'audio_chunk', pcmBase64, sampleRateHz: 8000 });
+    }
+
+    it('accepts a well-formed audio_chunk message without erroring or crashing the connection', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(silentAudioChunkMessage());
+      await assertStillResponsive(ws);
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('rejects a malformed audio_chunk (missing sampleRateHz) the same way as any other unrecognized message', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'audio_chunk', pcmBase64: 'AAAA' }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('accepts hold_start/hold_end without erroring, and audio sent while held produces no response at all', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'hold_start' }));
+      ws.send(silentAudioChunkMessage());
+      ws.send(JSON.stringify({ type: 'hold_end' }));
+      await assertStillResponsive(ws);
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('accepts a well-formed session_start message without erroring', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: '5c86bf64-d8fa-4b35-8f17-8f797a5cad38', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f' }));
+      await assertStillResponsive(ws);
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('rejects a session_start with a malformed (non-UUID) learnerId', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: 'not-a-uuid', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f' }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
+
+      ws.close();
+      await handle.close();
+    });
+  });
 });
