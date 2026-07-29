@@ -68,8 +68,13 @@ export function useOpenAnswerHandler(options: {
           router.replace({ pathname: '/converse', params: { sessionId: data.id, learnerId } });
         },
         onError: (error) => {
-          if (error.response?.status === 429 && error.response.data.code === 'daily_cap_reached')
-            router.replace('/tomorrow');
+          if (error.response?.status === 429 && error.response.data.code === 'daily_cap_reached') {
+            // No sessionId (the cap rejected before one was ever created) — Tomorrow falls back
+            // to its own fixture scenario content here, which is correct: there's no real
+            // session to show. learnerId still forwards, so the loop doesn't lose the learner
+            // on the "come back tomorrow" path (ticket #25).
+            router.replace(learnerId ? { pathname: '/tomorrow', params: { learnerId } } : '/tomorrow');
+          }
           // Any other error leaves the learner on Open; isUnexpectedError below renders it.
         },
       },

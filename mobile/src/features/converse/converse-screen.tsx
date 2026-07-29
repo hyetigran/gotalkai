@@ -87,7 +87,12 @@ const AUTO_DEBRIEF_DELAY_MS = 1500;
  */
 export function ConverseScreen() {
   const router = useRouter();
-  const { learnerId } = useLocalSearchParams<{ learnerId?: string }>();
+  // Ticket #25: `sessionId` is already sent by Open's navigation (use-open-screen.ts's
+  // router.replace) but was never read here — Debrief/Tomorrow need it forwarded onward for
+  // their own real-data fetches to have anything to fetch. Converse's own turn-taking is still
+  // the scripted demo (ticket #18's disclosed, accepted limitation) — this screen doesn't
+  // consume `sessionId` itself, only relays it to the screens after it.
+  const { learnerId, sessionId } = useLocalSearchParams<{ learnerId?: string; sessionId?: string }>();
   const translitEnabled = useTranslitEnabled(learnerId);
   const clock = useElapsedClock();
   const {
@@ -106,17 +111,28 @@ export function ConverseScreen() {
   const { amplitude } = useMicCapture({ paused: holding });
   useWebrtcAecStream();
 
+  const goToDebrief = React.useCallback(() => {
+    if (sessionId)
+      router.replace({ pathname: '/debrief', params: learnerId ? { sessionId, learnerId } : { sessionId } });
+    else
+      router.replace('/debrief');
+  }, [router, sessionId, learnerId]);
+
+  const goBackToOpen = React.useCallback(() => {
+    router.replace(learnerId ? { pathname: '/open', params: { learnerId } } : '/open');
+  }, [router, learnerId]);
+
   React.useEffect(() => {
     if (!scriptExhausted)
       return undefined;
-    const timeoutId = setTimeout(() => router.replace('/debrief'), AUTO_DEBRIEF_DELAY_MS);
+    const timeoutId = setTimeout(goToDebrief, AUTO_DEBRIEF_DELAY_MS);
     return () => clearTimeout(timeoutId);
-  }, [scriptExhausted, router]);
+  }, [scriptExhausted, goToDebrief]);
 
   return (
     <View className="flex-1 bg-paper">
       <View className="flex-row items-center justify-between px-[22px] pt-[60px] pb-[12px]">
-        <Pressable onPress={() => router.replace('/open')} accessibilityRole="button" accessibilityLabel="back">
+        <Pressable onPress={goBackToOpen} accessibilityRole="button" accessibilityLabel="back">
           <Text className="text-[15px] text-accent">‹</Text>
         </Pressable>
         <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
@@ -145,7 +161,7 @@ export function ConverseScreen() {
           {holdSeen && (
             <HoldToThinkButton holding={holding} onHoldOn={holdOn} onHoldOff={holdOff} />
           )}
-          <Pressable onPress={() => router.replace('/debrief')} accessibilityRole="button" accessibilityLabel="end">
+          <Pressable onPress={goToDebrief} accessibilityRole="button" accessibilityLabel="end">
             <Text className="w-[62px] text-right text-[13px] text-ink/50">End</Text>
           </Pressable>
         </View>

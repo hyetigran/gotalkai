@@ -29,7 +29,9 @@ import { mapDebriefItemToPattern } from './map-debrief-item';
  */
 export function DebriefScreen() {
   const router = useRouter();
-  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  // Ticket #25: `learnerId` isn't used by this screen itself, only relayed onward to Tomorrow
+  // (and from there back to Open) so the loop doesn't lose track of who the learner is.
+  const { sessionId, learnerId } = useLocalSearchParams<{ sessionId?: string; learnerId?: string }>();
   const hasRealSession = Boolean(sessionId);
   const { data: debriefItems, isLoading, isError } = useSessionDebrief({
     variables: { sessionId: sessionId ?? '' },
@@ -90,7 +92,11 @@ export function DebriefScreen() {
       </View>
 
       <Pressable
-        onPress={() => router.replace('/tomorrow')}
+        onPress={() => router.replace(
+          sessionId
+            ? { pathname: '/tomorrow', params: learnerId ? { sessionId, learnerId } : { sessionId } }
+            : '/tomorrow',
+        )}
         accessibilityRole="button"
         accessibilityLabel="Tomorrow"
         className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"

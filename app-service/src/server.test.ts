@@ -818,4 +818,78 @@ describe('app service server', () => {
       await pool.end();
     });
   });
+
+  describe('full daily loop sequence (ticket #25)', () => {
+    /**
+     * The concrete, buildable substitute for the ticket's own UAT ("complete
+     * three to five real consecutive days... behaving deliberately... confirm
+     * the loop never falls back to Wave 1 scripted content at any point") —
+     * that UAT needs a human on a real device (Converse's own live pipeline
+     * is a separate, already-disclosed gap — ticket #18). What's genuinely
+     * testable here, deterministically, is everything Converse is NOT: a
+     * real learner running several real sessions end to end through the
+     * actual HTTP API, confirming Open/Debrief/Tomorrow's real-data paths
+     * (the ones ticket #25's mobile-side fix now actually wires into the
+     * live navigation chain) return real, evolving content throughout, and
+     * that the session cap still enforces during that real sequence.
+     */
+    it('a learner completing several real sessions sees real, evolving scenario/debrief/callback data throughout, and the cap still enforces', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const cap = 3;
+      const handle = await startServer(testEnv({ DAILY_SESSION_CAP: cap }), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const scenarioTitles: string[] = [];
+      for (let day = 0; day < cap; day++) {
+        const sessionResponse = await post(handle.port, '/sessions', { learnerId });
+        expect(sessionResponse.statusCode).toBe(201);
+        const sessionId = sessionResponse.body?.id as string;
+
+        // Real scenario assignment (ticket #21) — Tomorrow's real-data path has something real to show.
+        const scenarioResponse = await get(handle.port, `/sessions/${sessionId}/scenario`);
+        expect(scenarioResponse.statusCode).toBe(200);
+        const scenario = scenarioResponse.body?.scenario as { title: string; ladder: unknown[] };
+        expect(typeof scenario.title).toBe('string');
+        expect(scenario.ladder.length).toBeGreaterThan(0);
+        scenarioTitles.push(scenario.title);
+
+        // Real, genuinely different performance each "day" — real observations -> real ranked debrief.
+        const observations = day === 0
+          ? [{ kind: 'grammar_error', structureKey: 'genitive_plural', detail: { tag: 'missed the genitive plural' } }]
+          : [{ kind: 'avoidance', structureKey: 'aspect_perfective', impeded: true, detail: { tag: 'steered around this' } }];
+        const observationsResponse = await post(handle.port, `/sessions/${sessionId}/observations`, { learnerId, observations });
+        expect(observationsResponse.statusCode).toBe(201);
+        expect((observationsResponse.body?.debriefItems as unknown[]).length).toBeGreaterThan(0);
+
+        // Debrief's own real-data path (ticket #20), fetched independently — exactly what the
+        // live navigation now actually reaches, since this ticket's mobile fix forwards sessionId
+        // through Converse instead of dropping it.
+        const debriefResponse = await get(handle.port, `/sessions/${sessionId}/debrief`);
+        expect(debriefResponse.statusCode).toBe(200);
+        expect((debriefResponse.body?.debriefItems as unknown[]).length).toBeGreaterThan(0);
+
+        // Real callback line (ticket #22) — Open's real-data path has something to show the next day.
+        const callbackResponse = await get(handle.port, `/learners/${learnerId}/callback`);
+        expect(callbackResponse.statusCode).toBe(200);
+      }
+
+      // Real scenario selection responds to real history (least-recently-used rotation, ticket
+      // #21), not a static value — with only two seeded scenarios and three real sessions, it
+      // shouldn't be the same scenario every single day.
+      expect(new Set(scenarioTitles).size).toBeGreaterThan(1);
+
+      // Session cap (ticket #24) still enforces during this real sequence — the (cap+1)th session is rejected.
+      const overCapResponse = await post(handle.port, '/sessions', { learnerId });
+      expect(overCapResponse.statusCode).toBe(429);
+      expect(overCapResponse.body?.code).toBe('daily_cap_reached');
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
 });

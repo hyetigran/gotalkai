@@ -26,7 +26,9 @@ type TomorrowContent = { title: string; intro: string; ladder: string[]; current
 
 export function TomorrowScreen() {
   const router = useRouter();
-  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  // Ticket #25: `learnerId` isn't used by this screen itself, only relayed back to Open so the
+  // next lap of the loop still knows who the learner is instead of losing them at the seam.
+  const { sessionId, learnerId } = useLocalSearchParams<{ sessionId?: string; learnerId?: string }>();
   const hasRealSession = Boolean(sessionId);
   const { data: scenario, isLoading, isError } = useSessionScenario({
     variables: { sessionId: sessionId ?? '' },
@@ -87,7 +89,7 @@ export function TomorrowScreen() {
       </Text>
 
       <Pressable
-        onPress={() => router.replace('/open')}
+        onPress={() => router.replace(learnerId ? { pathname: '/open', params: { learnerId } } : '/open')}
         accessibilityRole="button"
         accessibilityLabel={fixture.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"
