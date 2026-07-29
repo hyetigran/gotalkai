@@ -8,6 +8,7 @@ import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from './memories-request';
 import { recordObservationsRequestSchema } from './observations-request';
 import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
+import { deleteLearner, recordAudioSamplingConsent } from './privacy';
 import { getScenarioViewForSession } from './scenario-view';
 import { DailySessionCapReachedError } from './session-cap';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner } from './sessions';
@@ -44,6 +45,7 @@ const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
 const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
+const LEARNER_AUDIO_SAMPLING_CONSENT_PATH = /^\/learners\/([^/]+)\/audio-sampling-consent$/;
 const LEARNER_PATH = /^\/learners\/([^/]+)$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
@@ -246,6 +248,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     return;
   }
 
+  const audioSamplingConsentMatch = LEARNER_AUDIO_SAMPLING_CONSENT_PATH.exec(url);
+  if (req.method === 'POST' && audioSamplingConsentMatch) {
+    const learnerId = parseUuidParam(audioSamplingConsentMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const recorded = await recordAudioSamplingConsent(pool, learnerId);
+      if (!recorded) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok' });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
   const learnerMatch = LEARNER_PATH.exec(url);
   if (req.method === 'GET' && learnerMatch) {
     const learnerId = parseUuidParam(learnerMatch[1] as string);
@@ -260,6 +283,26 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
         return;
       }
       sendJson(res, 200, { status: 'ok', learner });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  if (req.method === 'DELETE' && learnerMatch) {
+    const learnerId = parseUuidParam(learnerMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const deleted = await deleteLearner(pool, learnerId);
+      if (!deleted) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok' });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -300,6 +343,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * - `GET /learners/:id/callback` — the real callback line for the Open
  *   screen: the learner's least-recently-referenced memory, marked
  *   referenced so it doesn't repeat every day (ticket #22 AC #2).
+ * - `POST /learners/:id/audio-sampling-consent` — records
+ *   `audio_sampling_consent_at`, separate from any ToS-acceptance flow
+ *   (ticket #31 AC #2).
+ * - `DELETE /learners/:id` — the single deletion path (ticket #31 AC
+ *   #4): removes the learner row, and via schema.sql's existing FK
+ *   cascade graph, every row that hangs off it — memories, sessions,
+ *   turns, observations, debrief_items, learner_structures — in one
+ *   statement.
  *
  * Everything else (auth, persona LLM output) is later ticket work
  * (ARCHITECTURE.md §3.2).
