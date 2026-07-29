@@ -17,6 +17,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     PORT: 0, // ask the OS for a free port
     NODE_ENV: 'test',
     DATABASE_URL,
+    RETENTION_DAYS: 180,
     ...overrides,
   };
 }
