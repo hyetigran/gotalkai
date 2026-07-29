@@ -4,7 +4,9 @@ import type { Env } from './env';
 import { createServer as createHttpServer } from 'node:http';
 
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
+import { recordMemoryRequestSchema } from './memories-request';
 import { recordObservationsRequestSchema } from './observations-request';
+import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
 import { getScenarioViewForSession } from './scenario-view';
 import { createLearner, createSession, createSessionRequestSchema } from './sessions';
 
@@ -38,6 +40,8 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 const SESSION_OBSERVATIONS_PATH = /^\/sessions\/([^/]+)\/observations$/;
 const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
 const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
+const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
+const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool): Promise<void> {
   const url = req.url ?? '';
@@ -145,6 +149,45 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     return;
   }
 
+  const memoriesMatch = LEARNER_MEMORIES_PATH.exec(url);
+  if (req.method === 'POST' && memoriesMatch) {
+    const learnerId = memoriesMatch[1] as string;
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = recordMemoryRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const id = await recordPersonaMemory(pool, learnerId, parsed.data.content);
+      sendJson(res, 201, { status: 'ok', id });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const callbackMatch = LEARNER_CALLBACK_PATH.exec(url);
+  if (req.method === 'GET' && callbackMatch) {
+    const learnerId = callbackMatch[1] as string;
+    try {
+      const callbackLine = await selectAndMarkCallbackMemory(pool, learnerId);
+      sendJson(res, 200, { status: 'ok', callbackLine });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
   sendJson(res, 404, { status: 'not found' });
 }
 
@@ -154,7 +197,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   (`SELECT now()`) rather than returning a stubbed response.
  * - `POST /learners` — minimal creation, just enough to exercise the
  *   endpoints below end to end (see src/sessions.ts — not the real
- *   onboarding flow, ticket #30).
+ *   onboarding flow, ticket #30). Also seeds 1–2 starter
+ *   `persona_memories` so session one is never cold (ticket #22).
  * - `POST /sessions` — creates a session AND runs scenario selection
  *   (ticket #21) against the learner's real learner_structures/session
  *   history, writing the result onto the new row.
@@ -166,9 +210,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * - `GET /sessions/:id/scenario` — the session's assigned scenario
  *   resolved into full content (title/ladder/intro), for the Tomorrow
  *   screen to render (ticket #21).
+ * - `POST /learners/:id/memories` — writes a `persona_memories` row
+ *   (ticket #22 AC #1).
+ * - `GET /learners/:id/callback` — the real callback line for the Open
+ *   screen: the learner's least-recently-referenced memory, marked
+ *   referenced so it doesn't repeat every day (ticket #22 AC #2).
  *
- * Everything else (auth, persona LLM output, memory) is later ticket
- * work (ARCHITECTURE.md §3.2).
+ * Everything else (auth, persona LLM output) is later ticket work
+ * (ARCHITECTURE.md §3.2).
  */
 export function startServer(env: Env, pool: Pool): Promise<AppServiceHandle> {
   return new Promise((resolve, reject) => {
