@@ -154,6 +154,11 @@ export class VoiceConnection {
     this.trySend({ type: 'session_start', learnerId, sessionId });
   }
 
+  /** Ticket #32: the text-input path — bypasses audio entirely, funnels into the exact same server-side pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */
+  sendTextInput(text: string): void {
+    this.trySend({ type: 'text_input', text });
+  }
+
   private trySend(message: { type: string; [key: string]: unknown }): boolean {
     if (!this.ws || this.state !== 'open')
       return false;

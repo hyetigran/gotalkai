@@ -458,3 +458,111 @@ describe('TurnOrchestrator safety escape hatch (ticket #27)', () => {
     expect(detectSafetyTrigger).not.toHaveBeenCalled();
   });
 });
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('TurnOrchestrator text input (ticket #32)', () => {
+  it('runs the exact same cascade as voice: filler -> transcript_final -> persona_turn -> tts_chunk -> turn_complete, with no low-confidence check anywhere in it', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn, annotateText, synthesizeSpeech } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.submitTextInput('Привет, как дела?');
+
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Привет, как дела?' }]);
+    expect(annotateText).toHaveBeenCalledWith('Ах, конечно.');
+    expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'voice-123', 'Ах, конечно.[annotated]', expect.any(Object));
+
+    const types = waiter.messages.map(message => message.type);
+    expect(types).toEqual(['persona_filler', 'transcript_final', 'persona_turn', 'tts_chunk', 'turn_complete']);
+    expect(waiter.messages).toContainEqual({ type: 'transcript_final', text: 'Привет, как дела?' });
+  });
+
+  it('shares real conversation history with the voice path — a text turn followed by a voice turn sees the text turn in its own history, and vice versa', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.submitTextInput('Текстовое сообщение.');
+    // Marks the text turn's own turn_complete as claimed, so the waitFor below genuinely waits
+    // for the voice turn's (otherwise it immediately resolves against this leftover instead —
+    // the same class of bug already found and fixed once in this file's own message waiter).
+    await waiter.waitFor('turn_complete');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(generatePersonaTurn).toHaveBeenLastCalledWith(deps.anthropicClient, [
+      { speaker: 'learner', text: 'Текстовое сообщение.' },
+      { speaker: 'persona', text: 'Ах, конечно.' },
+      { speaker: 'learner', text: goodTranscript.text },
+    ]);
+  });
+
+  it('runs the safety check on typed text too, and breaks character the same way voice input does — same layer, per AC #3', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn } = fakeDeps(waiter, { safetyCategory: 'distress' });
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.submitTextInput('some distress-signaling typed message');
+
+    expect(generatePersonaTurn).not.toHaveBeenCalled();
+    const safetyMessage = waiter.messages.find(message => message.type === 'safety_response');
+    expect(safetyMessage).toMatchObject({ type: 'safety_response', category: 'distress' });
+  });
+
+  it('is a no-op while held, matching PRD §7.9\'s "turn detection is suspended entirely" for any input modality', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    orchestrator.holdStart();
+    await orchestrator.submitTextInput('should be ignored while held');
+
+    expect(generatePersonaTurn).not.toHaveBeenCalled();
+    expect(waiter.messages).toEqual([]);
+  });
+
+  it('is a no-op for empty or whitespace-only text', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.submitTextInput('');
+    await orchestrator.submitTextInput('   ');
+
+    expect(generatePersonaTurn).not.toHaveBeenCalled();
+    expect(waiter.messages).toEqual([]);
+  });
+
+  it('typing while she is still speaking interrupts her — sends barge_in, the same as speaking over her in voice mode', async () => {
+    const waiter = createMessageWaiter();
+    let releaseSynthesis: (() => void) | undefined;
+    const { deps } = fakeDeps(waiter);
+    deps.synthesizeSpeech = jest.fn(() => new Promise((resolve) => {
+      releaseSynthesis = () => resolve([]);
+    }));
+
+    const orchestrator = new TurnOrchestrator(deps);
+    void orchestrator.submitTextInput('Первое сообщение.');
+    await waiter.waitFor('persona_turn'); // now genuinely 'speaking', synthesis in flight
+
+    expect(orchestrator.currentState).toBe('speaking');
+    // Not awaited: handleBargeIn runs synchronously at the top of submitTextInput, before any
+    // await point, so barge_in is already sent by the time this call returns control — awaiting
+    // the whole call here would hang on the second turn's own (also-stubbed) synthesizeSpeech.
+    const secondTurn = orchestrator.submitTextInput('Перебиваю.');
+
+    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
+
+    // Waits for the second turn's own persona_turn (not the first's, already consumed above) —
+    // proves the second call has reached its own synthesizeSpeech, so releaseSynthesis now
+    // resolves *that* call's promise, not the superseded first turn's.
+    await waiter.waitFor('persona_turn');
+    releaseSynthesis?.();
+    await secondTurn;
+    // Only the second turn's completion should ever land — the first turn was superseded.
+    const turnCompleteCount = waiter.messages.filter(message => message.type === 'turn_complete').length;
+    expect(turnCompleteCount).toBe(1);
+  });
+});

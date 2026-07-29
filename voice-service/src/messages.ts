@@ -36,6 +36,12 @@ const sessionStartMessageSchema = z.object({
 const holdStartMessageSchema = z.object({ type: z.literal('hold_start') });
 const holdEndMessageSchema = z.object({ type: z.literal('hold_end') });
 
+/** Ticket #32 (PRD §12.3): the text-input path — bypasses VAD/STT entirely, funnels into the same downstream pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */
+const textInputMessageSchema = z.object({
+  type: z.literal('text_input'),
+  text: z.string().min(1),
+});
+
 export const clientMessageSchema = z.union([
   z.object({
     type: z.literal('ping'),
@@ -46,6 +52,7 @@ export const clientMessageSchema = z.union([
   sessionStartMessageSchema,
   holdStartMessageSchema,
   holdEndMessageSchema,
+  textInputMessageSchema,
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

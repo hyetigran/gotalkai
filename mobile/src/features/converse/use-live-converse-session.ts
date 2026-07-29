@@ -92,6 +92,9 @@ type UseLiveConverseSessionOptions = {
   sessionId: string;
 };
 
+/** Ticket #32 AC #2: "switchable per session," not a permanent account-level setting — local component state, not persisted anywhere. */
+export type InputMode = 'voice' | 'text';
+
 /**
  * Real counterpart to `use-converse-session.ts`'s scripted state machine —
  * ticket #18. Drives `phase`/`turns` off actual server messages instead of
@@ -116,6 +119,7 @@ type UseLiveConverseSessionOptions = {
 export function useLiveConverseSession({ url, token, learnerId, sessionId }: UseLiveConverseSessionOptions) {
   const [state, dispatch] = React.useReducer(converseReducer, INITIAL_STATE);
   const [holding, setHolding] = React.useState(false);
+  const [mode, setMode] = React.useState<InputMode>('voice');
 
   const connectionRef = React.useRef<VoiceConnection | null>(null);
   const autoReleaseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,6 +186,21 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
     autoReleaseTimerRef.current = setTimeout(holdOff, HOLD_AUTO_RELEASE_MS);
   }, [hasFloor, holdOff]);
 
+  /**
+   * Ticket #32: the text-input path. Deliberately thin — everything that
+   * makes text mode "preserve the persona experience" (AC #1: same
+   * recasts, same register, same debrief/memory machinery) happens
+   * server-side in turn-orchestrator.ts's shared `runPersonaCascade`, not
+   * here. This function's only job is getting the typed string onto the
+   * wire; the resulting `persona_filler`/`transcript_final`/`persona_turn`/
+   * `tts_chunk`/`turn_complete` messages flow back through the exact same
+   * reducer above that handles a voice turn — no separate text-mode
+   * branch exists in `converseReducer` because none is needed.
+   */
+  const submitText = React.useCallback((text: string) => {
+    connectionRef.current?.sendTextInput(text);
+  }, []);
+
   return {
     phase: state.phase,
     turns: state.turns,
@@ -191,5 +210,8 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
     lastTimestamps: state.lastTimestamps,
     holdOn,
     holdOff,
+    mode,
+    setMode,
+    submitText,
   };
 }

@@ -194,5 +194,25 @@ describe('voice service server', () => {
       ws.close();
       await handle.close();
     });
+
+    // No "accepts a well-formed text_input" happy-path test here, deliberately — unlike
+    // audio_chunk (where silent audio never crosses the VAD threshold, so it never triggers a
+    // real vendor call), there is no equivalent inert text_input payload: any non-empty text
+    // immediately reaches the real safety-detection/persona-generation/TTS pipeline against this
+    // environment's fake vendor credentials (docs/adr/0021). The real, meaningful happy-path
+    // coverage for ticket #32's text-input pipeline lives in turn-orchestrator.test.ts, against
+    // injected fakes — the same place voice's own happy-path pipeline coverage lives.
+    it('rejects a malformed text_input (empty text) the same way as any other unrecognized message', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'text_input', text: '' }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
+
+      ws.close();
+      await handle.close();
+    });
   });
 });
