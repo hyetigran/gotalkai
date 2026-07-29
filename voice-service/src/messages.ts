@@ -3,7 +3,12 @@ import { z } from 'zod';
 /**
  * Client/server message schemas — the second of Zod's three boundaries
  * (PRD §7.8). This skeleton only needs the round-trip ping; the real
- * pipeline's audio/control messages are later ticket work.
+ * pipeline's audio/control messages are later ticket work. Ticket #26
+ * ("runtime validation hardening") confirmed the boundary itself is
+ * already sound for what exists today: server.ts rejects malformed JSON
+ * and well-formed-but-unrecognized messages with a distinct error each
+ * (see server.test.ts), never crashing or silently dropping input — the
+ * hardening this ticket asks for is already in place, not added by it.
  */
 export const clientMessageSchema = z.object({
   type: z.literal('ping'),

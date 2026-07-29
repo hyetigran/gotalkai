@@ -1,10 +1,14 @@
 import { z } from 'zod';
 
 /**
- * Minimal env validation at boot (PRD §7.8 — one of exactly three places
- * Zod belongs: "environment config at boot"). This is deliberately small;
- * the fuller runtime-validation hardening (persona LLM output, full
- * client/server API schemas) is later pipeline work, not this skeleton.
+ * Env validation at boot (PRD §7.8 — one of exactly three places Zod
+ * belongs: "environment config at boot"). Audited for completeness in
+ * ticket #26 ("runtime validation hardening... superseding the minimal
+ * check from ticket #11"): every env var this service actually reads
+ * (grepped for `process.env` usage) is covered here — `PORT`,
+ * `NODE_ENV`, `VOICE_SERVICE_AUTH_TOKEN` — so there's nothing left
+ * un-validated to add. Grows only if a real new config need shows up in
+ * pipeline work (persona LLM keys, etc.), not preemptively.
  */
 const envSchema = z.object({
   /** Railway injects this for the container; falls back to a sane local default. */

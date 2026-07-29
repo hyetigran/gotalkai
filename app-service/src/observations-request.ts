@@ -7,7 +7,10 @@ import { z } from 'zod';
  * analyser, ticket #14+) is a separate process across a network boundary.
  */
 export const recordObservationsRequestSchema = z.object({
-  learnerId: z.string().min(1),
+  // Validated as a well-formed UUID, not just non-empty (ticket #26 AC
+  // #1) — whether it's a *real* learner is left to the database's FK
+  // constraint (ticket #26 AC #3), not duplicated here.
+  learnerId: z.string().uuid(),
   observations: z.array(z.object({
     kind: z.string().min(1),
     structureKey: z.string().min(1).optional(),

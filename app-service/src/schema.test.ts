@@ -100,6 +100,17 @@ describe('schema.sql', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects a session referencing a learner_id that does not exist, specifically via the FK constraint (ticket #26 AC #3)', async () => {
+    // Direct DB-level proof, not just an HTTP-level 503 (which a blanket
+    // catch block would also return for an unrelated connectivity
+    // failure) — this asserts the *specific* Postgres error code for a
+    // foreign-key violation (23503), confirming sessions_learner_id_fkey
+    // is what's actually doing the rejecting, not a coincidental error.
+    await expect(
+      pool.query('INSERT INTO sessions (learner_id) VALUES ($1)', ['00000000-0000-0000-0000-000000000000']),
+    ).rejects.toMatchObject({ code: '23503' });
+  });
+
   it('keeps observations even when only some are surfaced as debrief_items', async () => {
     const learnerId = await makeLearner(pool);
     const sessionId = await makeSession(pool, learnerId, new Date());

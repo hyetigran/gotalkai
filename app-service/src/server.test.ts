@@ -398,4 +398,110 @@ describe('app service server', () => {
       await pool.end();
     });
   });
+
+  describe('runtime validation hardening (ticket #26)', () => {
+    it('GET /sessions/:id/debrief with a malformed session id returns 400, not a database-error 503', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/sessions/not-a-uuid/debrief');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /sessions/:id/scenario with a malformed session id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/sessions/not-a-uuid/scenario');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/observations with a malformed session id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions/not-a-uuid/observations', {
+        learnerId: '00000000-0000-0000-0000-000000000000',
+        observations: [{ kind: 'grammar_error' }],
+      });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/callback with a malformed learner id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/learners/not-a-uuid/callback');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions rejects a malformed (non-UUID) learnerId in the body with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions', { learnerId: 'not-a-uuid' });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/observations rejects a malformed (non-UUID) learnerId in the body with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/observations', {
+        learnerId: 'not-a-uuid',
+        observations: [{ kind: 'grammar_error' }],
+      });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('a well-formed but nonexistent learnerId is not rejected by app-level validation — it passes Zod and falls through to the generic database-error path (ticket #26 AC #3)', async () => {
+      // This test proves there is no *separate app-level existence
+      // check* (no 4xx branch anywhere for "learner not found") — it
+      // does not, by itself, prove the FK constraint specifically is
+      // what rejects the insert versus some other DB-level failure; the
+      // route's catch block is a blanket 503 for any non-cap error. The
+      // FK constraint itself — confirmed as the actual mechanism, with
+      // its specific Postgres error code — is tested directly in
+      // schema.test.ts's "rejects a session referencing a learner_id
+      // that does not exist" test.
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      // Well-formed UUID, Zod accepts it — whether a learner with this
+      // id actually exists is left entirely to sessions_learner_id_fkey.
+      const response = await post(handle.port, '/sessions', { learnerId: '00000000-0000-0000-0000-000000000000' });
+      expect(response.statusCode).not.toBe(400); // not rejected by Zod
+      expect(response.statusCode).not.toBe(201); // not silently accepted either
+      expect(response.statusCode).toBe(503); // falls through to the same generic path as any other unexpected DB failure
+
+      await handle.close();
+      await pool.end();
+    });
+  });
 });

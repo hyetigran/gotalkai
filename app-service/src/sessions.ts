@@ -5,9 +5,16 @@ import { selectNextScenario } from './scenario-selector';
 import { countSessionsToday, DailySessionCapReachedError, hasReachedDailyCap } from './session-cap';
 import { seedStarterMemories } from './seed-starter-memories';
 
-/** `POST /sessions` request body. */
+/**
+ * `POST /sessions` request body. `learnerId` is validated as a
+ * well-formed UUID (not just a non-empty string) so a malformed id is
+ * rejected clearly here rather than reaching Postgres as a raw type
+ * error (ticket #26 AC #1) — whether the id refers to a *real* learner
+ * is deliberately left to the database's own FK constraint, not
+ * duplicated here (ticket #26 AC #3).
+ */
 export const createSessionRequestSchema = z.object({
-  learnerId: z.string().min(1),
+  learnerId: z.string().uuid(),
 });
 
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
