@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import type { Env } from './env';
 import { createServer as createHttpServer } from 'node:http';
 
+import { detectAndRecordAvoidance } from './avoidance-detection';
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
 import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from './memories-request';
@@ -154,6 +155,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     }
     try {
       await recordObservations(pool, sessionId, parsed.data.learnerId, parsed.data.observations);
+      // Ticket #23: runs after the analyser's own observations are
+      // written (so "was the target attempted" can be checked against
+      // this session's real data) and before ranking, so a detected
+      // avoidance is itself eligible for promotion into the debrief.
+      await detectAndRecordAvoidance(pool, sessionId, parsed.data.learnerId);
       const debriefItems = await rankAndPromoteDebrief(pool, sessionId, parsed.data.learnerId);
       sendJson(res, 201, { status: 'ok', debriefItems });
     }
@@ -331,8 +337,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   (ticket #21) against the learner's real learner_structures/session
  *   history, writing the result onto the new row.
  * - `POST /sessions/:id/observations` — writes every observation the
- *   caller reports, then ranks and promotes the top patterns into
- *   `debrief_items` (PRD §5.4, ticket #20).
+ *   caller reports, diffs the session's real observations against its
+ *   injected target structure and writes a distinct `avoidance`
+ *   observation if it was never attempted (PRD §5.5, ticket #23), then
+ *   ranks and promotes the top patterns into `debrief_items` (PRD §5.4,
+ *   ticket #20).
  * - `GET /sessions/:id/debrief` — the promoted `debrief_items` for a
  *   session, for the Debrief screen to render.
  * - `GET /sessions/:id/scenario` — the session's assigned scenario
