@@ -1,4 +1,4 @@
-import type { InputMode } from '../use-live-converse-session';
+import type { InputMode } from '@/features/converse/use-live-converse-session';
 import { Pressable, Text, View } from 'react-native';
 
 type InputModeToggleProps = {

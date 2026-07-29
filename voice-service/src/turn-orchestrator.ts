@@ -204,11 +204,7 @@ export class TurnOrchestrator {
     if (this.state === 'speaking')
       this.handleBargeIn();
 
-    const myToken = this.generationToken;
-    const now = this.deps.now ?? Date.now;
-    const t0TurnDetected = now();
-    this.state = 'processing';
-    this.deps.sendMessage({ type: 'persona_filler', text: FILLER_LINES[this.history.length % FILLER_LINES.length] as string });
+    const { myToken, t0TurnDetected } = this.beginTurn();
     // No real STT stage exists for typed input — t0/t1 collapse to the instant the text arrived,
     // matching how the voice-only stages collapse to a single timestamp elsewhere when they didn't
     // really run (see respondWithDidntCatchThat/respondWithSafetyMessage).
@@ -243,12 +239,25 @@ export class TurnOrchestrator {
     this.deps.sendMessage({ type: 'barge_in' });
   }
 
-  private async handleTurnDetected(): Promise<void> {
+  /**
+   * Shared turn-initiation preamble for both entry points (ticket #32):
+   * snapshot the generation token, mark t0, flip to `processing`, and
+   * send the in-character filler. Everything after this point diverges
+   * (STT wait vs. immediate text) until both rejoin at
+   * `checkSafetyAndRespond`/`runPersonaCascade`.
+   */
+  private beginTurn(): { myToken: number; t0TurnDetected: number } {
     const myToken = this.generationToken;
     const now = this.deps.now ?? Date.now;
     const t0TurnDetected = now();
     this.state = 'processing';
     this.deps.sendMessage({ type: 'persona_filler', text: FILLER_LINES[this.history.length % FILLER_LINES.length] as string });
+    return { myToken, t0TurnDetected };
+  }
+
+  private async handleTurnDetected(): Promise<void> {
+    const { myToken, t0TurnDetected } = this.beginTurn();
+    const now = this.deps.now ?? Date.now;
 
     let transcript: SttTranscript;
     try {
