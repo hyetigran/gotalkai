@@ -10,6 +10,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     NODE_ENV: 'test',
     VOICE_SERVICE_AUTH_TOKEN: AUTH_TOKEN,
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    ELEVENLABS_API_KEY: 'el-test-key',
     ...overrides,
   };
 }

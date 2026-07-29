@@ -4,6 +4,7 @@ describe('loadEnv', () => {
   const validBase = {
     VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32),
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    ELEVENLABS_API_KEY: 'el-test-key',
   };
 
   it('accepts a minimal valid environment and applies defaults', () => {
@@ -27,7 +28,11 @@ describe('loadEnv', () => {
   });
 
   it('rejects a missing Anthropic API key', () => {
-    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32) })).toThrow(/ANTHROPIC_API_KEY/);
+    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32), ELEVENLABS_API_KEY: 'el-test-key' })).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it('rejects a missing ElevenLabs API key', () => {
+    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32), ANTHROPIC_API_KEY: 'sk-ant-test-key' })).toThrow(/ELEVENLABS_API_KEY/);
   });
 
   it('rejects a non-positive port', () => {
