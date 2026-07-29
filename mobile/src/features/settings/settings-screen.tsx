@@ -74,6 +74,20 @@ export function SettingsScreen() {
         ))}
       </View>
 
+      {/* Ticket #35: not part of the mockup's verbatim `copy.rows` list above (no mockup exists for this feature yet — see docs/adr/0018), so it's its own real, functional row rather than mixed into that static block. */}
+      <Text className="font-mono-medium mt-[34px] text-[10px] tracking-[0.12em] text-ink/42 uppercase">
+        Progress
+      </Text>
+      <Pressable
+        onPress={() => router.push('/benchmark')}
+        accessibilityRole="button"
+        accessibilityLabel="Monthly benchmark"
+        className="mt-[12px] flex-row items-center justify-between gap-[10px] rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]"
+      >
+        <Text className="font-serif text-[16px] text-ink">Monthly benchmark</Text>
+        <Text className="text-[14px] text-ink/30">›</Text>
+      </Pressable>
+
       <Pressable
         onPress={() => router.back()}
         accessibilityRole="button"

@@ -2,6 +2,7 @@ import type { Env } from './env';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { applySchema } from './schema';
+import { seedBenchmark } from './seed-benchmark';
 import { seedScenarios } from './seed-scenarios';
 import { startServer } from './server';
 
@@ -732,6 +733,75 @@ describe('app service server', () => {
       expect(response.statusCode).not.toBe(201); // not silently accepted either
       expect(response.statusCode).toBe(503); // falls through to the same generic path as any other unexpected DB failure
 
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('benchmark endpoints (ticket #35)', () => {
+    it('GET /benchmark-sets/current returns the seeded set without leaking correct answers', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedBenchmark(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/benchmark-sets/current');
+      expect(response.statusCode).toBe(200);
+      const benchmarkSet = response.body?.benchmarkSet as Record<string, unknown>;
+      expect(typeof benchmarkSet.monthKey).toBe('string');
+      const items = benchmarkSet.items as Record<string, unknown>[];
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) expect(item).not.toHaveProperty('correctChoiceIndex');
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/benchmark-attempts scores a real submission and GET .../benchmark-attempts reflects it in the trend', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedBenchmark(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      const setResponse = await get(handle.port, '/benchmark-sets/current');
+      const benchmarkSet = setResponse.body?.benchmarkSet as { id: string; items: { id: string }[] };
+
+      const submitResponse = await post(handle.port, `/learners/${learnerId}/benchmark-attempts`, {
+        benchmarkSetId: benchmarkSet.id,
+        answers: benchmarkSet.items.map(item => ({ itemId: item.id, selectedChoiceIndex: 0 })),
+      });
+      expect(submitResponse.statusCode).toBe(201);
+      const result = submitResponse.body?.result as { correctCount: number; totalCount: number };
+      expect(result.totalCount).toBe(benchmarkSet.items.length);
+
+      const trendResponse = await get(handle.port, `/learners/${learnerId}/benchmark-attempts`);
+      expect(trendResponse.statusCode).toBe(200);
+      const trend = trendResponse.body?.trend as unknown[];
+      expect(trend).toHaveLength(1);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/benchmark-attempts rejects a malformed submission with 400, not a generic 503', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedBenchmark(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const response = await post(handle.port, `/learners/${learnerId}/benchmark-attempts`, {
+        benchmarkSetId: '00000000-0000-0000-0000-000000000000',
+        answers: [{ itemId: '00000000-0000-0000-0000-000000000001', selectedChoiceIndex: 0 }],
+      });
+      expect(response.statusCode).toBe(400);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
       await pool.end();
     });

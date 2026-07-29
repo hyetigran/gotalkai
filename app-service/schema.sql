@@ -273,3 +273,60 @@ BEGIN
     ALTER TABLE sessions ADD CONSTRAINT sessions_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES scenarios(id);
   END IF;
 END $$;
+
+-- === benchmark_sets / benchmark_items / benchmark_attempts ==================
+-- Ticket #35 (PRD §6.3: "the learner is re-tested on a fresh piece of
+-- authentic Russian audio; we report comprehension climbing over
+-- time"). See docs/adr/0018 for the full design reasoning.
+
+-- One row per month's content. `month_key` (e.g. '2026-07') is the
+-- stable content identifier for seeding/lookups, matching `scenarios`'s
+-- `scene_key` convention — independent of the DB-generated id.
+CREATE TABLE IF NOT EXISTS benchmark_sets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  month_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per audio clip + comprehension question within a set.
+-- `choices`/`correct_choice_index` are content, not schema (same
+-- rationale as `scenario_complications.target_structure_key`'s own
+-- comment) — JSONB matches `sessions.calibration`'s existing precedent
+-- for flexible per-row content. `correct_choice_index` is never
+-- selected by src/benchmark.ts's client-facing read path (docs/adr/0018:
+-- "scoring integrity") — only by the server-side scoring function.
+CREATE TABLE IF NOT EXISTS benchmark_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  benchmark_set_id UUID NOT NULL REFERENCES benchmark_sets(id) ON DELETE CASCADE,
+  item_order INTEGER NOT NULL CHECK (item_order >= 0),
+  audio_url TEXT NOT NULL,
+  question TEXT NOT NULL,
+  choices JSONB NOT NULL,
+  correct_choice_index INTEGER NOT NULL,
+  UNIQUE (benchmark_set_id, item_order)
+);
+
+-- One row per learner's completed attempt at a set — the trend view
+-- (docs/adr/0018: "numbers, not a chart") reads this ordered by
+-- completed_at. `correct_count`/`total_count` are computed and written
+-- server-side at submission time (never trust a client-reported score),
+-- so this table stores the *result*, not raw per-question answers —
+-- there's no product requirement to review which specific question was
+-- missed after the fact, only the trend.
+--
+-- Deliberately no ON DELETE clause on benchmark_set_id, matching
+-- sessions.scenario_id's own precedent: attempt history must survive
+-- even if a set's content row is ever removed, not cascade away with it.
+CREATE TABLE IF NOT EXISTS benchmark_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  learner_id UUID NOT NULL REFERENCES learners(id) ON DELETE CASCADE,
+  benchmark_set_id UUID NOT NULL REFERENCES benchmark_sets(id),
+  correct_count INTEGER NOT NULL CHECK (correct_count >= 0),
+  total_count INTEGER NOT NULL CHECK (total_count > 0),
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_items_benchmark_set_id ON benchmark_items(benchmark_set_id);
+CREATE INDEX IF NOT EXISTS idx_benchmark_attempts_learner_id ON benchmark_attempts(learner_id);
+CREATE INDEX IF NOT EXISTS idx_benchmark_attempts_benchmark_set_id ON benchmark_attempts(benchmark_set_id);
