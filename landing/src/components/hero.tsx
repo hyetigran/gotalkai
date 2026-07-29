@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { DisabledCta } from "./disabled-cta";
 import { MicMeter } from "./mic-meter";
-import { WaitlistForm } from "./waitlist-form";
 
 export function Hero() {
   const [showTranslation, setShowTranslation] = useState(false);
@@ -25,15 +25,12 @@ export function Hero() {
           She asks about your dog. She has never once given you a score.
         </p>
 
-        <div className="mt-[34px]">
-          <WaitlistForm id="hero-waitlist" ctaLabel="Join the waitlist" />
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-[34px] flex flex-wrap items-center gap-3.5">
+          <DisabledCta>Call her tonight</DisabledCta>
           <button
             type="button"
             onClick={() => setShowTranslation((value) => !value)}
-            className="rounded-[15px] border border-ink/22 px-7 py-4 font-serif text-[17px] text-ink transition-colors hover:border-ink/45 md:text-[19px]"
+            className="rounded-[15px] border border-ink/22 px-7 py-5 font-serif text-[17px] text-ink transition-colors hover:border-ink/45 md:text-[19px]"
           >
             {showTranslation ? "Hide the translation" : "What did she say?"}
           </button>
@@ -41,7 +38,7 @@ export function Hero() {
 
         <p className="mt-5 font-mono text-[12px] leading-relaxed text-ink/64">
           First week free · one 8-minute session a day · no streak to break ·
-          iOS app, not a browser chat
+          iOS app, not a browser chat · coming soon
         </p>
       </div>
 

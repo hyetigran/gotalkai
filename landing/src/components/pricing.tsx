@@ -1,4 +1,4 @@
-import { WaitlistForm } from "./waitlist-form";
+import { DisabledCta } from "./disabled-cta";
 
 const LIMITS = [
   {
@@ -33,14 +33,10 @@ export function Pricing() {
           a paywall trick. About a fifth of one hour with a tutor.
         </p>
         <div className="mt-[34px]">
-          <WaitlistForm
-            id="price-waitlist"
-            ctaLabel="Start the first week free"
-          />
+          <DisabledCta>Start the first week free</DisabledCta>
         </div>
         <p className="mt-[18px] font-mono text-[12px] leading-relaxed text-ink/64">
-          Cancel in two taps · iOS first, Android later this year · not a web
-          conversation client
+          Cancel in two taps · iOS first, Android later this year · coming soon
         </p>
       </div>
 

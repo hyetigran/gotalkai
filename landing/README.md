@@ -2,7 +2,7 @@
 
 Marketing site for **Talk AI** (repo / product working names: gotalkai, LingoAI).
 
-This is a go-to-market surface — waitlist + product story. It is **not** a web client for the conversation loop. Voice practice ships as a mobile app.
+Product story only — **not** a web client for the conversation loop. Primary CTAs are disabled until the iOS app / TestFlight link is ready.
 
 Design reference: Claude Design handoff in `Initial mockup request 2/Landing Page.dc.html`, using the same paper / ink / accent tokens as `mobile/`.
 
@@ -30,24 +30,9 @@ npm run build
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `BLOB_READ_WRITE_TOKEN` | Production | Vercel Blob write token for waitlist persistence |
-| `NEXT_PUBLIC_SITE_URL` | Recommended | Canonical site URL for Open Graph / metadata (e.g. `https://your-domain.vercel.app`) |
+| `NEXT_PUBLIC_SITE_URL` | Recommended | Canonical site URL for Open Graph / metadata (e.g. `https://gotalkai-landing.vercel.app`) |
 
 Copy `.env.example` to `.env.local` when needed.
-
-### Waitlist storage
-
-`POST /api/waitlist` validates an email with Zod, then:
-
-1. **If `BLOB_READ_WRITE_TOKEN` is set** — writes a **private** JSON object to Vercel Blob under `waitlist/…` (production path).
-2. **Otherwise** — appends a JSONL line to `landing/.data/waitlist.jsonl` (local only). That directory is gitignored. On Vercel without a Blob token the API returns an error (serverless FS is read-only).
-
-Create / link a **private** Blob store in the Vercel project (Storage → Blob, or `vercel blob create-store <name> --access private --yes`), then redeploy so `BLOB_READ_WRITE_TOKEN` is present.
-
-```bash
-cd landing
-vercel env pull .env.local
-```
 
 ## Vercel deploy
 

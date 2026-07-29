@@ -15,7 +15,7 @@ export function SiteFooter() {
           Method
         </a>
         <a href="#price" className="font-mono text-[12px] text-ink/64 hover:text-accent">
-          Waitlist
+          Price
         </a>
       </div>
     </footer>

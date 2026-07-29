@@ -14,19 +14,25 @@ export function SiteHeader() {
         <a href="#price" className="font-sans text-[14px] text-ink/64 hover:text-accent">
           Price
         </a>
-        <a
-          href="#hero-waitlist"
-          className="rounded-xl bg-accent px-5 py-[13px] font-serif text-[15px] text-paper shadow-[0_2px_0_rgba(35,31,24,0.14)] transition-colors hover:bg-accent-pressed"
+        <button
+          type="button"
+          disabled
+          aria-disabled="true"
+          title="Coming soon"
+          className="cursor-not-allowed rounded-xl bg-accent px-5 py-[13px] font-serif text-[15px] text-paper opacity-55 shadow-[0_2px_0_rgba(35,31,24,0.14)]"
         >
           Start free
-        </a>
+        </button>
       </nav>
-      <a
-        href="#hero-waitlist"
-        className="rounded-xl bg-accent px-4 py-3 font-serif text-[14px] text-paper md:hidden"
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        title="Coming soon"
+        className="cursor-not-allowed rounded-xl bg-accent px-4 py-3 font-serif text-[14px] text-paper opacity-55 md:hidden"
       >
         Start free
-      </a>
+      </button>
     </header>
   );
 }
