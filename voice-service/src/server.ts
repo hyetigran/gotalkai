@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { createServer as createHttpServer } from 'node:http';
 import { WebSocketServer } from 'ws';
+import { createAppServiceClient } from './app-service-client';
 import type { Env } from './env';
 import type { ServerMessage } from './messages';
 import { clientMessageSchema } from './messages';
@@ -55,13 +56,21 @@ function decodePcm16(pcmBase64: string): Int16Array {
  * Ticket #18: each connection gets its own `TurnOrchestrator` (#14-#17's
  * modules assembled into one live cascade — see turn-orchestrator.ts and
  * docs/adr/0017 for what's real vs. unverified here). `anthropicClient`/
- * `elevenLabsClient` are constructed once per server, not per connection —
- * they're stateless HTTP/WS clients, no reason to pay setup cost per turn.
+ * `elevenLabsClient`/`appServiceClient` are constructed once per server,
+ * not per connection — they're stateless HTTP/WS clients, no reason to
+ * pay setup cost per turn.
+ *
+ * Ticket #29 / docs/adr/0022: `appServiceClient` is the turn-persistence
+ * link ARCHITECTURE.md always specified but nothing built — every
+ * `session_start` message sets the orchestrator's real session id
+ * (`orchestrator.sessionStart`), after which `recordTurn`/
+ * `recordInterruption` post real turn artefacts to app-service.
  */
 export function startServer(env: Env): Promise<VoiceServiceHandle> {
   return new Promise((resolve, reject) => {
     const anthropicClient = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const elevenLabsClient = new ElevenLabsClient({ apiKey: env.ELEVENLABS_API_KEY });
+    const appServiceClient = createAppServiceClient(env.APP_SERVICE_URL);
 
     const httpServer = createHttpServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -94,6 +103,8 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
         elevenLabsApiKey: env.ELEVENLABS_API_KEY,
         voiceId: env.ELEVENLABS_VALENTINA_VOICE_ID,
         sendMessage: message => send(ws, message),
+        recordTurn: appServiceClient.recordTurn,
+        recordInterruption: appServiceClient.recordInterruption,
       });
 
       ws.on('message', (raw) => {
@@ -124,12 +135,13 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             orchestrator.holdEnd();
             return;
           case 'session_start':
-            // learnerId/sessionId are received but not yet persisted
-            // anywhere (posting turn artifacts/timings back through
-            // app-service, per ARCHITECTURE.md §6 step 3, is real,
-            // disclosed follow-up work — not built in this pass, see
-            // docs/adr/0017). Accepted without error so the client's
-            // handshake doesn't fail while that's pending.
+            // Ticket #29 / docs/adr/0022: the persistence link
+            // docs/adr/0017 disclosed as missing — every subsequent
+            // recordTurn/recordInterruption call needs this real
+            // session id to attribute a turn to. learnerId isn't used
+            // here: app-service's POST /sessions/:id/turns is keyed
+            // only by session, not learner.
+            orchestrator.sessionStart(result.data.sessionId);
             return;
           case 'text_input':
             void orchestrator.submitTextInput(result.data.text);

@@ -14,6 +14,7 @@ import { deleteLearner, recordAudioSamplingConsent } from './privacy';
 import { getScenarioViewForSession } from './scenario-view';
 import { DailySessionCapReachedError } from './session-cap';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner } from './sessions';
+import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from './turns';
 
 export type AppServiceHandle = {
   /** The port actually bound — matters when `env.PORT` is `0` (tests ask the OS for a free port). */
@@ -45,6 +46,9 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 const SESSION_OBSERVATIONS_PATH = /^\/sessions\/([^/]+)\/observations$/;
 const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
 const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
+const SESSION_TURNS_PATH = /^\/sessions\/([^/]+)\/turns$/;
+const TURN_REVEAL_PATH = /^\/turns\/([^/]+)\/reveal$/;
+const TURN_INTERRUPTION_PATH = /^\/turns\/([^/]+)\/interruption$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
 const LEARNER_AUDIO_SAMPLING_CONSENT_PATH = /^\/learners\/([^/]+)\/audio-sampling-consent$/;
@@ -202,6 +206,91 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
         return;
       }
       sendJson(res, 200, { status: 'ok', scenario });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const turnsMatch = SESSION_TURNS_PATH.exec(url);
+  if (req.method === 'POST' && turnsMatch) {
+    const sessionId = parseUuidParam(turnsMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = recordTurnRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const id = await recordTurn(pool, sessionId, parsed.data);
+      sendJson(res, 201, { status: 'ok', id });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const turnRevealMatch = TURN_REVEAL_PATH.exec(url);
+  if (req.method === 'PATCH' && turnRevealMatch) {
+    const turnId = parseUuidParam(turnRevealMatch[1] as string);
+    if (!turnId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid turn id' });
+      return;
+    }
+    try {
+      const revealed = await markTurnRevealed(pool, turnId);
+      if (!revealed) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok' });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const turnInterruptionMatch = TURN_INTERRUPTION_PATH.exec(url);
+  if (req.method === 'POST' && turnInterruptionMatch) {
+    const turnId = parseUuidParam(turnInterruptionMatch[1] as string);
+    if (!turnId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid turn id' });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = recordInterruptionRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const recorded = await recordInterruption(pool, turnId, parsed.data.interruptedAfterMs);
+      if (!recorded) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok' });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -414,6 +503,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * - `GET /sessions/:id/scenario` — the session's assigned scenario
  *   resolved into full content (title/ladder/intro), for the Tomorrow
  *   screen to render (ticket #21).
+ * - `POST /sessions/:id/turns` — writes one `turns` row (ticket #29 /
+ *   docs/adr/0022): the persistence link voice-service's turn
+ *   orchestrator posts to after each learner/persona turn, the
+ *   foundation every derived observability metric reads from.
+ * - `PATCH /turns/:id/reveal` — marks a turn's translation as revealed
+ *   (ticket #29 AC #3: reveal-rate signal, needs no manual labelling).
+ * - `POST /turns/:id/interruption` — records a barge-in's elapsed ms
+ *   since the interrupted persona turn's own `t5FirstAudio` (ticket #29:
+ *   false-interruption-rate signal).
  * - `POST /learners/:id/memories` — writes a `persona_memories` row
  *   (ticket #22 AC #1).
  * - `GET /learners/:id/callback` — the real callback line for the Open

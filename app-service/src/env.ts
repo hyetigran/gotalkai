@@ -51,6 +51,40 @@ const envSchema = z.object({
    * against. See docs/adr/0009-privacy-and-data-handling-scope.md.
    */
   AUDIO_SAMPLE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /**
+   * Ticket #29 / docs/adr/0022: PRD §11's "alert when a user crosses
+   * their subscription price," rolled up per learner over a trailing 30
+   * days (observability/cost.ts). $12 matches PRD §9's own subscription
+   * figure (the number the daily-session-cap math above is already
+   * built around) — not a separately sourced billing-system value, since
+   * no billing system exists yet.
+   */
+  SUBSCRIPTION_PRICE_USD: z.coerce.number().positive().default(12),
+  /**
+   * PRD §11: "Alert on P95, never mean." No PRD-specified numeric
+   * budget exists for the full turn-completion latency; 900ms matches
+   * PRD §7.3's own "700-900ms target" upper bound, cited already in
+   * ADR-0017's disclosure of what's unverified. Applied per pipeline
+   * stage (observability/p95.ts), not just the end-to-end total, so a
+   * single slow stage is visible even when the total still clears budget.
+   */
+  P95_LATENCY_BUDGET_MS: z.coerce.number().int().positive().default(900),
+  /**
+   * Ticket #29 AC #1: health alerts "page." No real paging vendor
+   * (PagerDuty/Opsgenie) account exists in this environment — this is
+   * the generic webhook seam any of those products expose on their
+   * receiving end (docs/adr/0022). Optional: unset means alerts are
+   * logged, not delivered, so tests and local dev don't need one
+   * configured.
+   */
+  HEALTH_ALERT_WEBHOOK_URL: z.string().url().optional(),
+  /**
+   * Ticket #29 AC #1: the quality path, structurally separate from
+   * HEALTH_ALERT_WEBHOOK_URL above — this is what makes "different
+   * alerting paths, not one dashboard with two tabs" real rather than
+   * cosmetic. Never paged into; see observability/alerting.ts.
+   */
+  QUALITY_REPORT_WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

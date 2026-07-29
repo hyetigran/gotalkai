@@ -5,7 +5,7 @@ import type { GeneratePersonaTurnResult } from './persona-turn';
 import type { SafetyCategory } from './safety-detection';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
-import { TurnOrchestrator, type TurnOrchestratorDeps } from './turn-orchestrator';
+import { type RecordedTurnInput, TurnOrchestrator, type TurnOrchestratorDeps } from './turn-orchestrator';
 
 function silentFrame(length = 160): Int16Array {
   return new Int16Array(length);
@@ -77,7 +77,7 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
   const sttSendAudioChunk = jest.fn();
   const sttClose = jest.fn();
   const generatePersonaTurn = jest.fn(async (): Promise<GeneratePersonaTurnResult> =>
-    options.personaTurn ?? { turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.' }, fellBackToFiller: false, rawOutput: '' });
+    options.personaTurn ?? { turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.' }, fellBackToFiller: false, rawOutput: '', usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } });
   const detectSafetyTrigger = jest.fn(async (): Promise<SafetyCategory> => options.safetyCategory ?? 'none');
   const annotateText = jest.fn((text: string) => ({ text: `${text}[annotated]`, unresolvedWords: [] }));
   const synthesizeSpeech = jest.fn(async (_client: unknown, _voiceId: string, _text: string, handlers?: TtsEventHandlers) => {
@@ -86,6 +86,10 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
     return [];
   });
   let clock = 0;
+  let nextTurnId = 0;
+  // Ticket #29: resolves with a fresh fake id per call by default, matching the real app-service endpoint's contract (turns.ts's recordTurn) closely enough for orchestrator-level tests — individual tests override this when they need to assert on specific ids/failures.
+  const recordTurn = jest.fn(async (_sessionId: string, _turn: RecordedTurnInput): Promise<string | null> => `turn-${nextTurnId++}`);
+  const recordInterruption = jest.fn(async (_turnId: string, _interruptedAfterMs: number): Promise<void> => {});
 
   const deps: TurnOrchestratorDeps = {
     createSttSession: jest.fn((_apiKey: string, handlers: SttEventHandlers) => {
@@ -101,11 +105,13 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
     elevenLabsApiKey: 'test-key',
     voiceId: 'voice-123',
     sendMessage: waiter.sendMessage,
+    recordTurn,
+    recordInterruption,
     now: () => clock++,
     vadConfig: { speechThresholdRms: 5000, silenceHangoverMs: 40 },
   };
 
-  return { deps, sttHandlers, sttSendAudioChunk, sttClose, generatePersonaTurn, detectSafetyTrigger, annotateText, synthesizeSpeech };
+  return { deps, sttHandlers, sttSendAudioChunk, sttClose, generatePersonaTurn, detectSafetyTrigger, annotateText, synthesizeSpeech, recordTurn, recordInterruption };
 }
 
 /** Pushes one loud frame (starts speech) then enough silent frames to cross the 40ms hangover — the standard "learner spoke one utterance" sequence for these tests. */
@@ -564,5 +570,191 @@ describe('TurnOrchestrator text input (ticket #32)', () => {
     // Only the second turn's completion should ever land — the first turn was superseded.
     const turnCompleteCount = waiter.messages.filter(message => message.type === 'turn_complete').length;
     expect(turnCompleteCount).toBe(1);
+  });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('TurnOrchestrator observability (ticket #29)', () => {
+  it('does not call recordTurn at all before sessionStart has been called — nothing to attribute a turn to yet', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(recordTurn).not.toHaveBeenCalled();
+  });
+
+  it('after sessionStart, records the learner turn and the persona turn with the real session id, register, timings, and cost', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', content: goodTranscript.text, learnerRegister: 'vy' }));
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({
+      speaker: 'persona',
+      content: 'Ах, конечно.',
+      personaRegister: 'ty',
+      timings: expect.objectContaining({ t0TurnDetected: expect.any(Number), t5FirstAudio: expect.any(Number) }),
+      costUsd: expect.any(Number),
+    }));
+  });
+
+  it('a barge-in mid-speech calls recordInterruption with the real persona turn id and the elapsed ms since her audio started', async () => {
+    const waiter = createMessageWaiter();
+    let releaseSynthesis: (() => void) | undefined;
+    const { deps, sttHandlers, recordTurn, recordInterruption } = fakeDeps(waiter);
+    // Fires onChunk immediately (her audio "starts" right away, matching how t5FirstAudio is defined) but then hangs — giving the test a window, still mid-synthesis, to push a barge-in.
+    deps.synthesizeSpeech = jest.fn((_client, _voiceId, _text, handlers) => {
+      handlers?.onChunk?.({ audioBase64: 'chunk-0' } as never, 0);
+      return new Promise((resolve) => {
+        releaseSynthesis = () => resolve([]);
+      });
+    });
+
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('tts_chunk'); // proves onChunk (and thus the synchronous recordPersonaTurn call inside it) has already run
+
+    // recordTurn's own promise for that call was attached to *before* this test can reach it — awaiting it here guarantees production's own .then() (which fills in the real turn id) has already run too, since same-promise .then() handlers fire in attachment order.
+    const personaCallIndex = recordTurn.mock.calls.findIndex(call => (call[1] as { speaker: string }).speaker === 'persona');
+    const turnId = await recordTurn.mock.results[personaCallIndex]?.value;
+    expect(orchestrator.currentState).toBe('speaking');
+
+    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+
+    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
+    expect(recordInterruption).toHaveBeenCalledWith(turnId, expect.any(Number));
+
+    releaseSynthesis?.();
+  });
+
+  it('does not record a barge-in that lands before her audio has actually started (still fetching the first TTS chunk)', async () => {
+    const waiter = createMessageWaiter();
+    let releaseSynthesis: (() => void) | undefined;
+    const { deps, sttHandlers, recordInterruption } = fakeDeps(waiter);
+    // Never calls onChunk before releaseSynthesis — mirrors the pre-existing barge-in test's own fixture, but this test asserts on the observability side.
+    deps.synthesizeSpeech = jest.fn(() => new Promise((resolve) => {
+      releaseSynthesis = () => resolve([]);
+    }));
+
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('persona_turn'); // proves we're in 'speaking', still before any chunk
+
+    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+
+    expect(recordInterruption).not.toHaveBeenCalled();
+    releaseSynthesis?.();
+  });
+
+  it('a barge-in during a safety response never misattributes to a stale earlier persona turn', async () => {
+    const waiter = createMessageWaiter();
+    let releaseFirstSynthesis: (() => void) | undefined;
+    const { deps, sttHandlers, recordInterruption } = fakeDeps(waiter, { safetyCategory: 'none' });
+
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    // A normal completed persona turn first — sets a real lastPersonaTurn.
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    // Now a safety-triggering turn, whose own synthesis hangs mid-flight.
+    deps.detectSafetyTrigger = jest.fn(async () => 'distress');
+    deps.synthesizeSpeech = jest.fn(() => new Promise((resolve) => {
+      releaseFirstSynthesis = () => resolve([]);
+    }));
+    speakOneUtterance(orchestrator);
+    sttHandlers[1]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('safety_response');
+
+    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+
+    // Must not fire against the earlier, already-completed normal turn.
+    expect(recordInterruption).not.toHaveBeenCalled();
+    releaseFirstSynthesis?.();
+  });
+
+  it('the "didn\'t catch that" path (low STT confidence) records both the learner\'s real transcript and the fixed persona line', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.({ text: 'мумбл мумбл', words: [goodWord('мумбл', -4), goodWord('мумбл', -5)] });
+    await waiter.waitFor('turn_complete');
+
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', content: 'мумбл мумбл' }));
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'persona', content: expect.stringContaining('расслышала') }));
+  });
+
+  it('the "didn\'t catch that" path records only the persona line, no learner turn, when the STT vendor errors outright — there is no transcript to record', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onError?.(new Error('vendor unavailable'));
+    await waiter.waitFor('turn_complete');
+
+    expect(recordTurn).toHaveBeenCalledTimes(1);
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'persona' }));
+  });
+
+  it('the safety-response path (ticket #27) never calls recordTurn at all — a deliberate, disclosed scope narrowing (docs/adr/0022)', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, recordTurn } = fakeDeps(waiter, { safetyCategory: 'distress' });
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(recordTurn).not.toHaveBeenCalled();
+  });
+
+  it('the text-input path (ticket #32) records the learner turn with zero STT cost — no STT stage ran for typed text', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    await orchestrator.submitTextInput('Привет, как дела?');
+
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', content: 'Привет, как дела?', costUsd: 0 }));
+  });
+
+  it('a recordTurn failure is logged and swallowed — never affects the live pipeline (ARCHITECTURE.md: "Voice has zero DB mid-turn")', async () => {
+    const waiter = createMessageWaiter();
+    const { deps } = fakeDeps(waiter);
+    deps.recordTurn = jest.fn(async () => {
+      throw new Error('app-service unreachable');
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    await orchestrator.submitTextInput('Привет, как дела?');
+    await new Promise(resolve => setTimeout(resolve, 0)); // let the rejected recordTurn promise's .catch run
+
+    expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

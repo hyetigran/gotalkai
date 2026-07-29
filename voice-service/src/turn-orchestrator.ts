@@ -7,7 +7,9 @@ import type { SafetyCategory, SafetyTriggerCategory } from './safety-detection';
 import type { AnnotatedText } from './stress/stress-annotation';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
+import { estimateLlmCostUsd, estimateSttCostUsd, estimateTtsCostUsd } from './cost';
 import { getSafetyResponseText } from './safety-detection';
+import { logTrace } from './tracing';
 import { computeRmsEnergy, VadGate } from './vad';
 
 /**
@@ -30,6 +32,19 @@ import { computeRmsEnergy, VadGate } from './vad';
  * voice-only path.
  */
 
+/** Ticket #29 / docs/adr/0022: what `deps.recordTurn` posts to app-service's `POST /sessions/:id/turns` — field-for-field the same shape as `app-service/src/turns.ts`'s `recordTurnRequestSchema` (duplicated, not imported — no pnpm workspace links the two services, same constraint docs/adr/0012 already hit). */
+export type RecordedTurnInput = {
+  speaker: 'persona' | 'learner';
+  content: string;
+  personaRegister?: string;
+  learnerRegister?: string;
+  timings?: TurnTimestamps;
+  costUsd?: number;
+};
+
+/** Ticket #29: see `lastPersonaTurn`'s own doc comment (below) for why `turnId` starts `null` and gets filled in-place. */
+type PersonaTurnMarker = { turnId: string | null; audioStartMs: number };
+
 /** Injected dependencies — production wiring passes the real functions from persona-turn.ts/stt.ts/tts.ts/stress-annotation.ts directly; tests pass fakes. Matches the DI seam every one of those modules already uses. */
 export type TurnOrchestratorDeps = {
   createSttSession: (apiKey: string, handlers: SttEventHandlers) => { sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit?: boolean) => void; close: () => void };
@@ -43,10 +58,36 @@ export type TurnOrchestratorDeps = {
   elevenLabsApiKey: string;
   voiceId: string;
   sendMessage: (message: ServerMessage) => void;
+  /**
+   * Ticket #29: posts one artefact per turn to app-service, once
+   * `sessionStart` has been called with a real session id — the
+   * persistence link docs/adr/0022 found missing and built. Returns the
+   * new row's id (so a later barge-in can be attributed to it) or `null`
+   * on any failure; a recording failure must never affect the live
+   * pipeline (ARCHITECTURE.md: "Voice has zero DB mid-turn"), so callers
+   * always treat this as fire-and-forget. Optional: undefined in tests
+   * that don't exercise the observability path — those existing tests
+   * don't need to change to keep passing.
+   */
+  recordTurn?: (sessionId: string, turn: RecordedTurnInput) => Promise<string | null>;
+  /** Ticket #29: records a barge-in's elapsed ms since the interrupted persona turn's own `t5FirstAudio` — docs/adr/0022's false-interruption-rate signal. Also fire-and-forget/optional, same reasoning as `recordTurn`. */
+  recordInterruption?: (turnId: string, interruptedAfterMs: number) => Promise<void>;
   /** Injectable clock, for the six-timestamp log to be testable without real wall-clock timing. */
   now?: () => number;
   vadConfig?: { speechThresholdRms: number; silenceHangoverMs: number };
 };
+
+/**
+ * PRD §6.4 / persona.ts: "she uses ты, the learner uses вы" — a fixed
+ * register asymmetry for this V1 persona, not a per-turn detection (no
+ * register-classification stage exists anywhere in this pipeline).
+ * Recorded as a constant here for the same reason turns.ts's schema
+ * carries separate persona/learner register columns at all — once
+ * multi-persona work (the second-persona ticket) parameterizes identity,
+ * this becomes a per-persona value instead of a file-level constant.
+ */
+const PERSONA_REGISTER = 'ty';
+const LEARNER_REGISTER = 'vy';
 
 const DEFAULT_VAD_CONFIG = { speechThresholdRms: 5000, silenceHangoverMs: 500 };
 
@@ -100,6 +141,24 @@ export class TurnOrchestrator {
   private sttSession: ReturnType<TurnOrchestratorDeps['createSttSession']> | null = null;
   private pendingTranscript: { resolve: (transcript: SttTranscript) => void; reject: (error: Error) => void } | null = null;
   private holdAutoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Ticket #29: the real session id, set once `session_start` arrives (server.ts). Turn recording/tracing is a no-op until this is set — there's no session to attribute a turn to yet. */
+  private sessionId: string | null = null;
+  /** Ticket #29: ms of audio actually forwarded to the STT vendor for the utterance currently in flight — `cost.ts`'s `estimateSttCostUsd` input. Accumulated in `pushAudioFrame`, read and reset at the top of `handleTurnDetected`. */
+  private speechAudioMsThisTurn = 0;
+  /**
+   * Ticket #29: tracks the most recently *started-speaking* persona
+   * turn, for false-interruption-rate (docs/adr/0022). Set synchronously
+   * in the TTS `onChunk` handler the moment her audio actually starts —
+   * not after `recordTurn`'s HTTP round-trip resolves — because a
+   * barge-in can land before that promise settles; waiting for it would
+   * leave this pointing at the *previous* turn during exactly the window
+   * a real interruption needs to attribute correctly. `turnId` is filled
+   * in-place once the DB write resolves; a barge-in landing before that
+   * happens has nothing to attribute to and is silently not recorded
+   * (disclosed, narrow gap — not a correctness issue like misattribution
+   * would be).
+   */
+  private lastPersonaTurn: PersonaTurnMarker | null = null;
 
   constructor(private readonly deps: TurnOrchestratorDeps) {
     this.vadGate = new VadGate(deps.vadConfig ?? DEFAULT_VAD_CONFIG);
@@ -107,6 +166,11 @@ export class TurnOrchestrator {
 
   get currentState(): OrchestratorState {
     return this.state;
+  }
+
+  /** Ticket #29: called from server.ts on the `session_start` message — the real session id every subsequent `recordTurn`/`recordInterruption` call needs. */
+  sessionStart(sessionId: string): void {
+    this.sessionId = sessionId;
   }
 
   /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. Applies uniformly to text input too (ticket #32) — hold-to-think is about giving the learner space, not specifically about audio. */
@@ -175,6 +239,8 @@ export class TurnOrchestrator {
     }
 
     const commit = transition === 'speech_end';
+    // Ticket #29: only frames actually forwarded to the vendor count toward STT cost — this line, not every frame pushAudioFrame receives (many return early above: held, pre-speech silence).
+    this.speechAudioMsThisTurn += frameDurationMs;
     this.sttSession.sendAudioChunk(pcmBase64, sampleRateHz, commit);
 
     if (commit)
@@ -214,7 +280,8 @@ export class TurnOrchestrator {
     if (await this.checkSafetyAndRespond(myToken, trimmed, t0TurnDetected, t1SttFinal))
       return;
 
-    await this.runPersonaCascade(myToken, trimmed, t0TurnDetected, t1SttFinal);
+    // No STT stage ran for typed input — zero attributable STT cost (ticket #29's cost.ts).
+    await this.runPersonaCascade(myToken, trimmed, t0TurnDetected, t1SttFinal, 0);
   }
 
   /**
@@ -237,6 +304,20 @@ export class TurnOrchestrator {
     this.sttSession = null;
     this.pendingTranscript = null;
     this.deps.sendMessage({ type: 'barge_in' });
+    this.recordInterruptionIfAny();
+  }
+
+  /** Ticket #29: fires exactly when a real barge-in happens (`handleBargeIn`'s only caller) — see `lastPersonaTurn`'s own doc comment for why this reads a synchronously-set marker rather than waiting on `recordTurn`'s promise. */
+  private recordInterruptionIfAny(): void {
+    const marker = this.lastPersonaTurn;
+    this.lastPersonaTurn = null;
+    if (!marker || !marker.turnId || !this.deps.recordInterruption)
+      return;
+    const now = this.deps.now ?? Date.now;
+    const interruptedAfterMs = Math.max(0, now() - marker.audioStartMs);
+    void this.deps.recordInterruption(marker.turnId, interruptedAfterMs).catch((error) => {
+      console.error('[turn-orchestrator] failed to record interruption', { error });
+    });
   }
 
   /**
@@ -258,6 +339,9 @@ export class TurnOrchestrator {
   private async handleTurnDetected(): Promise<void> {
     const { myToken, t0TurnDetected } = this.beginTurn();
     const now = this.deps.now ?? Date.now;
+    // Ticket #29: captures this utterance's real STT-forwarded audio duration and resets the accumulator for the next one — must happen here, before any `await`, not inside beginTurn (which runs before speech_end's own frame finishes accumulating).
+    const sttAudioMs = this.speechAudioMsThisTurn;
+    this.speechAudioMsThisTurn = 0;
 
     let transcript: SttTranscript;
     try {
@@ -268,7 +352,7 @@ export class TurnOrchestrator {
     catch {
       if (myToken !== this.generationToken)
         return;
-      this.respondWithDidntCatchThat(myToken, t0TurnDetected);
+      this.respondWithDidntCatchThat(myToken, t0TurnDetected, undefined, sttAudioMs);
       return;
     }
     finally {
@@ -292,11 +376,11 @@ export class TurnOrchestrator {
       return;
 
     if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
-      this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal);
+      this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal, sttAudioMs, transcript.text);
       return;
     }
 
-    await this.runPersonaCascade(myToken, transcript.text, t0TurnDetected, t1SttFinal);
+    await this.runPersonaCascade(myToken, transcript.text, t0TurnDetected, t1SttFinal, sttAudioMs);
   }
 
   /**
@@ -327,9 +411,10 @@ export class TurnOrchestrator {
    * duplicated pipeline logic"). Callers have already run the safety check
    * and (for voice) the low-confidence check before reaching here.
    */
-  private async runPersonaCascade(myToken: number, learnerText: string, t0TurnDetected: number, t1SttFinal: number): Promise<void> {
+  private async runPersonaCascade(myToken: number, learnerText: string, t0TurnDetected: number, t1SttFinal: number, sttAudioMs: number): Promise<void> {
     const now = this.deps.now ?? Date.now;
     this.history.push({ speaker: 'learner', text: learnerText });
+    this.recordLearnerTurn(learnerText, sttAudioMs);
     const t2PersonaStart = now();
     // A snapshot, not the live mutable array: `this.history` gets the
     // persona's own reply pushed onto it a few lines below, and nothing
@@ -348,37 +433,107 @@ export class TurnOrchestrator {
     const t4StressAnnotated = now();
 
     this.state = 'speaking';
-    let t5FirstAudio: number | null = null;
+    // Ticket #29: a real barge-in can land in the gap between `state`
+    // flipping to 'speaking' above and the first TTS chunk actually
+    // arriving below (synthesis is still fetching sentence one's audio)
+    // — clearing this now means that window correctly finds no marker
+    // to misattribute to, rather than stale-pointing at the *previous*
+    // persona turn (which recordInterruptionIfAny would otherwise happily
+    // — and wrongly — mark as interrupted).
+    this.lastPersonaTurn = null;
+    let finalTimestamps: TurnTimestamps | null = null;
     await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, annotated.text, {
       onChunk: (chunk, sentenceIndex) => {
         if (myToken !== this.generationToken)
           return;
-        t5FirstAudio ??= now();
+        // Ticket #29 / docs/adr/0022: recorded here, at the *first* chunk —
+        // not after the whole (possibly multi-sentence) synthesis finishes.
+        // t5FirstAudio genuinely means "first chunk ready" (messages.ts's
+        // own doc comment), and recording here is what makes the turn id
+        // available for `recordInterruptionIfAny` to attribute a barge-in
+        // to *while she's still speaking* — recording only after the full
+        // cascade completes would mean a real interruption (which, by
+        // definition, happens during this exact window) could never find
+        // a turn id to attach to at all.
+        if (!finalTimestamps) {
+          finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: now() };
+          this.recordPersonaTurn(generated.turn.text, finalTimestamps, generated.usage, annotated.text.length);
+        }
         this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: chunk.audioBase64 });
       },
     });
     if (myToken !== this.generationToken)
       return;
+    // Every sentence's synthesis failed (tts.ts's onChunk was never called at all) — still worth persisting, with t5 collapsed to t4 since no real "audio start" ever happened.
+    if (!finalTimestamps) {
+      finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: t4StressAnnotated };
+      this.recordPersonaTurn(generated.turn.text, finalTimestamps, generated.usage, annotated.text.length);
+    }
 
-    this.sendTurnComplete({
-      t0TurnDetected,
-      t1SttFinal,
-      t2PersonaStart,
-      t3PersonaComplete,
-      t4StressAnnotated,
-      t5FirstAudio: t5FirstAudio ?? t4StressAnnotated,
-    });
+    this.sendTurnComplete(finalTimestamps);
     this.state = 'listening';
   }
 
-  private respondWithDidntCatchThat(myToken: number, t0TurnDetected: number, t1SttFinal?: number): void {
+  /** Ticket #29: fire-and-forget — a recording failure must never affect the live turn (docs/adr/0022). No-op when `sessionId`/`recordTurn` aren't set (tests, or before `session_start` arrives). */
+  private recordLearnerTurn(content: string, sttAudioMs: number): void {
+    if (!this.sessionId || !this.deps.recordTurn)
+      return;
+    const costUsd = estimateSttCostUsd(sttAudioMs / 1000);
+    void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content, learnerRegister: LEARNER_REGISTER, costUsd }).catch((error) => {
+      console.error('[turn-orchestrator] failed to record learner turn', { error });
+    });
+  }
+
+  /**
+   * Ticket #29: fire-and-forget, same reasoning as `recordLearnerTurn`.
+   * Sets `lastPersonaTurn` synchronously (before the HTTP call even
+   * starts) so `recordInterruptionIfAny` has an `audioStartMs` to work
+   * with immediately; `turnId` is filled in-place once the DB write
+   * resolves. A barge-in landing before that resolution has nothing to
+   * attribute to yet and is silently not recorded — narrow, and far
+   * better than the alternative of recording nothing that starts speaking
+   * at all until the entire (possibly multi-sentence) synthesis finishes.
+   */
+  private recordPersonaTurn(content: string, timestamps: TurnTimestamps, usage: GeneratePersonaTurnResult['usage'], ttsCharacterCount: number): void {
+    if (!this.sessionId || !this.deps.recordTurn)
+      return;
+    const sessionId = this.sessionId;
+    const marker: PersonaTurnMarker = { turnId: null, audioStartMs: timestamps.t5FirstAudio };
+    this.lastPersonaTurn = marker;
+    const costUsd = estimateLlmCostUsd(usage) + estimateTtsCostUsd(ttsCharacterCount);
+    void this.deps.recordTurn(sessionId, { speaker: 'persona', content, personaRegister: PERSONA_REGISTER, timings: timestamps, costUsd })
+      .then((turnId) => {
+        if (!turnId)
+          return;
+        logTrace(sessionId, turnId, timestamps);
+        marker.turnId = turnId;
+      })
+      .catch((error) => {
+        console.error('[turn-orchestrator] failed to record persona turn', { error });
+      });
+  }
+
+  private respondWithDidntCatchThat(myToken: number, t0TurnDetected: number, t1SttFinal?: number, sttAudioMs = 0, learnerContent?: string): void {
     if (myToken !== this.generationToken)
       return;
     const now = this.deps.now ?? Date.now;
     const timestamp = t1SttFinal ?? now();
     this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_CATCH_THAT_LINE, comprehension: 'not_understood', affect: 'concerned' });
     // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
-    this.sendTurnComplete({ t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp });
+    const timestamps: TurnTimestamps = { t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp };
+    this.sendTurnComplete(timestamps);
+    if (this.sessionId && this.deps.recordTurn) {
+      // Ticket #29: learner content is only recorded when it's actually known — the STT-vendor-error path (handleTurnDetected's catch) has no transcript at all, only the low-confidence path does.
+      if (learnerContent !== undefined) {
+        const sttCost = estimateSttCostUsd(sttAudioMs / 1000);
+        void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content: learnerContent, learnerRegister: LEARNER_REGISTER, costUsd: sttCost }).catch((error) => {
+          console.error('[turn-orchestrator] failed to record learner turn', { error });
+        });
+      }
+      void this.deps.recordTurn(this.sessionId, { speaker: 'persona', content: DIDNT_CATCH_THAT_LINE, personaRegister: PERSONA_REGISTER, timings: timestamps }).catch((error) => {
+        console.error('[turn-orchestrator] failed to record persona turn', { error });
+      });
+    }
     this.state = 'listening';
   }
 
@@ -403,6 +558,8 @@ export class TurnOrchestrator {
     this.deps.sendMessage({ type: 'safety_response', category, text });
 
     this.state = 'speaking';
+    // Ticket #29: this path deliberately doesn't record a turn (docs/adr/0022 — persisting distress-disclosure content deserves its own explicit product decision, not a default made inside this ticket). Clearing the marker here matters: without it, a barge-in during *this* playback would misattribute the interruption to whatever normal persona turn happened before it.
+    this.lastPersonaTurn = null;
     let t5FirstAudio: number | null = null;
     await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, text, {
       onChunk: (chunk, sentenceIndex) => {

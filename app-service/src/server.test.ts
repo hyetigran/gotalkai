@@ -24,6 +24,8 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     DAILY_SESSION_CAP: 1,
     AUDIO_SAMPLE_RATE: 0.03,
     AUDIO_SAMPLE_RETENTION_DAYS: 30,
+    SUBSCRIPTION_PRICE_USD: 12,
+    P95_LATENCY_BUDGET_MS: 900,
     ...overrides,
   };
 }
@@ -57,6 +59,23 @@ function post(port: number, path: string, body: unknown): Promise<JsonResponse> 
     );
     req.on('error', reject);
     req.end(payload);
+  });
+}
+
+function patch(port: number, path: string): Promise<JsonResponse> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path, method: 'PATCH' },
+      (res) => {
+        let raw = '';
+        res.on('data', chunk => (raw += chunk));
+        res.on('end', () => {
+          resolve({ statusCode: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : null });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -474,6 +493,87 @@ describe('app service server', () => {
       const handle = await startServer(testEnv(), pool);
 
       const response = await get(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/scenario');
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('turn observability endpoints (ticket #29)', () => {
+    async function makeSession(handle: { port: number }): Promise<{ learnerId: string; sessionId: string }> {
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      const sessionResponse = await post(handle.port, '/sessions', { learnerId });
+      return { learnerId, sessionId: sessionResponse.body?.id as string };
+    }
+
+    it('POST /sessions/:id/turns writes a real row, and PATCH /turns/:id/reveal + POST /turns/:id/interruption update it', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const { learnerId, sessionId } = await makeSession(handle);
+
+      const turnResponse = await post(handle.port, `/sessions/${sessionId}/turns`, {
+        speaker: 'persona',
+        content: 'Ах, конечно.',
+        personaRegister: 'ty',
+        timings: { t0TurnDetected: 0, t1SttFinal: 10, t2PersonaStart: 20, t3PersonaComplete: 100, t4StressAnnotated: 110, t5FirstAudio: 150 },
+        costUsd: 0.0042,
+      });
+      expect(turnResponse.statusCode).toBe(201);
+      const turnId = turnResponse.body?.id as string;
+      expect(typeof turnId).toBe('string');
+
+      const revealResponse = await patch(handle.port, `/turns/${turnId}/reveal`);
+      expect(revealResponse.statusCode).toBe(200);
+
+      const interruptionResponse = await post(handle.port, `/turns/${turnId}/interruption`, { interruptedAfterMs: 320 });
+      expect(interruptionResponse.statusCode).toBe(200);
+
+      const stored = await pool.query<{ revealed: boolean; interrupted_after_ms: number }>(
+        'SELECT revealed, interrupted_after_ms FROM turns WHERE id = $1',
+        [turnId],
+      );
+      expect(stored.rows[0]).toEqual({ revealed: true, interrupted_after_ms: 320 });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/turns rejects an invalid speaker with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const { learnerId, sessionId } = await makeSession(handle);
+
+      const response = await post(handle.port, `/sessions/${sessionId}/turns`, { speaker: 'narrator', content: 'invalid' });
+      expect(response.statusCode).toBe(400);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('PATCH /turns/:id/reveal returns 404 for a nonexistent turn', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await patch(handle.port, '/turns/00000000-0000-0000-0000-000000000000/reveal');
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /turns/:id/interruption returns 404 for a nonexistent turn', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/turns/00000000-0000-0000-0000-000000000000/interruption', { interruptedAfterMs: 100 });
       expect(response.statusCode).toBe(404);
 
       await handle.close();
