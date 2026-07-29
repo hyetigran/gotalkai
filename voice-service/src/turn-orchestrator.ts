@@ -3,7 +3,7 @@ import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import type { ServerMessage, TurnTimestamps } from './messages';
 import type { TranscriptTurn } from './persona';
 import type { GeneratePersonaTurnResult } from './persona-turn';
-import type { SafetyCategory } from './safety-detection';
+import type { SafetyCategory, SafetyTriggerCategory } from './safety-detection';
 import type { AnnotatedText } from './stress/stress-annotation';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
@@ -313,7 +313,7 @@ export class TurnOrchestrator {
    * `annotateText`: the response text is English, and stress annotation
    * is Cyrillic-specific.
    */
-  private async respondWithSafetyMessage(myToken: number, category: 'distress' | 'sexualization', t0TurnDetected: number, t1SttFinal: number): Promise<void> {
+  private async respondWithSafetyMessage(myToken: number, category: SafetyTriggerCategory, t0TurnDetected: number, t1SttFinal: number): Promise<void> {
     const now = this.deps.now ?? Date.now;
     const text = getSafetyResponseText(category);
     this.deps.sendMessage({ type: 'safety_response', category, text });

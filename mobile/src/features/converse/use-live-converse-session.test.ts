@@ -126,6 +126,16 @@ describe('useLiveConverseSession', () => {
     act(() => latestSocket().simulateMessage({ type: 'barge_in' }));
     expect(result.current.phase).toBe('listening');
   });
+
+  it('replaces the filler with a "system" turn (not "persona") on safety_response — ticket #27\'s escape hatch', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
+    act(() => latestSocket().simulateMessage({ type: 'safety_response', category: 'distress', text: 'Safety text' }));
+
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0]).toEqual({ speaker: 'system', text: 'Safety text' });
+  });
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.

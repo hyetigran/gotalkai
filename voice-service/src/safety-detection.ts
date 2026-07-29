@@ -15,6 +15,8 @@ import { z } from 'zod';
 
 export const SAFETY_CATEGORY_VALUES = ['distress', 'sexualization', 'none'] as const;
 export type SafetyCategory = (typeof SAFETY_CATEGORY_VALUES)[number];
+/** The two real trigger categories, excluding 'none' — what a `safety_response` message actually carries (messages.ts, turn-orchestrator.ts), named once so the three call sites can't silently drift from each other. */
+export type SafetyTriggerCategory = Exclude<SafetyCategory, 'none'>;
 
 const safetyDetectionSchema = z.object({
   category: z.enum(SAFETY_CATEGORY_VALUES),
@@ -127,6 +129,6 @@ const DISTRESS_RESPONSE_TEXT = 'I need to pause our conversation for a moment. I
 
 const SEXUALIZATION_RESPONSE_TEXT = 'I\'m going to stop this conversation here — that\'s not something I\'m able to continue. Let\'s get back to practicing Russian whenever you\'re ready.';
 
-export function getSafetyResponseText(category: 'distress' | 'sexualization'): string {
+export function getSafetyResponseText(category: SafetyTriggerCategory): string {
   return category === 'distress' ? DISTRESS_RESPONSE_TEXT : SEXUALIZATION_RESPONSE_TEXT;
 }

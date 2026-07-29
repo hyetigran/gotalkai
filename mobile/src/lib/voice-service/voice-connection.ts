@@ -42,7 +42,9 @@ export type ServerMessage
     | { type: 'persona_turn'; text: string; comprehension: string; affect: string }
     | { type: 'tts_chunk'; sentenceIndex: number; audioBase64: string }
     | { type: 'turn_complete'; timestamps: TurnTimestamps }
-    | { type: 'barge_in' };
+    | { type: 'barge_in' }
+    /** Ticket #27: the out-of-character safety escape hatch (PRD §12.1) — deliberately not a `persona_turn` variant, see turn-orchestrator.ts's `respondWithSafetyMessage`. */
+    | { type: 'safety_response'; category: 'distress' | 'sexualization'; text: string };
 
 function isServerMessage(value: unknown): value is ServerMessage {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';

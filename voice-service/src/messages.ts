@@ -1,3 +1,4 @@
+import type { SafetyTriggerCategory } from './safety-detection';
 import { z } from 'zod';
 
 /**
@@ -102,4 +103,4 @@ export type ServerMessage
      * safety-detection.ts); `text` is still followed by real `tts_chunk`
      * audio and a `turn_complete`, same as any other turn.
      */
-    | { type: 'safety_response'; category: 'distress' | 'sexualization'; text: string };
+    | { type: 'safety_response'; category: SafetyTriggerCategory; text: string };

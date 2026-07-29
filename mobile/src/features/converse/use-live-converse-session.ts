@@ -8,7 +8,8 @@ import { useTtsPlayback } from './use-tts-playback';
 const HOLD_AUTO_RELEASE_MS = 45_000;
 
 export type ConverseTurn = {
-  speaker: 'learner' | 'persona';
+  /** 'system' is the out-of-character safety escape hatch (ticket #27) — deliberately distinct from 'persona', never Валентина speaking. */
+  speaker: 'learner' | 'persona' | 'system';
   text: string;
   comprehension?: string;
   affect?: string;
@@ -57,6 +58,14 @@ function converseReducer(state: ConverseState, action: ConverseAction): Converse
       const turns = last?.speaker === 'persona' ? [...state.turns.slice(0, -1), replyTurn] : [...state.turns, replyTurn];
       return { ...state, turns };
     }
+    case 'safety_response': {
+      // Same "replaces the filler placeholder" logic as persona_turn above — filler was already
+      // sent before the server knew this turn would trigger the escape hatch.
+      const last = state.turns[state.turns.length - 1];
+      const systemTurn: ConverseTurn = { speaker: 'system', text: message.text };
+      const turns = last?.speaker === 'persona' ? [...state.turns.slice(0, -1), systemTurn] : [...state.turns, systemTurn];
+      return { ...state, turns };
+    }
     case 'tts_chunk':
       return { ...state, phase: 'speaking' };
     case 'turn_complete':
@@ -66,6 +75,13 @@ function converseReducer(state: ConverseState, action: ConverseAction): Converse
     case 'error':
     case 'transcript_partial':
       return state;
+    default: {
+      // Exhaustiveness check: a new ServerMessage variant added to voice-connection.ts without a
+      // matching case here is a compile error, not a silent fallthrough (found as a real gap in
+      // this ticket's own code review — this switch previously had no such guard at all).
+      const _exhaustive: never = message;
+      return state;
+    }
   }
 }
 
