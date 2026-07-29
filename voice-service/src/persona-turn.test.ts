@@ -1,7 +1,7 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import type { PersonaTurn, TranscriptTurn } from './persona';
 import { FILLER_LINE } from './persona';
 import { buildPersonaTurnRequest, extractPartialFields, generatePersonaTurn } from './persona-turn';
+import { fakeAnthropicClient, fakeMessageStream } from './test-support/fake-anthropic';
 
 describe('extractPartialFields', () => {
   it('finds nothing in an empty or unrelated snapshot', () => {
@@ -69,32 +69,11 @@ describe('buildPersonaTurnRequest', () => {
  * `generatePersonaTurn`'s only untestable-without-a-real-key surface is
  * the network call itself (`client.messages.stream(...)`) — everything
  * else (partial-field wiring, fallback construction, no-crash guarantee)
- * is orchestration this fake exercises for real. The fake only implements
- * the two methods `generatePersonaTurn` actually calls (`on('text', ...)`,
- * `finalMessage()`), matching `MessageStream`'s real shape closely enough
- * that swapping in a real `Anthropic` client requires no code change here.
+ * is orchestration this fake exercises for real. See
+ * test-support/fake-anthropic.ts for why the fake is this minimal.
  */
-type TextListener = (delta: string, snapshot: string) => void;
-
-function fakeClient(deltas: string[], outcome: { parsedOutput: PersonaTurn | null } | { error: Error }): Anthropic {
-  let listener: TextListener | undefined;
-  const stream = {
-    on: (_event: 'text', cb: TextListener) => {
-      listener = cb;
-      return stream;
-    },
-    finalMessage: async () => {
-      let snapshot = '';
-      for (const delta of deltas) {
-        snapshot += delta;
-        listener?.(delta, snapshot);
-      }
-      if ('error' in outcome)
-        throw outcome.error;
-      return { parsed_output: outcome.parsedOutput };
-    },
-  };
-  return { messages: { stream: () => stream } } as unknown as Anthropic;
+function fakeClient(deltas: string[], outcome: { parsedOutput: PersonaTurn | null } | { error: Error }) {
+  return fakeAnthropicClient({ stream: () => fakeMessageStream(deltas, outcome) });
 }
 
 describe('generatePersonaTurn', () => {
