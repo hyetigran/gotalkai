@@ -739,6 +739,12 @@ describe('app service server', () => {
   });
 
   describe('benchmark endpoints (ticket #35)', () => {
+    // seedBenchmark writes real, persistent rows to the shared dev DB (it's idempotent, not
+    // temporary) — every test in this block deletes them afterward so later runs/other test
+    // files don't inherit real "current" benchmark content that breaks their own assumptions
+    // (matching seed-benchmark.test.ts/benchmark.test.ts's own cleanup of the same months).
+    const SEEDED_MONTH_KEYS = ['2026-06', '2026-07'];
+
     it('GET /benchmark-sets/current returns the seeded set without leaking correct answers', async () => {
       const pool = new Pool({ connectionString: DATABASE_URL });
       await applySchema(pool);
@@ -754,6 +760,7 @@ describe('app service server', () => {
       for (const item of items) expect(item).not.toHaveProperty('correctChoiceIndex');
 
       await handle.close();
+      await pool.query('DELETE FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
       await pool.end();
     });
 
@@ -781,8 +788,12 @@ describe('app service server', () => {
       const trend = trendResponse.body?.trend as unknown[];
       expect(trend).toHaveLength(1);
 
+      // Deletes the learner first — cascades away its benchmark_attempts row, so the
+      // benchmark_sets delete right after doesn't hit the (deliberately no-cascade) FK from
+      // benchmark_attempts.benchmark_set_id.
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
+      await pool.query('DELETE FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
       await pool.end();
     });
 
@@ -803,6 +814,7 @@ describe('app service server', () => {
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
+      await pool.query('DELETE FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
       await pool.end();
     });
   });

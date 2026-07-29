@@ -1,3 +1,4 @@
+import type { AudioPlayer } from 'expo-audio';
 import { createAudioPlayer } from 'expo-audio';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
@@ -5,8 +6,9 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useLearnerId } from '@/lib/hooks/use-learner-id';
 import { useBenchmarkTrend, useCurrentBenchmarkSet, useSubmitBenchmarkAttempt } from './api';
-import { BenchmarkItemCard } from './components/benchmark-item-card';
 import { BenchmarkResult } from './components/benchmark-result';
+import { BenchmarkTakingFlow } from './components/benchmark-taking-flow';
+import { BenchmarkTrend } from './components/benchmark-trend';
 
 /**
  * The monthly comprehension benchmark screen (ticket #35, PRD §6.3) — no
@@ -27,12 +29,31 @@ export function BenchmarkScreen() {
   const { data: benchmarkSet, isLoading: isSetLoading, isError: isSetError } = useCurrentBenchmarkSet();
   const [answers, setAnswers] = React.useState<Record<string, number>>({});
   const [result, setResult] = React.useState<{ correctCount: number; totalCount: number } | null>(null);
+  const [viewMode, setViewMode] = React.useState<'take' | 'history'>('take');
   const submitAttempt = useSubmitBenchmarkAttempt();
-  const trend = useBenchmarkTrend({ variables: { learnerId: learnerId ?? '' }, enabled: Boolean(learnerId) && result !== null });
+  // Not gated on `result`: a learner should be able to check their trend without retaking (see docs/adr/0018 — AC calls for a trend, not just a post-attempt receipt).
+  const trend = useBenchmarkTrend({ variables: { learnerId: learnerId ?? '' }, enabled: Boolean(learnerId) });
 
+  const playerRef = React.useRef<AudioPlayer | null>(null);
   const playClip = React.useCallback((audioUrl: string) => {
-    createAudioPlayer(audioUrl).play();
+    // Only one clip should ever play at a time — release the previous player rather than
+    // leaking one native player per tap (expo-audio has no GC hook for this; see
+    // use-tts-playback.ts's own player.remove() precedent for the same reason).
+    playerRef.current?.remove();
+    const player = createAudioPlayer(audioUrl);
+    playerRef.current = player;
+    const subscription = player.addListener('playbackStatusUpdate', (status) => {
+      if (!status.didJustFinish)
+        return;
+      subscription.remove();
+      player.remove();
+      if (playerRef.current === player)
+        playerRef.current = null;
+    });
+    player.play();
   }, []);
+
+  React.useEffect(() => () => playerRef.current?.remove(), []);
 
   const selectAnswer = React.useCallback((itemId: string, choiceIndex: number) => {
     setAnswers(prev => ({ ...prev, [itemId]: choiceIndex }));
@@ -60,52 +81,37 @@ export function BenchmarkScreen() {
           <Text className="text-[15px] text-accent">‹</Text>
         </Pressable>
         <Text className="font-serif text-[13px] text-ink/60">Monthly benchmark</Text>
-        <View className="w-[12px]" />
+        <Pressable
+          onPress={() => setViewMode(mode => (mode === 'take' ? 'history' : 'take'))}
+          accessibilityRole="button"
+          accessibilityLabel={viewMode === 'take' ? 'View history' : 'Back to benchmark'}
+        >
+          <Text className="text-[13px] text-accent">{viewMode === 'take' ? 'History' : 'Take'}</Text>
+        </Pressable>
       </View>
 
       <ScrollView className="mt-[24px] flex-1" showsVerticalScrollIndicator={false}>
-        {!learnerId && <Text className="text-[14px] text-ink/55">No learner set up yet.</Text>}
-        {learnerId && isSetLoading && <Text className="text-[14px] text-ink/55">Loading this month's benchmark…</Text>}
-        {learnerId && isSetError && (
-          <Text className="text-[14px] text-ink/55">Couldn't load the benchmark — check your connection and try again.</Text>
-        )}
-        {learnerId && !isSetLoading && !isSetError && !benchmarkSet && (
-          <Text className="text-[14px] text-ink/55">No benchmark content available yet.</Text>
+        {viewMode === 'history' && (
+          <BenchmarkTrend entries={trend.data ?? []} isLoading={trend.isLoading} />
         )}
 
-        {learnerId && benchmarkSet && result === null && (
-          <View>
-            <Text className="mb-[16px] text-[13px] leading-[20px] text-ink/55">
-              Listen to each clip, then answer what you understood.
-            </Text>
-            {benchmarkSet.items.map(item => (
-              <BenchmarkItemCard
-                key={item.id}
-                item={item}
-                selectedChoiceIndex={answers[item.id]}
-                onPlayClip={playClip}
-                onSelectChoice={selectAnswer}
-              />
-            ))}
-
-            <Pressable
-              onPress={handleSubmit}
-              disabled={!allAnswered || submitAttempt.isPending}
-              accessibilityRole="button"
-              accessibilityLabel="Submit"
-              className={`items-center rounded-[16px] py-[18px] ${allAnswered ? 'bg-accent' : 'border border-ink/22'}`}
-            >
-              <Text className={`font-serif text-[17px] ${allAnswered ? 'text-paper' : 'text-ink/40'}`}>
-                {submitAttempt.isPending ? 'Submitting…' : 'Submit'}
-              </Text>
-            </Pressable>
-            {submitAttempt.isError && (
-              <Text className="mt-[10px] text-[13px] text-ink/55">Couldn't submit — check your connection and try again.</Text>
-            )}
-          </View>
+        {viewMode === 'take' && result === null && (
+          <BenchmarkTakingFlow
+            learnerId={learnerId}
+            benchmarkSet={benchmarkSet}
+            isSetLoading={isSetLoading}
+            isSetError={isSetError}
+            answers={answers}
+            allAnswered={allAnswered}
+            isSubmitPending={submitAttempt.isPending}
+            isSubmitError={submitAttempt.isError}
+            onPlayClip={playClip}
+            onSelectChoice={selectAnswer}
+            onSubmit={handleSubmit}
+          />
         )}
 
-        {result !== null && (
+        {viewMode === 'take' && result !== null && (
           <BenchmarkResult
             correctCount={result.correctCount}
             totalCount={result.totalCount}

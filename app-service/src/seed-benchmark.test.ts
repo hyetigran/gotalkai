@@ -4,6 +4,7 @@ import { seedBenchmark } from './seed-benchmark';
 import { applySchema } from './schema';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';
+const SEEDED_MONTH_KEYS = ['2026-06', '2026-07'];
 
 let pool: Pool;
 
@@ -17,28 +18,32 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  await pool.query('DELETE FROM benchmark_sets WHERE month_key = $1', ['2026-07']);
+  await pool.query('DELETE FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
 });
 
 describe('seedBenchmark', () => {
-  it('writes a real benchmark set with at least one item', async () => {
+  it('writes real benchmark sets across two different months, each with at least one item', async () => {
     await seedBenchmark(pool);
 
-    const setResult = await pool.query<{ id: string }>('SELECT id FROM benchmark_sets WHERE month_key = $1', ['2026-07']);
-    expect(setResult.rows).toHaveLength(1);
+    const setResult = await pool.query<{ id: string; month_key: string }>('SELECT id, month_key FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
+    expect(setResult.rows.map(row => row.month_key).sort()).toEqual(SEEDED_MONTH_KEYS);
 
-    const itemsResult = await pool.query('SELECT * FROM benchmark_items WHERE benchmark_set_id = $1', [setResult.rows[0]?.id]);
-    expect(itemsResult.rows.length).toBeGreaterThanOrEqual(1);
+    for (const row of setResult.rows) {
+      const itemsResult = await pool.query('SELECT * FROM benchmark_items WHERE benchmark_set_id = $1', [row.id]);
+      expect(itemsResult.rows.length).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it('is idempotent — re-running does not create duplicate sets or items', async () => {
     await seedBenchmark(pool);
     await seedBenchmark(pool);
 
-    const setResult = await pool.query('SELECT id FROM benchmark_sets WHERE month_key = $1', ['2026-07']);
-    expect(setResult.rows).toHaveLength(1);
+    const setResult = await pool.query('SELECT id FROM benchmark_sets WHERE month_key = ANY($1)', [SEEDED_MONTH_KEYS]);
+    expect(setResult.rows).toHaveLength(2);
 
-    const itemsResult = await pool.query('SELECT id FROM benchmark_items WHERE benchmark_set_id = $1', [setResult.rows[0]?.id]);
-    expect(itemsResult.rows).toHaveLength(1);
+    for (const row of setResult.rows) {
+      const itemsResult = await pool.query('SELECT id FROM benchmark_items WHERE benchmark_set_id = $1', [row.id]);
+      expect(itemsResult.rows).toHaveLength(1);
+    }
   });
 });

@@ -68,12 +68,29 @@ async function makeBenchmarkSet(monthKey: string, items: SeedItem[]): Promise<{ 
 }
 
 describe('getCurrentBenchmarkSet', () => {
-  it('returns null when no benchmark content exists', async () => {
-    // Isolated by never inserting any benchmark_sets row in this test — real risk of
-    // interference from other tests' leftover data is ruled out by afterEach cleanup.
-    const result = await getCurrentBenchmarkSet(pool);
-    expect(result).toBeNull();
-  });
+  // No "returns null when no benchmark content exists" test here, deliberately: jest.config.js
+  // runs test files in parallel (maxWorkers: 4) against one shared local Postgres instance, and
+  // this function's query is genuinely global (by design — "the current set" isn't scoped to
+  // anything a test could isolate). Asserting the whole benchmark_sets table is empty raced
+  // against seed-benchmark.test.ts's own writes/cleanup running concurrently in another worker —
+  // reproduced as a real, non-deterministic failure. Every other test in this file (and file
+  // in this suite) scopes its assertions to rows it created for exactly this reason; the
+  // `if (!set) return null` branch this would have covered is otherwise exercised by the
+  // "falls back to the earliest available set" test below, whenever its WHERE NOT EXISTS
+  // fallback branch itself matches zero rows.
+  //
+  // The three tests below still depend on knowing the *entire* set of rows currently in
+  // benchmark_sets (there's no per-test scoping key for a genuinely global "current set"
+  // lookup, unlike every other table in this schema, which is scoped by learner_id/session_id
+  // and so never hit this problem). A residual cross-file race is possible in principle if
+  // another file's seedBenchmark() call is mid-flight at exactly the wrong moment — but
+  // server.test.ts and seed-benchmark.test.ts both now clean up their seeded rows within the
+  // same test (see their own comments), so the window is a single test's duration, not
+  // (as it was before that fix, and as reproduced once already) the data persisting
+  // indefinitely across the whole suite. Deliberately not adding a table-wide DELETE here to
+  // narrow it further — benchmark_attempts.benchmark_set_id has no ON DELETE cascade, so an
+  // unscoped delete while another file's attempt row is live would trade this race for a
+  // foreign-key-violation failure instead, which isn't an improvement.
 
   it('returns the most recent set at or before the current month, with items and no correct-answer field', async () => {
     const pastMonthKey = '2000-01'; // always <= "current month" for as long as this test exists

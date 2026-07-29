@@ -37,21 +37,19 @@ export type BenchmarkSetView = {
  */
 export async function getCurrentBenchmarkSet(pool: Pool): Promise<BenchmarkSetView | null> {
   const currentMonthKey = new Date().toISOString().slice(0, 7);
+  // Two branches with opposite sort directions (most recent past/current
+  // set; otherwise the earliest future one), so a single ORDER BY can't
+  // express both cleanly — a UNION ALL of two cheap, index-backed LIMIT-1
+  // queries stays more readable than a CASE-based sort-key trick for what
+  // is, either way, one query round-trip.
   const setResult = await pool.query<{ id: string; month_key: string; title: string }>(
-    `SELECT id, month_key, title FROM benchmark_sets
-     WHERE month_key <= $1
-     ORDER BY month_key DESC
+    `(SELECT id, month_key, title FROM benchmark_sets WHERE month_key <= $1 ORDER BY month_key DESC LIMIT 1)
+     UNION ALL
+     (SELECT id, month_key, title FROM benchmark_sets WHERE NOT EXISTS (SELECT 1 FROM benchmark_sets WHERE month_key <= $1) ORDER BY month_key ASC LIMIT 1)
      LIMIT 1`,
     [currentMonthKey],
   );
-  let set = setResult.rows[0];
-  if (!set) {
-    // No set at or before this month (content only seeded for the future, or none at all) — fall back to the earliest available.
-    const fallbackResult = await pool.query<{ id: string; month_key: string; title: string }>(
-      'SELECT id, month_key, title FROM benchmark_sets ORDER BY month_key ASC LIMIT 1',
-    );
-    set = fallbackResult.rows[0];
-  }
+  const set = setResult.rows[0];
   if (!set)
     return null;
 
