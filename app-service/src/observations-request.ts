@@ -1,0 +1,19 @@
+import { z } from 'zod';
+
+/**
+ * The `POST /sessions/:id/observations` request body — one of the three
+ * places Zod belongs (PRD §7.8: "client/server API"). This is genuinely
+ * untrusted input: whatever eventually calls this (the post-session
+ * analyser, ticket #14+) is a separate process across a network boundary.
+ */
+export const recordObservationsRequestSchema = z.object({
+  learnerId: z.string().min(1),
+  observations: z.array(z.object({
+    kind: z.string().min(1),
+    structureKey: z.string().min(1).optional(),
+    impeded: z.boolean().optional(),
+    detail: z.record(z.string(), z.unknown()).optional(),
+  })).min(1),
+});
+
+export type RecordObservationsRequest = z.infer<typeof recordObservationsRequestSchema>;

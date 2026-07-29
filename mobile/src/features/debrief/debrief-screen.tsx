@@ -1,11 +1,12 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { useSessionDebrief } from './api';
 import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
+import { mapDebriefItemToPattern } from './map-debrief-item';
 
 /**
- * The Debrief screen — fixture data only (no live session assembly yet).
- * Layout and copy per
+ * The Debrief screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
  * ("3. Debrief"). Part of the daily loop (ticket #9): reached from
  * Converse and advances to Tomorrow via the real router.
@@ -13,9 +14,30 @@ import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
  * Deliberately absent, per the ticket and PRD §6.3: any streak counter,
  * accuracy percentage, grade, or badge. Progress is expressed only through
  * the two ability figures and the ranked patterns below.
+ *
+ * Patterns render real, ranked `debrief_items` (PRD §5.4, ticket #20) when
+ * a `sessionId` route param is present — falls back to fixture patterns
+ * only when there's no `sessionId` at all, since the live Converse
+ * pipeline that would produce a real `sessionId` here doesn't exist yet
+ * (blocked on ticket #18). Once a `sessionId` is present, this never
+ * silently substitutes fixture content for a loading, errored, or
+ * genuinely-empty real result — that would misrepresent the real-data
+ * path's state as fixture data instead of surfacing it. The other
+ * figures (turn counts, avoidance) stay fixture-driven regardless — real
+ * `turns`/avoidance-detection data is later ticket work (#18, #23), not
+ * this ticket's scope.
  */
 export function DebriefScreen() {
   const router = useRouter();
+  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  const hasRealSession = Boolean(sessionId);
+  const { data: debriefItems, isLoading, isError } = useSessionDebrief({
+    variables: { sessionId: sessionId ?? '' },
+    enabled: hasRealSession,
+  });
+  const patterns = hasRealSession
+    ? (debriefItems ?? []).map(mapDebriefItemToPattern)
+    : fixture.patterns;
   const understoodWithoutHelp = fixture.totalTurns - fixture.revealedTurnCount;
 
   return (
@@ -36,7 +58,13 @@ export function DebriefScreen() {
       </Text>
 
       <View className="mt-[26px] gap-[10px]">
-        {fixture.patterns.map(pattern => (
+        {hasRealSession && isLoading && (
+          <Text className="text-[13px] text-ink/55">Loading your patterns…</Text>
+        )}
+        {hasRealSession && isError && (
+          <Text className="text-[13px] text-ink/55">Couldn't load your patterns — check your connection and try again.</Text>
+        )}
+        {(!hasRealSession || (!isLoading && !isError)) && patterns.map(pattern => (
           <View key={pattern.index} className="rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]">
             <View className="flex-row items-baseline gap-[10px]">
               <Text className="font-mono-medium text-[10px] text-ink/40">{pattern.index}</Text>

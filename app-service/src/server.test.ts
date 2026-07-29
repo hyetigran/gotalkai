@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import http from 'node:http';
 import { Pool } from 'pg';
+import { applySchema } from './schema';
 import { startServer } from './server';
 
 /**
@@ -33,6 +34,24 @@ function get(port: number, path: string): Promise<JsonResponse> {
         resolve({ statusCode: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : null });
       });
     }).on('error', reject);
+  });
+}
+
+function post(port: number, path: string, body: unknown): Promise<JsonResponse> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      { host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } },
+      (res) => {
+        let raw = '';
+        res.on('data', chunk => (raw += chunk));
+        res.on('end', () => {
+          resolve({ statusCode: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : null });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end(payload);
   });
 }
 
@@ -78,5 +97,118 @@ describe('app service server', () => {
 
     await handle.close();
     await pool.end();
+  });
+
+  describe('learner/session creation endpoints', () => {
+    it('POST /learners then POST /sessions creates real rows usable by the observations endpoint', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      expect(learnerResponse.statusCode).toBe(201);
+      const learnerId = learnerResponse.body?.id as string;
+      expect(typeof learnerId).toBe('string');
+
+      const sessionResponse = await post(handle.port, '/sessions', { learnerId });
+      expect(sessionResponse.statusCode).toBe(201);
+      const sessionId = sessionResponse.body?.id as string;
+      expect(typeof sessionId).toBe('string');
+
+      const observationsResponse = await post(handle.port, `/sessions/${sessionId}/observations`, {
+        learnerId,
+        observations: [{ kind: 'grammar_error' }],
+      });
+      expect(observationsResponse.statusCode).toBe(201);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions rejects a missing learnerId', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions', {});
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('session observations/debrief endpoints', () => {
+    async function makeLearnerAndSession(pool: Pool): Promise<{ learnerId: string; sessionId: string }> {
+      const learner = await pool.query<{ id: string }>('INSERT INTO learners DEFAULT VALUES RETURNING id');
+      const learnerId = learner.rows[0]?.id;
+      if (!learnerId)
+        throw new Error('insert did not return a row');
+      const session = await pool.query<{ id: string }>('INSERT INTO sessions (learner_id) VALUES ($1) RETURNING id', [learnerId]);
+      const sessionId = session.rows[0]?.id;
+      if (!sessionId)
+        throw new Error('insert did not return a row');
+      return { learnerId, sessionId };
+    }
+
+    it('POST /sessions/:id/observations writes observations and returns promoted debrief_items', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+
+      const response = await post(handle.port, `/sessions/${sessionId}/observations`, {
+        learnerId,
+        observations: [
+          { kind: 'grammar_error', structureKey: 'genitive_plural', impeded: true },
+        ],
+      });
+      expect(response.statusCode).toBe(201);
+      expect(Array.isArray(response.body?.debriefItems)).toBe(true);
+      expect((response.body?.debriefItems as unknown[]).length).toBe(1);
+
+      // A real write, not a stub — the row is genuinely in observations.
+      const stored = await pool.query('SELECT kind FROM observations WHERE session_id = $1', [sessionId]);
+      expect(stored.rows).toEqual([{ kind: 'grammar_error' }]);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/observations rejects a request body missing learnerId', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/observations', {
+        observations: [{ kind: 'grammar_error' }],
+      });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /sessions/:id/debrief returns previously promoted items', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+
+      await post(handle.port, `/sessions/${sessionId}/observations`, {
+        learnerId,
+        observations: [{ kind: 'avoidance', impeded: false }],
+      });
+
+      const response = await get(handle.port, `/sessions/${sessionId}/debrief`);
+      expect(response.statusCode).toBe(200);
+      expect((response.body?.debriefItems as unknown[]).length).toBe(1);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
   });
 });
