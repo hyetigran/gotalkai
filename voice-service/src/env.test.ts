@@ -3,6 +3,7 @@ import { loadEnv } from './env';
 describe('loadEnv', () => {
   const validBase = {
     VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32),
+    ANTHROPIC_API_KEY: 'sk-ant-test-key',
   };
 
   it('accepts a minimal valid environment and applies defaults', () => {
@@ -22,7 +23,11 @@ describe('loadEnv', () => {
   });
 
   it('rejects an auth token shorter than 16 characters', () => {
-    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'short' })).toThrow(/VOICE_SERVICE_AUTH_TOKEN/);
+    expect(() => loadEnv({ ...validBase, VOICE_SERVICE_AUTH_TOKEN: 'short' })).toThrow(/VOICE_SERVICE_AUTH_TOKEN/);
+  });
+
+  it('rejects a missing Anthropic API key', () => {
+    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32) })).toThrow(/ANTHROPIC_API_KEY/);
   });
 
   it('rejects a non-positive port', () => {
