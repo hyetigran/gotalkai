@@ -22,6 +22,13 @@ const envSchema = z.object({
    * this ticket only has to prove the auth *path* works end to end.
    */
   VOICE_SERVICE_AUTH_TOKEN: z.string().min(16, 'VOICE_SERVICE_AUTH_TOKEN must be at least 16 characters'),
+  /**
+   * Ticket #14: the persona LLM stage (ADR-0003: Claude Sonnet 5) needs a
+   * real key to call the Anthropic API. No default — this is a secret, not
+   * a tunable, and an empty/missing key should fail loudly at boot rather
+   * than produce confusing 401s from every persona-turn call later.
+   */
+  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;

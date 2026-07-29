@@ -2,7 +2,7 @@
   "name": "voice-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Long-lived realtime voice pipeline service — ticket #11 skeleton only, no pipeline logic yet. See /ARCHITECTURE.md §3.3.",
+  "description": "Long-lived realtime voice pipeline service. See /ARCHITECTURE.md §3.3.",
   "packageManager": "pnpm@10.12.3",
   "engines": {
     "node": ">=20"
@@ -13,9 +13,11 @@
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "debug:persona-turn": "tsx src/debug-persona-turn.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "ws": "^8.18.0",
     "zod": "^4.3.5"
   },
