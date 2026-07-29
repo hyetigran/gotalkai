@@ -34,6 +34,15 @@ const envSchema = z.object({
    * deadline-driven, bake-off skipped). No default — a real secret.
    */
   ELEVENLABS_API_KEY: z.string().min(1, 'ELEVENLABS_API_KEY is required'),
+  /**
+   * Ticket #17: the ElevenLabs voice ID for Валентина. No default and no
+   * placeholder value — picking a real voice from ElevenLabs' library
+   * (matching PRD §6.4's "78, warm, unhurried") needs someone to actually
+   * listen to candidates, which this environment cannot do (docs/adr/0016).
+   * Required so a real deployment fails loudly at boot if nobody has set
+   * it yet, rather than synthesizing with an arbitrary default voice.
+   */
+  ELEVENLABS_VALENTINA_VOICE_ID: z.string().min(1, 'ELEVENLABS_VALENTINA_VOICE_ID is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;

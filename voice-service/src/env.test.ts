@@ -5,6 +5,7 @@ describe('loadEnv', () => {
     VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32),
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     ELEVENLABS_API_KEY: 'el-test-key',
+    ELEVENLABS_VALENTINA_VOICE_ID: 'voice-test-id',
   };
 
   it('accepts a minimal valid environment and applies defaults', () => {
@@ -27,12 +28,22 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ ...validBase, VOICE_SERVICE_AUTH_TOKEN: 'short' })).toThrow(/VOICE_SERVICE_AUTH_TOKEN/);
   });
 
+  function withoutField(field: keyof typeof validBase): Record<string, string> {
+    const copy: Record<string, string> = { ...validBase };
+    delete copy[field];
+    return copy;
+  }
+
   it('rejects a missing Anthropic API key', () => {
-    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32), ELEVENLABS_API_KEY: 'el-test-key' })).toThrow(/ANTHROPIC_API_KEY/);
+    expect(() => loadEnv(withoutField('ANTHROPIC_API_KEY'))).toThrow(/ANTHROPIC_API_KEY/);
   });
 
   it('rejects a missing ElevenLabs API key', () => {
-    expect(() => loadEnv({ VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32), ANTHROPIC_API_KEY: 'sk-ant-test-key' })).toThrow(/ELEVENLABS_API_KEY/);
+    expect(() => loadEnv(withoutField('ELEVENLABS_API_KEY'))).toThrow(/ELEVENLABS_API_KEY/);
+  });
+
+  it('rejects a missing ElevenLabs Valentina voice ID', () => {
+    expect(() => loadEnv(withoutField('ELEVENLABS_VALENTINA_VOICE_ID'))).toThrow(/ELEVENLABS_VALENTINA_VOICE_ID/);
   });
 
   it('rejects a non-positive port', () => {

@@ -1,4 +1,5 @@
 import type { PersonaTurn } from '../persona';
+import { splitIntoSentences } from '../split-sentences';
 import type { GoldenEntry } from './golden-set-types';
 
 export type AssertionKey = 'schema_validity' | 'turn_length' | 'register_consistency' | 'yo_spelling' | 'no_false_recast' | 'no_missed_recast' | 'no_english_leakage' | 'no_praise' | 'no_grammar_talk';
@@ -43,14 +44,13 @@ export function checkSchemaValidity(input: MechanicalCheckInput): AssertionResul
 /**
  * AC #2 "turn length": ADR-0003 / persona.ts's own contract is "one
  * conversational turn (1-2 sentences)". Sentence count is a heuristic
- * (splitting on ./!/…/?), not a syntactic parse — allows up to 3 to avoid
- * penalizing a single trailing clause after an ellipsis, documented as an
- * approximation rather than a strict parser.
+ * (splitIntoSentences, shared with tts.ts's chunking — see that file),
+ * not a syntactic parse — allows up to 3 to avoid penalizing a single
+ * trailing clause after an ellipsis, documented as an approximation
+ * rather than a strict parser.
  */
 export function checkTurnLength(input: MechanicalCheckInput): AssertionResult {
-  const sentenceCount = input.turn.text
-    .split(/(?<=[.!?…])\s+/)
-    .filter(sentence => sentence.trim().length > 0).length;
+  const sentenceCount = splitIntoSentences(input.turn.text).length;
   return {
     key: 'turn_length',
     passed: sentenceCount >= 1 && sentenceCount <= 3,
