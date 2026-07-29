@@ -4,6 +4,7 @@ import type { Env } from './env';
 import { createServer as createHttpServer } from 'node:http';
 
 import { detectAndRecordAvoidance } from './avoidance-detection';
+import { getBenchmarkTrend, getCurrentBenchmarkSet, InvalidBenchmarkAttemptError, submitBenchmarkAttempt, submitBenchmarkAttemptRequestSchema } from './benchmark';
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
 import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from './memories-request';
@@ -47,6 +48,7 @@ const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
 const LEARNER_AUDIO_SAMPLING_CONSENT_PATH = /^\/learners\/([^/]+)\/audio-sampling-consent$/;
+const LEARNER_BENCHMARK_ATTEMPTS_PATH = /^\/learners\/([^/]+)\/benchmark-attempts$/;
 const LEARNER_PATH = /^\/learners\/([^/]+)$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
@@ -268,6 +270,71 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
         return;
       }
       sendJson(res, 200, { status: 'ok' });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url === '/benchmark-sets/current') {
+    try {
+      const benchmarkSet = await getCurrentBenchmarkSet(pool);
+      if (!benchmarkSet) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok', benchmarkSet });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const benchmarkAttemptsMatch = LEARNER_BENCHMARK_ATTEMPTS_PATH.exec(url);
+  if (req.method === 'POST' && benchmarkAttemptsMatch) {
+    const learnerId = parseUuidParam(benchmarkAttemptsMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = submitBenchmarkAttemptRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const result = await submitBenchmarkAttempt(pool, learnerId, parsed.data);
+      sendJson(res, 201, { status: 'ok', result });
+    }
+    catch (error) {
+      if (error instanceof InvalidBenchmarkAttemptError) {
+        sendJson(res, 400, { status: 'error', message: error.message });
+        return;
+      }
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && benchmarkAttemptsMatch) {
+    const learnerId = parseUuidParam(benchmarkAttemptsMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const trend = await getBenchmarkTrend(pool, learnerId);
+      sendJson(res, 200, { status: 'ok', trend });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });

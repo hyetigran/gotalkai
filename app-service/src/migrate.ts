@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 
 import { loadEnv } from './env';
 import { applySchema } from './schema';
+import { seedBenchmark } from './seed-benchmark';
 import { seedScenarios } from './seed-scenarios';
 
 /**
@@ -19,6 +20,8 @@ async function main() {
     console.log('schema applied');
     await seedScenarios(pool);
     console.log('scenarios seeded');
+    await seedBenchmark(pool);
+    console.log('benchmark content seeded');
   } finally {
     await pool.end();
   }
