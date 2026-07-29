@@ -43,6 +43,12 @@ CREATE INDEX IF NOT EXISTS idx_sessions_scenario_id ON sessions (scenario_id);
 -- Retention policy (PRD §7.7) filters on this column — see
 -- src/retention.ts. Index makes the periodic sweep cheap as volume grows.
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions (started_at);
+-- Daily session cap (ticket #24) — src/session-cap.ts's countSessionsToday
+-- runs `WHERE learner_id = $1 AND started_at >= ...` on every POST
+-- /sessions (a hot path gating all session creation). The single-column
+-- indexes above would still work via a bitmap AND, but a composite index
+-- serves this exact query pattern directly.
+CREATE INDEX IF NOT EXISTS idx_sessions_learner_id_started_at ON sessions (learner_id, started_at);
 
 -- === turns =====================================================================
 CREATE TABLE IF NOT EXISTS turns (

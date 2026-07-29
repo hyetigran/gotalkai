@@ -11,6 +11,7 @@ describe('loadEnv', () => {
     expect(env.NODE_ENV).toBe('development');
     expect(env.DATABASE_URL).toBe(validBase.DATABASE_URL);
     expect(env.RETENTION_DAYS).toBe(180);
+    expect(env.DAILY_SESSION_CAP).toBe(1);
   });
 
   it('coerces a string RETENTION_DAYS to a number', () => {
@@ -20,6 +21,15 @@ describe('loadEnv', () => {
 
   it('rejects a non-positive RETENTION_DAYS', () => {
     expect(() => loadEnv({ ...validBase, RETENTION_DAYS: '0' })).toThrow();
+  });
+
+  it('coerces a string DAILY_SESSION_CAP to a number', () => {
+    const env = loadEnv({ ...validBase, DAILY_SESSION_CAP: '3' });
+    expect(env.DAILY_SESSION_CAP).toBe(3);
+  });
+
+  it('rejects a non-positive DAILY_SESSION_CAP', () => {
+    expect(() => loadEnv({ ...validBase, DAILY_SESSION_CAP: '0' })).toThrow();
   });
 
   it('coerces a string PORT to a number', () => {

@@ -8,6 +8,7 @@ import { recordMemoryRequestSchema } from './memories-request';
 import { recordObservationsRequestSchema } from './observations-request';
 import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
 import { getScenarioViewForSession } from './scenario-view';
+import { DailySessionCapReachedError } from './session-cap';
 import { createLearner, createSession, createSessionRequestSchema } from './sessions';
 
 export type AppServiceHandle = {
@@ -43,7 +44,7 @@ const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
 
-async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool): Promise<void> {
+async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
   const url = req.url ?? '';
 
   if (req.method === 'GET' && url === '/health') {
@@ -83,10 +84,32 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
       return;
     }
     try {
-      const id = await createSession(pool, parsed.data.learnerId);
+      const id = await createSession(pool, parsed.data.learnerId, env.DAILY_SESSION_CAP);
       sendJson(res, 201, { status: 'ok', id });
     }
-    catch {
+    catch (error) {
+      if (error instanceof DailySessionCapReachedError) {
+        // 429, not a generic error — a distinct, expected outcome the
+        // client keys off `code` (not the message string) to show
+        // "come back tomorrow" framing, not an error state. PRD §9: the
+        // cap is a unit-economics requirement enforced server-side, so
+        // this has to be a real rejection a direct API call can't route
+        // around — not just the client hiding the button.
+        //
+        // `message` deliberately echoes mobile/src/features/tomorrow/
+        // tomorrow-fixture.ts's homeworkSub copy ("One session a day.
+        // Distributed practice beats massed practice.") — the client
+        // itself doesn't render this string (it keys off `code` and
+        // redirects to the real Tomorrow screen), but keep the two in
+        // sync if either copy changes; they're saying the same thing on
+        // purpose, not by accident.
+        sendJson(res, 429, {
+          status: 'error',
+          code: 'daily_cap_reached',
+          message: 'One session a day. Distributed practice beats massed practice — come back tomorrow.',
+        });
+        return;
+      }
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
     }
     return;
@@ -222,7 +245,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 export function startServer(env: Env, pool: Pool): Promise<AppServiceHandle> {
   return new Promise((resolve, reject) => {
     const httpServer = createHttpServer((req, res) => {
-      handleRequest(req, res, pool).catch(() => {
+      handleRequest(req, res, pool, env).catch(() => {
         sendJson(res, 500, { status: 'error', message: 'internal error' });
       });
     });
