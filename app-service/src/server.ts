@@ -4,6 +4,7 @@ import type { Env } from './env';
 import { createServer as createHttpServer } from 'node:http';
 
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
+import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from './memories-request';
 import { recordObservationsRequestSchema } from './observations-request';
 import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
@@ -117,7 +118,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 
   const observationsMatch = SESSION_OBSERVATIONS_PATH.exec(url);
   if (req.method === 'POST' && observationsMatch) {
-    const sessionId = observationsMatch[1] as string;
+    const sessionId = parseUuidParam(observationsMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
     let body: unknown;
     try {
       body = await readJsonBody(req);
@@ -144,7 +149,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 
   const debriefMatch = SESSION_DEBRIEF_PATH.exec(url);
   if (req.method === 'GET' && debriefMatch) {
-    const sessionId = debriefMatch[1] as string;
+    const sessionId = parseUuidParam(debriefMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
     try {
       const debriefItems = await getDebriefForSession(pool, sessionId);
       sendJson(res, 200, { status: 'ok', debriefItems });
@@ -157,7 +166,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 
   const scenarioMatch = SESSION_SCENARIO_PATH.exec(url);
   if (req.method === 'GET' && scenarioMatch) {
-    const sessionId = scenarioMatch[1] as string;
+    const sessionId = parseUuidParam(scenarioMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
     try {
       const scenario = await getScenarioViewForSession(pool, sessionId);
       if (!scenario) {
@@ -174,7 +187,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 
   const memoriesMatch = LEARNER_MEMORIES_PATH.exec(url);
   if (req.method === 'POST' && memoriesMatch) {
-    const learnerId = memoriesMatch[1] as string;
+    const learnerId = parseUuidParam(memoriesMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
     let body: unknown;
     try {
       body = await readJsonBody(req);
@@ -200,7 +217,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
 
   const callbackMatch = LEARNER_CALLBACK_PATH.exec(url);
   if (req.method === 'GET' && callbackMatch) {
-    const learnerId = callbackMatch[1] as string;
+    const learnerId = parseUuidParam(callbackMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
     try {
       const callbackLine = await selectAndMarkCallbackMemory(pool, learnerId);
       sendJson(res, 200, { status: 'ok', callbackLine });
