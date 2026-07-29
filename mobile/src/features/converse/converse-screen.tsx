@@ -1,15 +1,32 @@
 import type { MediaStream } from 'react-native-webrtc';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
+import { useLearner } from './api';
 import { HoldToThinkButton } from './components/hold-to-think-button';
 import { LevelMeter } from './components/level-meter';
 import { SuggestionChips } from './components/suggestion-chips';
 import { Transcript } from './components/transcript';
 import { useConverseSession } from './use-converse-session';
 import { useMicCapture } from './use-mic-capture';
+
+/**
+ * Whether the shared reveal slot shows transliteration instead of
+ * translation (ticket #30 AC #3). Real when a `learnerId` route param is
+ * present (set by Open's Answer flow, ticket #24), reading the learner's
+ * actual onboarding answer — defaults to translation (false) with no
+ * real learner, matching this codebase's established "real when present,
+ * fixture-equivalent default otherwise" pattern.
+ */
+function useTranslitEnabled(learnerId: string | undefined) {
+  const { data: learner } = useLearner({
+    variables: { learnerId: learnerId ?? '' },
+    enabled: Boolean(learnerId),
+  });
+  return learner?.translitEnabled ?? false;
+}
 
 /**
  * Acquires the react-native-webrtc AEC-path audio stream for the screen's
@@ -70,6 +87,8 @@ const AUTO_DEBRIEF_DELAY_MS = 1500;
  */
 export function ConverseScreen() {
   const router = useRouter();
+  const { learnerId } = useLocalSearchParams<{ learnerId?: string }>();
+  const translitEnabled = useTranslitEnabled(learnerId);
   const clock = useElapsedClock();
   const {
     phase,
@@ -109,11 +128,12 @@ export function ConverseScreen() {
         thinking={phase === 'thinking'}
         revealed={revealed}
         onToggleReveal={toggleReveal}
+        translitEnabled={translitEnabled}
       />
 
       <View className="px-[22px] pt-[14px] pb-[40px]">
         <Text className="font-mono-medium mb-[11px] text-center text-[11px] tracking-[0.05em] text-ink/55">
-          Tap her line for a translation
+          {translitEnabled ? 'Tap her line for a transliteration' : 'Tap her line for a translation'}
         </Text>
 
         {chipsVisible && <SuggestionChips onPress={speak} />}
