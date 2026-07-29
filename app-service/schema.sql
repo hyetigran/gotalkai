@@ -43,12 +43,18 @@ CREATE INDEX IF NOT EXISTS idx_sessions_scenario_id ON sessions (scenario_id);
 -- Retention policy (PRD §7.7) filters on this column — see
 -- src/retention.ts. Index makes the periodic sweep cheap as volume grows.
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions (started_at);
--- Daily session cap (ticket #24) — src/session-cap.ts's countSessionsToday
--- runs `WHERE learner_id = $1 AND started_at >= ...` on every POST
--- /sessions (a hot path gating all session creation). The single-column
--- indexes above would still work via a bitmap AND, but a composite index
--- serves this exact query pattern directly.
-CREATE INDEX IF NOT EXISTS idx_sessions_learner_id_started_at ON sessions (learner_id, started_at);
+-- A composite (learner_id, started_at) index was tried here to serve
+-- src/session-cap.ts's countSessionsToday query more directly, but a
+-- plain (non-CONCURRENTLY) CREATE INDEX takes a SHARE lock on `sessions`
+-- — and since applySchema runs the whole file in one transaction (a
+-- prior deadlock fix, see src/schema.ts), that lock genuinely deadlocked
+-- against concurrent test files writing to `sessions` at the same time
+-- (reproduced: schema.test.ts's idempotency test failed with a real
+-- `deadlock detected` under parallel Jest workers). The single-column
+-- indexes above already make the query correct via a bitmap AND; that's
+-- enough at this application's actual scale, so the composite index was
+-- reverted rather than fixed with CREATE INDEX CONCURRENTLY (which can't
+-- run inside applySchema's transaction at all).
 
 -- === turns =====================================================================
 CREATE TABLE IF NOT EXISTS turns (
@@ -182,13 +188,31 @@ CREATE TABLE IF NOT EXISTS scenario_complications (
 
 -- sessions.scenario_id had no FK when that table was created (ticket
 -- #19) because this table didn't exist yet — add it now that it does.
--- DROP+ADD rather than a guarded `IF NOT EXISTS` (Postgres has no such
--- clause for constraints) keeps this idempotent.
 --
 -- Deliberately no ON DELETE clause, unlike every other FK in this file:
 -- session history (and everything that cascades from it — turns,
 -- observations, debrief_items) must survive even if a scenario row is
 -- ever removed, so the default NO ACTION (blocking the delete instead of
 -- cascading data loss) is the right behavior here, not an oversight.
-ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_scenario_id_fkey;
-ALTER TABLE sessions ADD CONSTRAINT sessions_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES scenarios(id);
+--
+-- Guarded by an explicit pg_constraint check, not an unconditional
+-- DROP+ADD (Postgres has no ADD CONSTRAINT IF NOT EXISTS): every test
+-- file calls applySchema in its own beforeAll, so this runs on every
+-- single test run. ADD CONSTRAINT needs ACCESS EXCLUSIVE on `sessions`
+-- and SHARE ROW EXCLUSIVE on `scenarios` (the referenced table) even
+-- when the constraint already exists and nothing is actually changing —
+-- taking those locks unconditionally, every time, genuinely deadlocked
+-- against concurrent createSession calls (which INSERT into `sessions`
+-- while referencing a `scenarios` row for FK validation) once ticket
+-- #24 added enough concurrent session-creation load to make the timing
+-- collision likely instead of rare (reproduced: real `deadlock
+-- detected` errors under parallel test execution). Skipping the ALTER
+-- entirely once the constraint already exists — the case for every
+-- applySchema call after the very first one ever run against a given
+-- database — removes the lock acquisition, not just the write.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sessions_scenario_id_fkey') THEN
+    ALTER TABLE sessions ADD CONSTRAINT sessions_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES scenarios(id);
+  END IF;
+END $$;
