@@ -1,0 +1,63 @@
+# Ticket #28 AC #7: "Harness runnable in CI, not just locally." This is
+# the first CI config in this repo — scoped narrowly to the eval harness
+# (voice-service/src/eval/), not a general monorepo-wide pipeline for
+# mobile/app-service/voice-service's own test suites, which is a larger,
+# separate concern outside this ticket.
+#
+# Disclosed limitation (docs/adr/0012): this GitLab project has no CI
+# runners registered (confirmed via the API — empty runner list, zero
+# pipeline history) at the time this was written. This file is correct
+# and will run the moment a runner is registered, but that has not been
+# verified to actually execute here.
+
+image: node:20
+
+stages:
+  - eval
+
+variables:
+  # GitLab's default shallow clone can omit the target-branch history the
+  # append-only job needs to diff against — full history avoids a job
+  # that fails for the wrong reason (missing ref) rather than a real edit.
+  GIT_DEPTH: '0'
+
+# AC #1 / UAT #3: golden-set.ts is append-only. Runs on every MR against
+# its target branch — a real edit to an existing entry fails the
+# pipeline, not just a local convention (append-only.ts).
+eval:golden-set-append-only:
+  stage: eval
+  rules:
+    - if: '$CI_MERGE_REQUEST_IID'
+  before_script:
+    - corepack enable
+    - cd voice-service && pnpm install --frozen-lockfile
+  script:
+    - pnpm eval:golden-set-append-only "origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+
+# AC #2/#3/#5: mechanical assertions, gate computation, and golden-set
+# content sanity — all offline (no model call, no ANTHROPIC_API_KEY
+# needed), so this runs unconditionally on every pipeline.
+eval:offline-tests:
+  stage: eval
+  before_script:
+    - corepack enable
+    - cd voice-service && pnpm install --frozen-lockfile
+  script:
+    - pnpm exec jest src/eval/
+
+# AC #4/#6: the full harness against the real Claude Sonnet 5 persona
+# pipeline (ticket #14) and the Opus 5 judge — real, billed model calls.
+# Only runs if ANTHROPIC_API_KEY is configured as a CI/CD variable in
+# this project's settings (Settings > CI/CD > Variables) — not something
+# this file can provision on its own. `allow_failure` so a missing key
+# doesn't block MRs; once configured, gate failures do fail the job.
+eval:harness:
+  stage: eval
+  rules:
+    - if: '$ANTHROPIC_API_KEY'
+  allow_failure: true
+  before_script:
+    - corepack enable
+    - cd voice-service && pnpm install --frozen-lockfile
+  script:
+    - pnpm eval
