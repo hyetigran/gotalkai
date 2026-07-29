@@ -1,9 +1,10 @@
 /**
- * Connection manager for the voice service's persistent stream (ticket
- * #11 skeleton — round-trip ping only, no real pipeline messages yet).
- * ARCHITECTURE.md §3.1: "Conversation screen is a special case. Do not
- * force React Query/axios onto the core loop. Own connection manager for
- * the stream." — this is that manager, independent of React.
+ * Connection manager for the voice service's persistent stream. Ticket
+ * #11 built the skeleton (round-trip ping only); ticket #18 adds the real
+ * pipeline messages. ARCHITECTURE.md §3.1: "Conversation screen is a
+ * special case. Do not force React Query/axios onto the core loop. Own
+ * connection manager for the stream." — this is that manager, independent
+ * of React.
  *
  * Auth: the token is passed in explicitly by the caller, never read from
  * a bundled env var — until the app service exists to issue real
@@ -12,11 +13,40 @@
  * `voice-service-debug-screen.tsx` for how this is exercised today (a
  * dev-only screen where the token is typed in by hand, not embedded in
  * source).
+ *
+ * `ServerMessage`/outbound message shapes are hand-mirrored from
+ * `voice-service/src/messages.ts` — the two are independent npm projects
+ * (no shared package), so the WS wire format itself is the only real
+ * contract between them. Keep these in sync by hand on either side.
  */
 
 export type VoiceConnectionState = 'connecting' | 'open' | 'closed';
 
 export type PongMessage = { type: 'pong'; requestId: string | undefined; serverTime: number };
+
+export type TurnTimestamps = {
+  t0TurnDetected: number;
+  t1SttFinal: number;
+  t2PersonaStart: number;
+  t3PersonaComplete: number;
+  t4StressAnnotated: number;
+  t5FirstAudio: number;
+};
+
+/** Mirrors voice-service/src/messages.ts's `ServerMessage` (minus `pong`, handled separately by `ping()`). */
+export type ServerMessage
+  = | { type: 'error'; message: string }
+    | { type: 'transcript_partial'; text: string }
+    | { type: 'transcript_final'; text: string }
+    | { type: 'persona_filler'; text: string }
+    | { type: 'persona_turn'; text: string; comprehension: string; affect: string }
+    | { type: 'tts_chunk'; sentenceIndex: number; audioBase64: string }
+    | { type: 'turn_complete'; timestamps: TurnTimestamps }
+    | { type: 'barge_in' };
+
+function isServerMessage(value: unknown): value is ServerMessage {
+  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
+}
 
 /** React Native's WebSocket constructor overload lib.dom.d.ts doesn't declare — see the comment at the call site. */
 type RNWebSocketConstructor = new (
@@ -29,7 +59,8 @@ export type VoiceConnectionOptions = {
   url: string;
   token: string;
   onStateChange?: (state: VoiceConnectionState) => void;
-  onMessage?: (message: unknown) => void;
+  /** Pipeline server messages only — `pong` is handled internally by `ping()` and not forwarded here. */
+  onMessage?: (message: ServerMessage) => void;
   /** Delay before retrying after an unexpected close — AC: "client reconnects rather than hanging indefinitely." */
   reconnectDelayMs?: number;
 };
@@ -89,6 +120,45 @@ export class VoiceConnection {
     });
   }
 
+  /**
+   * Audio frames are naturally lossy (VAD tolerates dropped frames
+   * elsewhere in this pipeline too) — a chunk sent while briefly
+   * disconnected is silently dropped rather than thrown, so a live mic
+   * capture loop (once one exists — see docs/adr/0017) doesn't need to
+   * guard every call.
+   */
+  sendAudioChunk(pcmBase64: string, sampleRateHz: number): void {
+    this.trySend({ type: 'audio_chunk', pcmBase64, sampleRateHz });
+  }
+
+  /**
+   * Unlike audio chunks, a dropped hold_start/hold_end is a real
+   * correctness gap (the server could be left thinking the learner is
+   * still holding, or not) — but the client already only calls these on
+   * explicit user action, and a reconnect re-syncs state implicitly
+   * through the fresh connection's default (server never holds). Silent
+   * drop on disconnect is accepted rather than queuing/retrying, since
+   * that reconnect-resync already bounds the damage.
+   */
+  sendHoldStart(): void {
+    this.trySend({ type: 'hold_start' });
+  }
+
+  sendHoldEnd(): void {
+    this.trySend({ type: 'hold_end' });
+  }
+
+  sendSessionStart(learnerId: string, sessionId: string): void {
+    this.trySend({ type: 'session_start', learnerId, sessionId });
+  }
+
+  private trySend(message: { type: string; [key: string]: unknown }): boolean {
+    if (!this.ws || this.state !== 'open')
+      return false;
+    this.ws.send(JSON.stringify(message));
+    return true;
+  }
+
   private open(): void {
     this.setState('connecting');
     // React Native's WebSocket accepts a third `{ headers }` constructor
@@ -113,15 +183,19 @@ export class VoiceConnection {
       catch {
         return;
       }
-      if (isPongMessage(message) && message.requestId) {
-        const pending = this.pendingPings.get(message.requestId);
-        if (pending) {
-          clearTimeout(pending.timeoutId);
-          this.pendingPings.delete(message.requestId);
-          pending.resolve(message);
+      if (isPongMessage(message)) {
+        if (message.requestId) {
+          const pending = this.pendingPings.get(message.requestId);
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            this.pendingPings.delete(message.requestId);
+            pending.resolve(message);
+          }
         }
+        return;
       }
-      this.options.onMessage?.(message);
+      if (isServerMessage(message))
+        this.options.onMessage?.(message);
     };
 
     ws.onclose = () => {
