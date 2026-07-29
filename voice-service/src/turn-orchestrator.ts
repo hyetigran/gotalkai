@@ -197,6 +197,11 @@ export class TurnOrchestrator {
     if (myToken !== this.generationToken)
       return;
     const t1SttFinal = now();
+    // PRD §6.2: Converse shows "her turn, learner's transcribed turn" — the
+    // client has no other way to learn what STT actually heard. Sent even
+    // on the low-confidence path below: "here's what I heard" is honest
+    // even when it wasn't confident enough to act on.
+    this.deps.sendMessage({ type: 'transcript_final', text: transcript.text });
 
     if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
       this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal);

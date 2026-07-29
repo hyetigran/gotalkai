@@ -138,10 +138,11 @@ describe('TurnOrchestrator', () => {
 
       expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: goodTranscript.text }]);
       expect(annotateText).toHaveBeenCalledWith('Ах, конечно.');
+      expect(waiter.messages).toContainEqual({ type: 'transcript_final', text: goodTranscript.text });
       expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'voice-123', 'Ах, конечно.[annotated]', expect.any(Object));
 
       const types = waiter.messages.map(message => message.type);
-      expect(types).toEqual(['persona_filler', 'persona_turn', 'tts_chunk', 'turn_complete']);
+      expect(types).toEqual(['persona_filler', 'transcript_final', 'persona_turn', 'tts_chunk', 'turn_complete']);
 
       const turnComplete = waiter.messages.find(message => message.type === 'turn_complete');
       expect(turnComplete?.type).toBe('turn_complete');
@@ -192,6 +193,8 @@ describe('TurnOrchestrator', () => {
       expect(synthesizeSpeech).not.toHaveBeenCalled();
       const personaTurnMessage = waiter.messages.find(message => message.type === 'persona_turn');
       expect(personaTurnMessage).toMatchObject({ type: 'persona_turn', comprehension: 'not_understood' });
+      // Even on the low-confidence path, PRD §6.2 wants "what she heard" shown — not just her not-understood reply.
+      expect(waiter.messages).toContainEqual({ type: 'transcript_final', text: 'мумбл мумбл' });
     },
   );
 
