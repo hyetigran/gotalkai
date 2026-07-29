@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
+import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useLearner } from './api';
 import { HoldToThinkButton } from './components/hold-to-think-button';
 import { LevelMeter } from './components/level-meter';
@@ -112,14 +113,11 @@ export function ConverseScreen() {
   useWebrtcAecStream();
 
   const goToDebrief = React.useCallback(() => {
-    if (sessionId)
-      router.replace({ pathname: '/debrief', params: learnerId ? { sessionId, learnerId } : { sessionId } });
-    else
-      router.replace('/debrief');
+    router.replace(realParamsOrBarePath('/debrief', { sessionId, learnerId }));
   }, [router, sessionId, learnerId]);
 
   const goBackToOpen = React.useCallback(() => {
-    router.replace(learnerId ? { pathname: '/open', params: { learnerId } } : '/open');
+    router.replace(realParamsOrBarePath('/open', { learnerId }));
   }, [router, learnerId]);
 
   React.useEffect(() => {

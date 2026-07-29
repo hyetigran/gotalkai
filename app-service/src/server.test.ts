@@ -843,6 +843,15 @@ describe('app service server', () => {
       const learnerResponse = await post(handle.port, '/learners', {});
       const learnerId = learnerResponse.body?.id as string;
 
+      // Genuinely distinct per day, not just "day 0 differs from the rest" — days 1 and 2 used to
+      // submit the identical observation, which meant nothing about real, non-repeating content
+      // was actually being exercised (found in this ticket's own code review).
+      const dailyObservations = [
+        [{ kind: 'grammar_error', structureKey: 'genitive_plural', detail: { tag: 'missed the genitive plural' } }],
+        [{ kind: 'avoidance', structureKey: 'aspect_perfective', impeded: true, detail: { tag: 'steered around this' } }],
+        [{ kind: 'grammar_error', structureKey: 'motion_verbs', detail: { tag: 'mixed up a motion verb' } }],
+      ];
+
       const scenarioTitles: string[] = [];
       for (let day = 0; day < cap; day++) {
         const sessionResponse = await post(handle.port, '/sessions', { learnerId });
@@ -857,24 +866,33 @@ describe('app service server', () => {
         expect(scenario.ladder.length).toBeGreaterThan(0);
         scenarioTitles.push(scenario.title);
 
-        // Real, genuinely different performance each "day" — real observations -> real ranked debrief.
-        const observations = day === 0
-          ? [{ kind: 'grammar_error', structureKey: 'genitive_plural', detail: { tag: 'missed the genitive plural' } }]
-          : [{ kind: 'avoidance', structureKey: 'aspect_perfective', impeded: true, detail: { tag: 'steered around this' } }];
+        // Real, genuinely different performance each day — real observations -> real ranked debrief
+        // that actually reflects *that day's* structureKey, not just "some non-empty list."
+        const observations = dailyObservations[day] as typeof dailyObservations[number];
         const observationsResponse = await post(handle.port, `/sessions/${sessionId}/observations`, { learnerId, observations });
         expect(observationsResponse.statusCode).toBe(201);
-        expect((observationsResponse.body?.debriefItems as unknown[]).length).toBeGreaterThan(0);
+        const promotedItems = observationsResponse.body?.debriefItems as { detail: { structureKey?: string } }[];
+        expect(promotedItems.length).toBeGreaterThan(0);
+        expect(promotedItems.some(item => item.detail.structureKey === observations[0]?.structureKey)).toBe(true);
 
         // Debrief's own real-data path (ticket #20), fetched independently — exactly what the
         // live navigation now actually reaches, since this ticket's mobile fix forwards sessionId
-        // through Converse instead of dropping it.
+        // through Converse instead of dropping it. Checks the specific structureKey survives the
+        // read path too, not just that *some* items exist.
         const debriefResponse = await get(handle.port, `/sessions/${sessionId}/debrief`);
         expect(debriefResponse.statusCode).toBe(200);
-        expect((debriefResponse.body?.debriefItems as unknown[]).length).toBeGreaterThan(0);
+        const debriefItems = debriefResponse.body?.debriefItems as { detail: { structureKey?: string } }[];
+        expect(debriefItems.length).toBeGreaterThan(0);
+        expect(debriefItems.some(item => item.detail.structureKey === observations[0]?.structureKey)).toBe(true);
 
-        // Real callback line (ticket #22) — Open's real-data path has something to show the next day.
+        // Real callback line (ticket #22) — checks the actual response shape, not just that the
+        // endpoint didn't error (a 200 with an unrelated/empty body would have passed a
+        // status-only check, which is what this test originally did before its own review caught it).
         const callbackResponse = await get(handle.port, `/learners/${learnerId}/callback`);
         expect(callbackResponse.statusCode).toBe(200);
+        expect(callbackResponse.body).toHaveProperty('callbackLine');
+        const callbackLine = callbackResponse.body?.callbackLine;
+        expect(callbackLine === null || typeof callbackLine === 'string').toBe(true);
       }
 
       // Real scenario selection responds to real history (least-recently-used rotation, ticket

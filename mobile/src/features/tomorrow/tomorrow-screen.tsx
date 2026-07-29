@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
+import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useSessionScenario } from './api';
 import { TOMORROW_FIXTURE as fixture } from './tomorrow-fixture';
 
@@ -89,7 +90,7 @@ export function TomorrowScreen() {
       </Text>
 
       <Pressable
-        onPress={() => router.replace(learnerId ? { pathname: '/open', params: { learnerId } } : '/open')}
+        onPress={() => router.replace(realParamsOrBarePath('/open', { learnerId }))}
         accessibilityRole="button"
         accessibilityLabel={fixture.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"

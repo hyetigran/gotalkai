@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useSessionDebrief } from './api';
 import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
 import { mapDebriefItemToPattern } from './map-debrief-item';
@@ -92,11 +93,7 @@ export function DebriefScreen() {
       </View>
 
       <Pressable
-        onPress={() => router.replace(
-          sessionId
-            ? { pathname: '/tomorrow', params: learnerId ? { sessionId, learnerId } : { sessionId } }
-            : '/tomorrow',
-        )}
+        onPress={() => router.replace(realParamsOrBarePath('/tomorrow', { sessionId, learnerId }))}
         accessibilityRole="button"
         accessibilityLabel="Tomorrow"
         className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"
