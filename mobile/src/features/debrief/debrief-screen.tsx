@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useSessionDebrief } from './api';
 import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
 import { mapDebriefItemToPattern } from './map-debrief-item';
@@ -29,7 +30,9 @@ import { mapDebriefItemToPattern } from './map-debrief-item';
  */
 export function DebriefScreen() {
   const router = useRouter();
-  const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
+  // Ticket #25: `learnerId` isn't used by this screen itself, only relayed onward to Tomorrow
+  // (and from there back to Open) so the loop doesn't lose track of who the learner is.
+  const { sessionId, learnerId } = useLocalSearchParams<{ sessionId?: string; learnerId?: string }>();
   const hasRealSession = Boolean(sessionId);
   const { data: debriefItems, isLoading, isError } = useSessionDebrief({
     variables: { sessionId: sessionId ?? '' },
@@ -90,7 +93,7 @@ export function DebriefScreen() {
       </View>
 
       <Pressable
-        onPress={() => router.replace('/tomorrow')}
+        onPress={() => router.replace(realParamsOrBarePath('/tomorrow', { sessionId, learnerId }))}
         accessibilityRole="button"
         accessibilityLabel="Tomorrow"
         className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"
