@@ -20,6 +20,35 @@ CREATE TABLE IF NOT EXISTS learners (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Ticket #31 AC #2: audio-sampling consent, "separate from the general
+-- ToS acceptance" — a timestamp (not just a boolean) so there's a real
+-- record of *when* consent was given, not just that it currently is.
+-- NULL means never consented. Added on an existing table, not baked
+-- into the CREATE TABLE above, since `learners` already existed before
+-- this ticket (ticket #19).
+--
+-- Guarded by an information_schema check, not a bare `ADD COLUMN IF NOT
+-- EXISTS` — that still takes an ACCESS EXCLUSIVE lock on `learners` on
+-- every single applySchema call even when the column already exists
+-- (confirmed: reproduced real `deadlock detected` errors under parallel
+-- test execution, same root cause as the sessions_scenario_id_fkey
+-- deadlock ticket #24 fixed — this table is referenced by
+-- persona_memories/sessions/observations/learner_structures, all of
+-- which take a row lock on `learners` for FK validation on every
+-- insert). Skipping the ALTER entirely once the column already exists —
+-- the case for every applySchema call after the very first one ever run
+-- against a given database — removes the lock acquisition, not just the
+-- write, exactly like that earlier fix.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'learners' AND column_name = 'audio_sampling_consent_at'
+  ) THEN
+    ALTER TABLE learners ADD COLUMN audio_sampling_consent_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
 -- === sessions =================================================================
 -- "Stores the calibration actually used, so difficulty settings can be
 -- correlated against completion and abandonment" (PRD §8).

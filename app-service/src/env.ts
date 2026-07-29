@@ -32,6 +32,25 @@ const envSchema = z.object({
    * vendor costs change, per this ticket's AC.
    */
   DAILY_SESSION_CAP: z.coerce.number().int().positive().default(1),
+  /**
+   * Ticket #31 AC #2: "Only 2–5% of sessions sampled for replay
+   * debugging." 0.03 sits in the middle of that range. Meant to be
+   * threaded into `shouldSampleSession`'s `sampleRate` param
+   * (src/audio-sampling.ts) once real audio capture exists — no
+   * audio-storage subsystem exists yet to call it from
+   * (ARCHITECTURE.md hasn't designed one), so nothing reads this env
+   * var today; it's the sampling *policy* value, reserved ahead of the
+   * capture path per this ticket's scope.
+   */
+  AUDIO_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.03),
+  /**
+   * Ticket #31 AC #3: "Sampled audio retention is materially shorter
+   * than metadata retention" (RETENTION_DAYS's 180-day default). 30 days
+   * is materially shorter. Reserved policy value only, not enforced —
+   * there is no audio-storage table yet for a retention job to run
+   * against. See docs/adr/0009-privacy-and-data-handling-scope.md.
+   */
+  AUDIO_SAMPLE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;

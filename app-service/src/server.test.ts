@@ -21,6 +21,8 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     DATABASE_URL,
     RETENTION_DAYS: 180,
     DAILY_SESSION_CAP: 1,
+    AUDIO_SAMPLE_RATE: 0.03,
+    AUDIO_SAMPLE_RETENTION_DAYS: 30,
     ...overrides,
   };
 }
@@ -54,6 +56,23 @@ function post(port: number, path: string, body: unknown): Promise<JsonResponse> 
     );
     req.on('error', reject);
     req.end(payload);
+  });
+}
+
+function del(port: number, path: string): Promise<JsonResponse> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path, method: 'DELETE' },
+      (res) => {
+        let raw = '';
+        res.on('data', chunk => (raw += chunk));
+        res.on('end', () => {
+          resolve({ statusCode: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : null });
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -440,6 +459,86 @@ describe('app service server', () => {
       expect(response.body?.callbackLine).toBeNull();
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('privacy endpoints (ticket #31)', () => {
+    it('POST /learners/:id/audio-sampling-consent records consent, and DELETE /learners/:id clears the learner and its memories', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const consentResponse = await post(handle.port, `/learners/${learnerId}/audio-sampling-consent`, {});
+      expect(consentResponse.statusCode).toBe(200);
+      const stored = await pool.query('SELECT audio_sampling_consent_at FROM learners WHERE id = $1', [learnerId]);
+      expect(stored.rows[0]?.audio_sampling_consent_at).not.toBeNull();
+
+      // POST /learners seeds starter memories (ticket #22/#30) — real
+      // rows exist for this learner before deletion, not just the row itself.
+      const memoriesBefore = await pool.query('SELECT count(*)::int AS count FROM persona_memories WHERE learner_id = $1', [learnerId]);
+      expect(memoriesBefore.rows[0]?.count).toBeGreaterThan(0);
+
+      const deleteResponse = await del(handle.port, `/learners/${learnerId}`);
+      expect(deleteResponse.statusCode).toBe(200);
+
+      const learnerAfter = await pool.query('SELECT 1 FROM learners WHERE id = $1', [learnerId]);
+      expect(learnerAfter.rows).toHaveLength(0);
+      const memoriesAfter = await pool.query('SELECT 1 FROM persona_memories WHERE learner_id = $1', [learnerId]);
+      expect(memoriesAfter.rows).toHaveLength(0);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/audio-sampling-consent returns 404 for a nonexistent learner', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/learners/00000000-0000-0000-0000-000000000000/audio-sampling-consent', {});
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners/:id/audio-sampling-consent with a malformed learner id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/learners/not-a-uuid/audio-sampling-consent', {});
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('DELETE /learners/:id returns 404 for a nonexistent learner', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await del(handle.port, '/learners/00000000-0000-0000-0000-000000000000');
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('DELETE /learners/:id with a malformed learner id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await del(handle.port, '/learners/not-a-uuid');
+      expect(response.statusCode).toBe(400);
+
       await handle.close();
       await pool.end();
     });
