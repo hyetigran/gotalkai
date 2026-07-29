@@ -60,7 +60,12 @@ export function useOpenAnswerHandler(options: {
       { learnerId: learnerId ?? '' },
       {
         onSuccess: (data) => {
-          router.replace({ pathname: '/converse', params: { sessionId: data.id } });
+          // learnerId, not just sessionId — Converse needs it to know
+          // whether this learner has transliteration enabled (ticket
+          // #30 AC #3). Forgetting it here would silently fall back to
+          // showing translation for every real learner, regardless of
+          // their actual onboarding answer.
+          router.replace({ pathname: '/converse', params: { sessionId: data.id, learnerId } });
         },
         onError: (error) => {
           if (error.response?.status === 429 && error.response.data.code === 'daily_cap_reached')

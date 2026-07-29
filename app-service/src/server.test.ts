@@ -143,6 +143,52 @@ describe('app service server', () => {
       await pool.end();
     });
 
+    it('POST /learners writes real onboarding answers, and GET /learners/:id reads them back (ticket #30 AC #1/#2)', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', { cyrillicLiterate: false, translitEnabled: true });
+      expect(learnerResponse.statusCode).toBe(201);
+      const learnerId = learnerResponse.body?.id as string;
+
+      const getResponse = await get(handle.port, `/learners/${learnerId}`);
+      expect(getResponse.statusCode).toBe(200);
+      expect(getResponse.body?.learner).toEqual({ id: learnerId, cyrillicLiterate: false, translitEnabled: true });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /learners with no body falls back to schema.sql\'s own column defaults, not silently different app-level defaults', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const stored = await pool.query('SELECT cyrillic_literate, translit_enabled FROM learners WHERE id = $1', [learnerId]);
+      expect(stored.rows[0]).toEqual({ cyrillic_literate: false, translit_enabled: true });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id returns 404 for a nonexistent learner', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/learners/00000000-0000-0000-0000-000000000000');
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
     it('POST /sessions rejects a real learner\'s second session of the day with 429, server-side — a direct API call cannot bypass it (ticket #24 UAT #3)', async () => {
       const pool = new Pool({ connectionString: DATABASE_URL });
       await applySchema(pool);

@@ -10,7 +10,7 @@ import { recordObservationsRequestSchema } from './observations-request';
 import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
 import { getScenarioViewForSession } from './scenario-view';
 import { DailySessionCapReachedError } from './session-cap';
-import { createLearner, createSession, createSessionRequestSchema } from './sessions';
+import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner } from './sessions';
 
 export type AppServiceHandle = {
   /** The port actually bound — matters when `env.PORT` is `0` (tests ask the OS for a free port). */
@@ -44,6 +44,7 @@ const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
 const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
+const LEARNER_PATH = /^\/learners\/([^/]+)$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
   const url = req.url ?? '';
@@ -60,8 +61,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
   }
 
   if (req.method === 'POST' && url === '/learners') {
+    let body: unknown;
     try {
-      const id = await createLearner(pool);
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = createLearnerRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const id = await createLearner(pool, parsed.data);
       sendJson(res, 201, { status: 'ok', id });
     }
     catch {
@@ -232,6 +246,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     return;
   }
 
+  const learnerMatch = LEARNER_PATH.exec(url);
+  if (req.method === 'GET' && learnerMatch) {
+    const learnerId = parseUuidParam(learnerMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const learner = await getLearner(pool, learnerId);
+      if (!learner) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok', learner });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
   sendJson(res, 404, { status: 'not found' });
 }
 
@@ -239,10 +274,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * Starts the app service. Endpoints:
  * - `GET /health` — round-trips a real query through the Postgres pool
  *   (`SELECT now()`) rather than returning a stubbed response.
- * - `POST /learners` — minimal creation, just enough to exercise the
- *   endpoints below end to end (see src/sessions.ts — not the real
- *   onboarding flow, ticket #30). Also seeds 1–2 starter
- *   `persona_memories` so session one is never cold (ticket #22).
+ * - `POST /learners` — the real onboarding endpoint (ticket #30 AC
+ *   #1/#2): writes `cyrillic_literate`/`translit_enabled` from the
+ *   request body (both optional — omitted fields fall back to
+ *   schema.sql's own column defaults, so existing debug-screen callers
+ *   with an empty body are unaffected). Also seeds 1–2 starter
+ *   `persona_memories` so session one is never cold (ticket #22/#30 AC
+ *   #5).
+ * - `GET /learners/:id` — a learner's onboarding answers, for the
+ *   Converse screen to decide what occupies the shared reveal slot
+ *   (ticket #30 AC #3).
  * - `POST /sessions` — creates a session AND runs scenario selection
  *   (ticket #21) against the learner's real learner_structures/session
  *   history, writing the result onto the new row.

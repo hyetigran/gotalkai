@@ -7,6 +7,9 @@ import { motion } from '@/components/ui/design-tokens';
 type HerTurnProps = {
   ru: string;
   en?: string;
+  translit?: string;
+  /** Whether the shared reveal slot shows `translit` instead of `en` (ticket #30 AC #3) — never both. */
+  translitEnabled: boolean;
   revealed: boolean;
   onToggleReveal: () => void;
 };
@@ -17,7 +20,8 @@ type HerTurnProps = {
  * for the mockup's `text-decoration-thickness`/`text-underline-offset` —
  * those two are a platform-level substitution, not a missed spec value.
  */
-export function HerTurn({ ru, en, revealed, onToggleReveal }: HerTurnProps) {
+export function HerTurn({ ru, en, translit, translitEnabled, revealed, onToggleReveal }: HerTurnProps) {
+  const revealContent = translitEnabled ? translit : en;
   return (
     <Pressable onPress={onToggleReveal} accessibilityRole="button" accessibilityLabel="toggle translation">
       <Text
@@ -30,8 +34,8 @@ export function HerTurn({ ru, en, revealed, onToggleReveal }: HerTurnProps) {
       >
         {ru}
       </Text>
-      {revealed && en && (
-        <Text className="mt-[8px] text-[14px] leading-[21px] text-ink/60">{en}</Text>
+      {revealed && revealContent && (
+        <Text className="mt-[8px] text-[14px] leading-[21px] text-ink/60">{revealContent}</Text>
       )}
     </Pressable>
   );
@@ -75,6 +79,7 @@ type TranscriptProps = {
   thinking: boolean;
   revealed: Record<number, boolean>;
   onToggleReveal: (turnIndex: number) => void;
+  translitEnabled: boolean;
 };
 
 /**
@@ -82,7 +87,7 @@ type TranscriptProps = {
  * a fixed script, never reordered or removed — so using the slice index as
  * the list key is stable and correct here.
  */
-export function Transcript({ turns, thinking, revealed, onToggleReveal }: TranscriptProps) {
+export function Transcript({ turns, thinking, revealed, onToggleReveal, translitEnabled }: TranscriptProps) {
   const scrollRef = React.useRef<ScrollView>(null);
 
   React.useEffect(() => {
@@ -103,6 +108,8 @@ export function Transcript({ turns, thinking, revealed, onToggleReveal }: Transc
                 key={index}
                 ru={turn.ru}
                 en={turn.en}
+                translit={turn.translit}
+                translitEnabled={translitEnabled}
                 revealed={!!revealed[index]}
                 onToggleReveal={() => onToggleReveal(index)}
               />

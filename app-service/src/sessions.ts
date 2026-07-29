@@ -19,27 +19,41 @@ export const createSessionRequestSchema = z.object({
 
 export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 
+/** `POST /learners` request body — the real onboarding answers (ticket #30 AC #1/#2), both optional so existing callers with no body still get schema.sql's own defaults. */
+export const createLearnerRequestSchema = z.object({
+  cyrillicLiterate: z.boolean().optional(),
+  translitEnabled: z.boolean().optional(),
+});
+
+export type CreateLearnerRequest = z.infer<typeof createLearnerRequestSchema>;
+
 /**
- * Minimal learner creation — just enough to exercise the
- * observations/debrief/scenario/memory endpoints end to end (ticket
- * #20). Not the real onboarding flow (ticket #30): that owns the real
- * request shape for creating learners in earnest. This exists because
- * without *some* way to create a learner, ticket #20's own acceptance
- * criteria (a real session with real, client-visible debrief_items)
- * would be undemonstrable from the client at all.
+ * Creates a learner, real onboarding answers included (ticket #30 AC
+ * #1/#2 — the Cyrillic-literacy question, written once, and a separate
+ * transliteration toggle so it can be retired deliberately). Defaults
+ * mirror schema.sql's own column defaults (`cyrillic_literate` false,
+ * `translit_enabled` true) rather than relying on Postgres's `DEFAULT`
+ * keyword, since a conditionally-omitted column can't cleanly express
+ * "use the column default" inside a single parameterized INSERT.
  *
- * Also seeds 1–2 starter persona_memories (ticket #22 AC #3) so session
- * one is never cold — see src/seed-starter-memories.ts. The learner row
- * and its starter memories are written in one transaction: a learner
- * that exists but silently has zero memories (because seeding failed
- * after the learner insert already committed) would quietly violate AC
- * #3 for that one learner, with no retry or visibility into it.
+ * Also seeds 1–2 starter persona_memories (ticket #22 AC #3, ticket #30
+ * AC #5) so session one is never cold — see src/seed-starter-memories.ts.
+ * The learner row and its starter memories are written in one
+ * transaction: a learner that exists but silently has zero memories
+ * (because seeding failed after the learner insert already committed)
+ * would quietly violate that AC for that one learner, with no retry or
+ * visibility into it.
  */
-export async function createLearner(pool: Pool): Promise<string> {
+export async function createLearner(pool: Pool, answers: CreateLearnerRequest = {}): Promise<string> {
+  const cyrillicLiterate = answers.cyrillicLiterate ?? false;
+  const translitEnabled = answers.translitEnabled ?? true;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query<{ id: string }>('INSERT INTO learners DEFAULT VALUES RETURNING id');
+    const result = await client.query<{ id: string }>(
+      'INSERT INTO learners (cyrillic_literate, translit_enabled) VALUES ($1, $2) RETURNING id',
+      [cyrillicLiterate, translitEnabled],
+    );
     const row = result.rows[0];
     if (!row)
       throw new Error('insert did not return a row');
@@ -54,6 +68,31 @@ export async function createLearner(pool: Pool): Promise<string> {
   finally {
     client.release();
   }
+}
+
+export type LearnerView = {
+  id: string;
+  cyrillicLiterate: boolean;
+  translitEnabled: boolean;
+};
+
+/**
+ * Reads back a learner's onboarding answers — the Converse screen needs
+ * `translitEnabled` to decide what occupies the shared reveal slot
+ * (ticket #30 AC #3: transliteration or translation, never both).
+ * Returns null for a nonexistent learner rather than throwing, matching
+ * this codebase's established "not found" convention (getScenarioViewForSession,
+ * selectAndMarkCallbackMemory).
+ */
+export async function getLearner(pool: Pool, learnerId: string): Promise<LearnerView | null> {
+  const result = await pool.query<{ id: string; cyrillic_literate: boolean; translit_enabled: boolean }>(
+    'SELECT id, cyrillic_literate, translit_enabled FROM learners WHERE id = $1',
+    [learnerId],
+  );
+  const row = result.rows[0];
+  if (!row)
+    return null;
+  return { id: row.id, cyrillicLiterate: row.cyrillic_literate, translitEnabled: row.translit_enabled };
 }
 
 /**
