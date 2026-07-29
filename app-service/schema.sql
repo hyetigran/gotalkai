@@ -215,6 +215,34 @@ CREATE TABLE IF NOT EXISTS scenario_complications (
   UNIQUE (scenario_id, level)
 );
 
+-- Ticket #23 AC #1: "target structures injected into a scenario at
+-- session start." The target is a property of the scenario's authored
+-- content (e.g. "tell it back to her" inherently demands past
+-- narration), not computed per-session — so it lives here, one column
+-- per complication level, not on `sessions`. Free-form TEXT matching
+-- `learner_structures.structure_key`'s own convention (schema.sql's
+-- existing comment there: "the structure catalog is content, not
+-- schema"), not every field. NULL means this level has no specific
+-- target (most levels don't demand one particular structure).
+--
+-- Guarded by an information_schema check rather than a bare `ADD COLUMN
+-- IF NOT EXISTS`, matching the fix ticket #31 applied to `learners` for
+-- the same reason: the bare form still takes a lock on every applySchema
+-- call even once the column exists. `scenario_complications` isn't
+-- FK-referenced by any write-heavy table the way `learners` is, so the
+-- actual deadlock risk here is much lower — but this is now the proven
+-- idiom for schema-column additions in this file, and reapplying it
+-- costs nothing.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'scenario_complications' AND column_name = 'target_structure_key'
+  ) THEN
+    ALTER TABLE scenario_complications ADD COLUMN target_structure_key TEXT;
+  END IF;
+END $$;
+
 -- sessions.scenario_id had no FK when that table was created (ticket
 -- #19) because this table didn't exist yet — add it now that it does.
 --

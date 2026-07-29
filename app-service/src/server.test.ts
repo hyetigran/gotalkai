@@ -355,6 +355,93 @@ describe('app service server', () => {
     });
   });
 
+  describe('avoidance detection (ticket #23)', () => {
+    async function makeSessionAtVetNarrationLevel(pool: Pool, learnerId: string): Promise<string> {
+      const scenario = await pool.query<{ id: string }>('SELECT id FROM scenarios WHERE scene_key = $1', ['cat_vet_visit']);
+      const scenarioId = scenario.rows[0]?.id;
+      if (!scenarioId)
+        throw new Error('expected cat_vet_visit to be seeded');
+      // Level 1 is seeded with target_structure_key = 'aspect_perfective' (seed-scenarios.ts).
+      const session = await pool.query<{ id: string }>(
+        'INSERT INTO sessions (learner_id, scenario_id, calibration) VALUES ($1, $2, $3) RETURNING id',
+        [learnerId, scenarioId, JSON.stringify({ complicationLevel: 1 })],
+      );
+      const sessionId = session.rows[0]?.id;
+      if (!sessionId)
+        throw new Error('insert did not return a row');
+      return sessionId;
+    }
+
+    it(
+      'POST /sessions/:id/observations detects an avoided target structure end to end and surfaces it in the debrief '
+      + 'with distinct framing (UAT #1/#2: complete a session steering around the target, confirm a distinct "steered around" note)',
+      async () => {
+        const pool = new Pool({ connectionString: DATABASE_URL });
+        await applySchema(pool);
+        await seedScenarios(pool);
+        const handle = await startServer(testEnv(), pool);
+
+        const learnerResponse = await post(handle.port, '/learners', {});
+        const learnerId = learnerResponse.body?.id as string;
+        const sessionId = await makeSessionAtVetNarrationLevel(pool, learnerId);
+
+        // The learner talks throughout the session but never touches the
+        // target structure — an unrelated real observation, not silence.
+        const response = await post(handle.port, `/sessions/${sessionId}/observations`, {
+          learnerId,
+          observations: [{ kind: 'grammar_error', structureKey: 'genitive_plural', impeded: false }],
+        });
+        expect(response.statusCode).toBe(201);
+
+        const debriefItems = response.body?.debriefItems as { kind: string; detail: Record<string, unknown> }[];
+        const avoidanceItem = debriefItems.find(item => item.kind === 'avoidance');
+        expect(avoidanceItem).toBeDefined();
+        expect(avoidanceItem?.detail.structureKey).toBe('aspect_perfective');
+        // Distinct framing (AC #3), not a generic impeded-communication tag.
+        expect(avoidanceItem?.detail.tag).toBe('you steered around this');
+
+        const stored = await pool.query<{ avoidances: number }>(
+          'SELECT avoidances FROM learner_structures WHERE learner_id = $1 AND structure_key = $2',
+          [learnerId, 'aspect_perfective'],
+        );
+        expect(stored.rows[0]?.avoidances).toBe(1);
+
+        await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+        await handle.close();
+        await pool.end();
+      },
+    );
+
+    it(
+      'does not mislabel an outright wrong attempt at the target structure as avoidance '
+      + '(UAT #3: attempt the target and get it wrong; confirm a normal error pattern, not avoidance)',
+      async () => {
+        const pool = new Pool({ connectionString: DATABASE_URL });
+        await applySchema(pool);
+        await seedScenarios(pool);
+        const handle = await startServer(testEnv(), pool);
+
+        const learnerResponse = await post(handle.port, '/learners', {});
+        const learnerId = learnerResponse.body?.id as string;
+        const sessionId = await makeSessionAtVetNarrationLevel(pool, learnerId);
+
+        const response = await post(handle.port, `/sessions/${sessionId}/observations`, {
+          learnerId,
+          observations: [{ kind: 'grammar_error', structureKey: 'aspect_perfective', impeded: true }],
+        });
+        expect(response.statusCode).toBe(201);
+
+        const debriefItems = response.body?.debriefItems as { kind: string }[];
+        expect(debriefItems.some(item => item.kind === 'avoidance')).toBe(false);
+        expect(debriefItems.some(item => item.kind === 'grammar_error')).toBe(true);
+
+        await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+        await handle.close();
+        await pool.end();
+      },
+    );
+  });
+
   describe('session scenario endpoint', () => {
     it('GET /sessions/:id/scenario returns the session\'s real, selected scenario content', async () => {
       const pool = new Pool({ connectionString: DATABASE_URL });

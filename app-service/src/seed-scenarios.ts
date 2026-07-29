@@ -12,13 +12,22 @@ import type { Pool } from 'pg';
  * comparable. The tea scene reuses PRD §5.3's own canonical example
  * verbatim.
  */
-const SCENARIOS: { sceneKey: string; title: string; levels: { label: string; intro: string }[] }[] = [
+const SCENARIOS: { sceneKey: string; title: string; levels: { label: string; intro: string; targetStructureKey?: string }[] }[] = [
   {
     sceneKey: 'cat_vet_visit',
     title: 'The cat is ill',
     levels: [
       { label: 'She offers you tea', intro: 'A quiet visit — she puts the kettle on and asks how your week has been.' },
-      { label: 'The cat was driven to the vet last night', intro: 'She will want to know what the vet said — and she will ask you to tell it back to her.' },
+      {
+        label: 'The cat was driven to the vet last night',
+        intro: 'She will want to know what the vet said — and she will ask you to tell it back to her.',
+        // Ticket #23 AC #1/#4: "tell it back to her" inherently demands
+        // narrating a sequence of completed past events — the textbook
+        // case for perfective aspect. Chosen from PRD §5.8/§7.10's own
+        // named examples of structures that survive ASR normalization
+        // (aspect, motion verbs), not an arbitrary pick.
+        targetStructureKey: 'aspect_perfective',
+      },
       { label: 'She is hurt that you did not visit', intro: 'The cat is home now, but she noticed you stayed away while it was ill, and it stung.' },
     ],
   },
@@ -46,12 +55,12 @@ export async function seedScenarios(pool: Pool): Promise<void> {
     if (!scenarioId)
       throw new Error(`failed to seed scenario ${scenario.sceneKey}`);
 
-    for (const [level, { label, intro }] of scenario.levels.entries()) {
+    for (const [level, { label, intro, targetStructureKey }] of scenario.levels.entries()) {
       await pool.query(
-        `INSERT INTO scenario_complications (scenario_id, level, label, intro)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (scenario_id, level) DO UPDATE SET label = EXCLUDED.label, intro = EXCLUDED.intro`,
-        [scenarioId, level, label, intro],
+        `INSERT INTO scenario_complications (scenario_id, level, label, intro, target_structure_key)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (scenario_id, level) DO UPDATE SET label = EXCLUDED.label, intro = EXCLUDED.intro, target_structure_key = EXCLUDED.target_structure_key`,
+        [scenarioId, level, label, intro, targetStructureKey ?? null],
       );
     }
   }
