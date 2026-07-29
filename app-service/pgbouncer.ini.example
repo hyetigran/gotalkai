@@ -1,0 +1,24 @@
+# Example PgBouncer config (PRD §7.7: "Connection pooler ... Long-lived
+# Node processes plus per-request connections exhaust Postgres
+# connections faster than expected"). Not consumed by app code — this is
+# infrastructure config for whatever runs PgBouncer in front of Postgres
+# (a Railway addon/sidecar, or Neon's built-in pooler if the Neon
+# fallback from ARCHITECTURE.md §3.4 is used instead). Point
+# DATABASE_URL at the pooler's host:port, not at Postgres directly, once
+# one is deployed.
+#
+# Values below match what was used for local verification (see
+# README.md) — default_pool_size is deliberately small there to make the
+# bound visible; size it for real traffic in production.
+
+[databases]
+app_service = host=127.0.0.1 port=5432 dbname=app_service
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = md5
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+default_pool_size = 20
+max_client_conn = 500

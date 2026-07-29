@@ -2,7 +2,7 @@
   "name": "app-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Long-lived service owning auth, persistence, memory, and debrief analysis — ticket #12 skeleton only, proves Postgres connectivity, no schema yet. See /ARCHITECTURE.md §3.2.",
+  "description": "Long-lived service owning auth, persistence, memory, and debrief analysis. See /ARCHITECTURE.md §3.2 and §3.4 (schema.sql).",
   "packageManager": "pnpm@10.12.3",
   "engines": {
     "node": ">=20"
@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",

@@ -13,6 +13,13 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   /** Standard `postgres://` connection string — Railway's own Postgres addon env var name. */
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  /**
+   * Retention window for `sessions`/`turns` (PRD §7.7). 180 days is a
+   * provisional default, not a product decision recorded anywhere —
+   * deliberately an env var rather than a hardcoded constant so it can be
+   * adjusted without a code change once there's a real policy to encode.
+   */
+  RETENTION_DAYS: z.coerce.number().int().positive().default(180),
 });
 
 export type Env = z.infer<typeof envSchema>;

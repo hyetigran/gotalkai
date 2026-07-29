@@ -10,6 +10,16 @@ describe('loadEnv', () => {
     expect(env.PORT).toBe(8081);
     expect(env.NODE_ENV).toBe('development');
     expect(env.DATABASE_URL).toBe(validBase.DATABASE_URL);
+    expect(env.RETENTION_DAYS).toBe(180);
+  });
+
+  it('coerces a string RETENTION_DAYS to a number', () => {
+    const env = loadEnv({ ...validBase, RETENTION_DAYS: '30' });
+    expect(env.RETENTION_DAYS).toBe(30);
+  });
+
+  it('rejects a non-positive RETENTION_DAYS', () => {
+    expect(() => loadEnv({ ...validBase, RETENTION_DAYS: '0' })).toThrow();
   });
 
   it('coerces a string PORT to a number', () => {
