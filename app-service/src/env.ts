@@ -20,6 +20,18 @@ const envSchema = z.object({
    * adjusted without a code change once there's a real policy to encode.
    */
   RETENTION_DAYS: z.coerce.number().int().positive().default(180),
+  /**
+   * Max real sessions a learner can start per calendar day (PRD §9:
+   * "Requirement: a daily session cap. A power user at two sessions a
+   * day on the premium stack costs $13.67/month against a $12
+   * subscription."). Default 1 — the PRD's own numbers put the
+   * breakeven between one and two sessions/day on the premium stack, so
+   * one session/day is what actually bounds COGS under the $12
+   * subscription; two is the explicitly-cited failure case. Configurable
+   * (not hardcoded) so it stays in sync with `voice_cost_model.xlsx` as
+   * vendor costs change, per this ticket's AC.
+   */
+  DAILY_SESSION_CAP: z.coerce.number().int().positive().default(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

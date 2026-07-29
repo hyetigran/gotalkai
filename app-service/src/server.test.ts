@@ -20,6 +20,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     NODE_ENV: 'test',
     DATABASE_URL,
     RETENTION_DAYS: 180,
+    DAILY_SESSION_CAP: 1,
     ...overrides,
   };
 }
@@ -138,6 +139,79 @@ describe('app service server', () => {
       const response = await post(handle.port, '/sessions', {});
       expect(response.statusCode).toBe(400);
 
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions rejects a real learner\'s second session of the day with 429, server-side — a direct API call cannot bypass it (ticket #24 UAT #3)', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv({ DAILY_SESSION_CAP: 1 }), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const first = await post(handle.port, '/sessions', { learnerId });
+      expect(first.statusCode).toBe(201);
+
+      const second = await post(handle.port, '/sessions', { learnerId });
+      expect(second.statusCode).toBe(429);
+      expect(second.body?.code).toBe('daily_cap_reached');
+      // Framed as "come back tomorrow," not an error/paywall (ticket #24 AC #3).
+      expect(second.body?.message).toContain('tomorrow');
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('honors a higher configured DAILY_SESSION_CAP', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv({ DAILY_SESSION_CAP: 2 }), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const first = await post(handle.port, '/sessions', { learnerId });
+      expect(first.statusCode).toBe(201);
+      const second = await post(handle.port, '/sessions', { learnerId });
+      expect(second.statusCode).toBe(201);
+      const third = await post(handle.port, '/sessions', { learnerId });
+      expect(third.statusCode).toBe(429);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('never lets concurrent requests exceed the cap — a race, not just the sequential case', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv({ DAILY_SESSION_CAP: 1 }), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      // Five simultaneous requests for a learner capped at 1 — without
+      // the per-learner advisory lock serializing the count-then-insert,
+      // more than one of these could read "count < cap" before any of
+      // them commit.
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => post(handle.port, '/sessions', { learnerId })),
+      );
+      const successCount = responses.filter(response => response.statusCode === 201).length;
+      const capReachedCount = responses.filter(response => response.statusCode === 429).length;
+      expect(successCount).toBe(1);
+      expect(capReachedCount).toBe(4);
+
+      const stored = await pool.query('SELECT count(*)::int AS count FROM sessions WHERE learner_id = $1', [learnerId]);
+      expect(stored.rows[0]?.count).toBe(1);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
       await pool.end();
     });

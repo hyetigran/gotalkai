@@ -1,12 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { colors, shadows } from '@/components/ui/design-tokens';
 import { PortraitHatch } from '@/components/ui/portrait-hatch';
 import { useIsFirstSession } from '@/lib/hooks/use-is-first-session';
-import { useCallbackLine } from './api';
 import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
+import { useOpenAnswerHandler, useOpenCallbackLine } from './use-open-screen';
 
 /**
  * The Open screen. Layout and copy per
@@ -19,39 +18,17 @@ import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
  * falls back to scripted copy only when there's no `learnerId` at all,
  * matching the pattern established on the Debrief/Tomorrow screens
  * (tickets #20/#21): never silently substitutes scripted text for a
- * loading, errored, or genuinely-different real result. Everything else
- * on this screen stays scripted — out of this ticket's scope.
+ * loading, errored, or genuinely-different real result.
+ *
+ * The "Answer" button enforces the real daily session cap (ticket #24)
+ * when a real learner is present — see `use-open-screen.ts`.
  */
 export function OpenScreen() {
   const router = useRouter();
   const { learnerId } = useLocalSearchParams<{ learnerId?: string }>();
-  const hasRealLearner = Boolean(learnerId);
-  const { data: realCallbackLine, isLoading, isError } = useCallbackLine({
-    variables: { learnerId: learnerId ?? '' },
-    enabled: hasRealLearner,
-  });
-  // Four distinct states, not collapsed into one fallback: no real
-  // learner (scripted copy), still loading, errored, or a successful
-  // real response that's genuinely empty (a learner with zero memories —
-  // shouldn't happen once seeding runs, but is a real, non-alarming
-  // server response, not a network failure) versus one with content.
-  const callbackLineStatusText = !hasRealLearner
-    ? null
-    : (isLoading
-        ? 'Loading…'
-        : (isError
-            ? 'Could not load her line — check your connection and try again.'
-            : (realCallbackLine ? null : 'No memories yet.')));
-  const callbackLine = !hasRealLearner ? openData.callbackLine : (realCallbackLine ?? null);
+  const { callbackLine, callbackLineStatusText } = useOpenCallbackLine(learnerId);
   const [isFirstSession, setIsFirstSession] = useIsFirstSession();
-
-  const handleAnswer = React.useCallback(() => {
-    if (isFirstSession)
-      setIsFirstSession(false);
-    // The loop's forward steps replace rather than push, so a repeating
-    // daily loop doesn't grow the navigation stack without bound.
-    router.replace('/converse');
-  }, [isFirstSession, setIsFirstSession, router]);
+  const { handleAnswer, isPending, isUnexpectedError } = useOpenAnswerHandler({ learnerId, isFirstSession, setIsFirstSession });
 
   return (
     <View className="flex-1 bg-paper px-[22px] pt-[66px] pb-[44px]">
@@ -106,11 +83,17 @@ export function OpenScreen() {
             {openData.openMicLine}
           </Text>
         )}
+        {isUnexpectedError && (
+          <Text className="mb-[16px] font-serif text-[15px] leading-[22px] text-ink/62">
+            Could not start a session — check your connection and try again.
+          </Text>
+        )}
         <Pressable
           onPress={handleAnswer}
           accessibilityRole="button"
           accessibilityLabel={openData.answer}
-          className="items-center rounded-[16px] bg-accent py-[19px]"
+          disabled={isPending}
+          className="items-center rounded-[16px] bg-accent py-[19px] disabled:opacity-50"
         >
           <Text className="font-serif text-[18px] text-paper">{openData.answer}</Text>
         </Pressable>
