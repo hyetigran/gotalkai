@@ -3,9 +3,11 @@ import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import type { ServerMessage, TurnTimestamps } from './messages';
 import type { TranscriptTurn } from './persona';
 import type { GeneratePersonaTurnResult } from './persona-turn';
+import type { SafetyCategory, SafetyTriggerCategory } from './safety-detection';
 import type { AnnotatedText } from './stress/stress-annotation';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
+import { getSafetyResponseText } from './safety-detection';
 import { computeRmsEnergy, VadGate } from './vad';
 
 /**
@@ -23,6 +25,8 @@ import { computeRmsEnergy, VadGate } from './vad';
 export type TurnOrchestratorDeps = {
   createSttSession: (apiKey: string, handlers: SttEventHandlers) => { sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit?: boolean) => void; close: () => void };
   generatePersonaTurn: (client: Anthropic, transcript: TranscriptTurn[]) => Promise<GeneratePersonaTurnResult>;
+  /** Ticket #27: the separate detection path PRD §12.1 requires — runs on every learner turn, gating whether the normal persona pipeline below even runs. */
+  detectSafetyTrigger: (client: Anthropic, learnerText: string) => Promise<SafetyCategory>;
   annotateText: (text: string) => AnnotatedText;
   synthesizeSpeech: (client: ElevenLabsClient, voiceId: string, text: string, handlers?: TtsEventHandlers) => Promise<unknown>;
   anthropicClient: Anthropic;
@@ -222,6 +226,20 @@ export class TurnOrchestrator {
     // even when it wasn't confident enough to act on.
     this.deps.sendMessage({ type: 'transcript_final', text: transcript.text });
 
+    // Ticket #27 / PRD §12.1: runs before the normal pipeline gets a say,
+    // including before the low-confidence check below — a real disclosure
+    // deserves the escape hatch even if STT wasn't fully confident in the
+    // exact words, and there is nothing to classify on truly empty text.
+    if (transcript.text.trim().length > 0) {
+      const safetyCategory = await this.deps.detectSafetyTrigger(this.deps.anthropicClient, transcript.text);
+      if (myToken !== this.generationToken)
+        return;
+      if (safetyCategory !== 'none') {
+        await this.respondWithSafetyMessage(myToken, safetyCategory, t0TurnDetected, t1SttFinal);
+        return;
+      }
+    }
+
     if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
       this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal);
       return;
@@ -277,6 +295,51 @@ export class TurnOrchestrator {
     this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_CATCH_THAT_LINE, comprehension: 'not_understood', affect: 'concerned' });
     // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
     this.sendTurnComplete({ t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp });
+    this.state = 'listening';
+  }
+
+  /**
+   * Ticket #27 / PRD §12.1: breaks character entirely — deliberately does
+   * NOT push anything onto `this.history`. The triggering text and this
+   * response both stay out of the persona LLM's conversation context
+   * permanently, not just for this turn: "separate detection path,
+   * separate response mode" means the normal pipeline never sees this
+   * exchange happened at all, on this turn or any later one.
+   *
+   * Still goes through real `synthesizeSpeech` (this is a voice-first
+   * product — a text-only response the learner never sees, since the
+   * transcript only appears after she finishes "speaking" per PRD §6.2,
+   * would make the escape hatch practically silent). Skips
+   * `annotateText`: the response text is English, and stress annotation
+   * is Cyrillic-specific.
+   */
+  private async respondWithSafetyMessage(myToken: number, category: SafetyTriggerCategory, t0TurnDetected: number, t1SttFinal: number): Promise<void> {
+    const now = this.deps.now ?? Date.now;
+    const text = getSafetyResponseText(category);
+    this.deps.sendMessage({ type: 'safety_response', category, text });
+
+    this.state = 'speaking';
+    let t5FirstAudio: number | null = null;
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, text, {
+      onChunk: (chunk, sentenceIndex) => {
+        if (myToken !== this.generationToken)
+          return;
+        t5FirstAudio ??= now();
+        this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: chunk.audioBase64 });
+      },
+    });
+    if (myToken !== this.generationToken)
+      return;
+
+    // t2/t3/t4 collapsed to t1: no persona-LLM or stress-annotation stage really ran for this turn.
+    this.sendTurnComplete({
+      t0TurnDetected,
+      t1SttFinal,
+      t2PersonaStart: t1SttFinal,
+      t3PersonaComplete: t1SttFinal,
+      t4StressAnnotated: t1SttFinal,
+      t5FirstAudio: t5FirstAudio ?? t1SttFinal,
+    });
     this.state = 'listening';
   }
 
