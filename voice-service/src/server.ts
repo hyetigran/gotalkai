@@ -131,6 +131,9 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             // docs/adr/0017). Accepted without error so the client's
             // handshake doesn't fail while that's pending.
             return;
+          case 'text_input':
+            void orchestrator.submitTextInput(result.data.text);
+            return;
         }
       });
     });

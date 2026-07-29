@@ -19,6 +19,15 @@ import { computeRmsEnergy, VadGate } from './vad';
  * this depends on); wiring it to real audio in/out over a WebSocket is
  * server.ts's job, and *that* wiring is unverified (docs/adr/0017 — no
  * physical device exists in this environment).
+ *
+ * Ticket #32 adds `submitTextInput` as a second entry point alongside
+ * the voice path's `pushAudioFrame`/`handleTurnDetected` — both funnel
+ * into the same `checkSafetyAndRespond`/`runPersonaCascade` (persona
+ * generation, stress annotation, TTS, history, timestamps), per AC #3:
+ * "no duplicated pipeline logic." Only what's genuinely specific to
+ * voice (VAD, STT, the low-confidence "didn't catch that" mechanic —
+ * there's no ASR confidence concept for exact typed text) stays in the
+ * voice-only path.
  */
 
 /** Injected dependencies — production wiring passes the real functions from persona-turn.ts/stt.ts/tts.ts/stress-annotation.ts directly; tests pass fakes. Matches the DI seam every one of those modules already uses. */
@@ -100,7 +109,7 @@ export class TurnOrchestrator {
     return this.state;
   }
 
-  /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. */
+  /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. Applies uniformly to text input too (ticket #32) — hold-to-think is about giving the learner space, not specifically about audio. */
   holdStart(): void {
     this.held = true;
     if (this.holdAutoReleaseTimer)
@@ -173,6 +182,42 @@ export class TurnOrchestrator {
   }
 
   /**
+   * Ticket #32 / PRD §12.3: the text-input path — bypasses VAD/STT
+   * entirely, since the learner's exact typed text already *is* the
+   * transcript. No ASR-confidence concept exists for it, so the
+   * voice-only low-confidence "didn't catch that" mechanic has no
+   * analog here and is skipped outright, not approximated. Everything
+   * else downstream — safety detection, persona generation, stress
+   * annotation, TTS, history, six-timestamp instrumentation — is the
+   * exact same `checkSafetyAndRespond`/`runPersonaCascade` the voice
+   * path uses (AC #3: "no duplicated pipeline logic").
+   */
+  async submitTextInput(text: string): Promise<void> {
+    if (this.held)
+      return;
+    const trimmed = text.trim();
+    if (trimmed.length === 0)
+      return;
+
+    // Typing while she's still speaking interrupts her — the text-input
+    // equivalent of speaking over her (pushAudioFrame's own barge-in check).
+    if (this.state === 'speaking')
+      this.handleBargeIn();
+
+    const { myToken, t0TurnDetected } = this.beginTurn();
+    // No real STT stage exists for typed input — t0/t1 collapse to the instant the text arrived,
+    // matching how the voice-only stages collapse to a single timestamp elsewhere when they didn't
+    // really run (see respondWithDidntCatchThat/respondWithSafetyMessage).
+    const t1SttFinal = t0TurnDetected;
+    this.deps.sendMessage({ type: 'transcript_final', text: trimmed });
+
+    if (await this.checkSafetyAndRespond(myToken, trimmed, t0TurnDetected, t1SttFinal))
+      return;
+
+    await this.runPersonaCascade(myToken, trimmed, t0TurnDetected, t1SttFinal);
+  }
+
+  /**
    * PRD §7.10: "interruption must stop playback, cancel in-flight TTS,
    * cancel LLM generation, and reset stream state." Cancellation here
    * means every in-flight continuation of the superseded turn checks its
@@ -194,12 +239,25 @@ export class TurnOrchestrator {
     this.deps.sendMessage({ type: 'barge_in' });
   }
 
-  private async handleTurnDetected(): Promise<void> {
+  /**
+   * Shared turn-initiation preamble for both entry points (ticket #32):
+   * snapshot the generation token, mark t0, flip to `processing`, and
+   * send the in-character filler. Everything after this point diverges
+   * (STT wait vs. immediate text) until both rejoin at
+   * `checkSafetyAndRespond`/`runPersonaCascade`.
+   */
+  private beginTurn(): { myToken: number; t0TurnDetected: number } {
     const myToken = this.generationToken;
     const now = this.deps.now ?? Date.now;
     const t0TurnDetected = now();
     this.state = 'processing';
     this.deps.sendMessage({ type: 'persona_filler', text: FILLER_LINES[this.history.length % FILLER_LINES.length] as string });
+    return { myToken, t0TurnDetected };
+  }
+
+  private async handleTurnDetected(): Promise<void> {
+    const { myToken, t0TurnDetected } = this.beginTurn();
+    const now = this.deps.now ?? Date.now;
 
     let transcript: SttTranscript;
     try {
@@ -229,23 +287,49 @@ export class TurnOrchestrator {
     // Ticket #27 / PRD §12.1: runs before the normal pipeline gets a say,
     // including before the low-confidence check below — a real disclosure
     // deserves the escape hatch even if STT wasn't fully confident in the
-    // exact words, and there is nothing to classify on truly empty text.
-    if (transcript.text.trim().length > 0) {
-      const safetyCategory = await this.deps.detectSafetyTrigger(this.deps.anthropicClient, transcript.text);
-      if (myToken !== this.generationToken)
-        return;
-      if (safetyCategory !== 'none') {
-        await this.respondWithSafetyMessage(myToken, safetyCategory, t0TurnDetected, t1SttFinal);
-        return;
-      }
-    }
+    // exact words.
+    if (await this.checkSafetyAndRespond(myToken, transcript.text, t0TurnDetected, t1SttFinal))
+      return;
 
     if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
       this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal);
       return;
     }
 
-    this.history.push({ speaker: 'learner', text: transcript.text });
+    await this.runPersonaCascade(myToken, transcript.text, t0TurnDetected, t1SttFinal);
+  }
+
+  /**
+   * Ticket #27's separate detection path, shared by both input
+   * modalities (ticket #32 AC #3). Returns `true` if the caller should
+   * stop (either a real trigger was handled, or this turn went stale
+   * while the classifier call was in flight) — `false` means clear to
+   * continue into the normal pipeline.
+   */
+  private async checkSafetyAndRespond(myToken: number, learnerText: string, t0TurnDetected: number, t1SttFinal: number): Promise<boolean> {
+    if (learnerText.trim().length === 0)
+      return false; // nothing to classify
+    const safetyCategory = await this.deps.detectSafetyTrigger(this.deps.anthropicClient, learnerText);
+    if (myToken !== this.generationToken)
+      return true;
+    if (safetyCategory !== 'none') {
+      await this.respondWithSafetyMessage(myToken, safetyCategory, t0TurnDetected, t1SttFinal);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Persona generation → stress annotation → TTS → history → six-timestamp
+   * completion — identical regardless of whether `learnerText` arrived via
+   * STT or was typed directly (ticket #32 AC #3/#4: recasts, register
+   * asymmetry, and everything downstream "work identically... no
+   * duplicated pipeline logic"). Callers have already run the safety check
+   * and (for voice) the low-confidence check before reaching here.
+   */
+  private async runPersonaCascade(myToken: number, learnerText: string, t0TurnDetected: number, t1SttFinal: number): Promise<void> {
+    const now = this.deps.now ?? Date.now;
+    this.history.push({ speaker: 'learner', text: learnerText });
     const t2PersonaStart = now();
     // A snapshot, not the live mutable array: `this.history` gets the
     // persona's own reply pushed onto it a few lines below, and nothing

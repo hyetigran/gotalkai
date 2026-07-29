@@ -136,6 +136,41 @@ describe('useLiveConverseSession', () => {
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0]).toEqual({ speaker: 'system', text: 'Safety text' });
   });
+
+  it('runs the exact same cascade for a typed turn (ticket #32) — filler -> transcript_final -> reply -> tts, through the same reducer', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+
+    act(() => result.current.submitText('Привет!'));
+    const sent = latestSocket().sent.map(raw => JSON.parse(raw));
+    expect(sent).toContainEqual({ type: 'text_input', text: 'Привет!' });
+
+    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
+    act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет!' }));
+    act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
+    act(() => latestSocket().simulateMessage({ type: 'tts_chunk', sentenceIndex: 0, audioBase64: 'abc' }));
+
+    expect(result.current.phase).toBe('speaking');
+    // Matches the voice path's own established behavior (see "runs the full cascade" above): once
+    // transcript_final has landed between the filler and the real reply, the filler turn is kept
+    // (not replaced) and both the transcript and the real reply append as their own entries.
+    expect(result.current.turns).toEqual([
+      { speaker: 'persona', text: 'Ну…' },
+      { speaker: 'learner', text: 'Привет!' },
+      { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' },
+    ]);
+  });
+
+  it('defaults to voice mode, and setMode switches it', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    expect(result.current.mode).toBe('voice');
+
+    act(() => result.current.setMode('text'));
+    expect(result.current.mode).toBe('text');
+
+    act(() => result.current.setMode('voice'));
+    expect(result.current.mode).toBe('voice');
+  });
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
