@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { generatePersonaTurn } from '../persona-turn';
+import { PERSONA_DEFINITIONS } from '../personas';
 import type { EvalEntryResult, GateResult } from './gates';
 import { allGatesPassed, computeGates } from './gates';
 import { GOLDEN_SET } from './golden-set';
@@ -30,7 +31,8 @@ export async function runEval(client: Anthropic): Promise<EvalReport> {
   const results: EvalEntryResult[] = [];
   for (const entry of GOLDEN_SET) {
     const transcript = [...entry.history, { speaker: 'learner' as const, text: entry.learnerTurn }];
-    const { turn, fellBackToFiller } = await generatePersonaTurn(client, transcript, {});
+    // Ticket #34: golden-set.ts's content (structures, register asymmetry) is authored specifically against Валентина — the eval harness always evaluates her, regardless of which personas exist.
+    const { turn, fellBackToFiller } = await generatePersonaTurn(client, transcript, PERSONA_DEFINITIONS.valentina, {});
     const mechanicalResults = runMechanicalAssertions({ entry, turn, fellBackToFiller });
 
     let judgeScore = null;

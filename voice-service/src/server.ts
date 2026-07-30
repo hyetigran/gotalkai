@@ -9,6 +9,8 @@ import type { Env } from './env';
 import type { ServerMessage } from './messages';
 import { clientMessageSchema } from './messages';
 import { generatePersonaTurn } from './persona-turn';
+import { DEFAULT_PERSONA_ID, PERSONA_DEFINITIONS } from './personas';
+import type { PersonaId } from './personas';
 import { detectSafetyTrigger } from './safety-detection';
 import { annotateText } from './stress/stress-annotation';
 import { createSttSession } from './stt';
@@ -71,6 +73,11 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
     const anthropicClient = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const elevenLabsClient = new ElevenLabsClient({ apiKey: env.ELEVENLABS_API_KEY });
     const appServiceClient = createAppServiceClient(env.APP_SERVICE_URL);
+    /** Ticket #34: which voice id backs which persona — the one piece of persona config that's an env-var secret, kept out of personas.ts itself (see docs/adr/0023). Елена's is `undefined` until a real ElevenLabs account configures one. */
+    const voiceIdForPersona: Record<PersonaId, string | undefined> = {
+      valentina: env.ELEVENLABS_VALENTINA_VOICE_ID,
+      elena: env.ELEVENLABS_ELENA_VOICE_ID,
+    };
 
     const httpServer = createHttpServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -101,6 +108,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
         anthropicClient,
         elevenLabsClient,
         elevenLabsApiKey: env.ELEVENLABS_API_KEY,
+        persona: PERSONA_DEFINITIONS[DEFAULT_PERSONA_ID],
         voiceId: env.ELEVENLABS_VALENTINA_VOICE_ID,
         sendMessage: message => send(ws, message),
         recordTurn: appServiceClient.recordTurn,
@@ -134,7 +142,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
           case 'hold_end':
             orchestrator.holdEnd();
             return;
-          case 'session_start':
+          case 'session_start': {
             // Ticket #29 / docs/adr/0022: the persistence link
             // docs/adr/0017 disclosed as missing — every subsequent
             // recordTurn/recordInterruption call needs this real
@@ -142,7 +150,22 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             // here: app-service's POST /sessions/:id/turns is keyed
             // only by session, not learner.
             orchestrator.sessionStart(result.data.sessionId);
+
+            // Ticket #34 / docs/adr/0023: only switch personas when the
+            // message actually names one other than the connection-time
+            // default — omitting `personaId` (every pre-#34 client)
+            // keeps the orchestrator on Валентина, untouched.
+            const personaId = result.data.personaId ?? DEFAULT_PERSONA_ID;
+            if (personaId !== DEFAULT_PERSONA_ID) {
+              const voiceId = voiceIdForPersona[personaId];
+              if (!voiceId) {
+                send(ws, { type: 'error', message: `voice not configured for persona "${personaId}"` });
+                return;
+              }
+              orchestrator.selectPersona(PERSONA_DEFINITIONS[personaId], voiceId);
+            }
             return;
+          }
           case 'text_input':
             void orchestrator.submitTextInput(result.data.text);
             return;

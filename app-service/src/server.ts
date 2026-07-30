@@ -2,7 +2,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Pool } from 'pg';
 import type { Env } from './env';
 import { createServer as createHttpServer } from 'node:http';
+import { z } from 'zod';
 
+import { getAddressBookForLearner } from './address-book';
 import { detectAndRecordAvoidance } from './avoidance-detection';
 import { getBenchmarkTrend, getCurrentBenchmarkSet, InvalidBenchmarkAttemptError, submitBenchmarkAttempt, submitBenchmarkAttemptRequestSchema } from './benchmark';
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
@@ -10,10 +12,11 @@ import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from './memories-request';
 import { recordObservationsRequestSchema } from './observations-request';
 import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
+import { PERSONA_IDS } from './personas';
 import { deleteLearner, recordAudioSamplingConsent } from './privacy';
 import { getScenarioViewForSession } from './scenario-view';
 import { DailySessionCapReachedError } from './session-cap';
-import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner } from './sessions';
+import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from './sessions';
 import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from './turns';
 
 export type AppServiceHandle = {
@@ -51,12 +54,15 @@ const TURN_REVEAL_PATH = /^\/turns\/([^/]+)\/reveal$/;
 const TURN_INTERRUPTION_PATH = /^\/turns\/([^/]+)\/interruption$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
+const LEARNER_ADDRESS_BOOK_PATH = /^\/learners\/([^/]+)\/address-book$/;
 const LEARNER_AUDIO_SAMPLING_CONSENT_PATH = /^\/learners\/([^/]+)\/audio-sampling-consent$/;
+const LEARNER_CALIBRATION_VARIANT_PATH = /^\/learners\/([^/]+)\/calibration-variant$/;
 const LEARNER_BENCHMARK_ATTEMPTS_PATH = /^\/learners\/([^/]+)\/benchmark-attempts$/;
 const LEARNER_PATH = /^\/learners\/([^/]+)$/;
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
-  const url = req.url ?? '';
+  // Ticket #34: split off the query string once, here — every route match below (`===`/regex `.exec`) targets the path alone, and `GET /learners/:id/callback?personaId=...` is the one place a query string exists at all.
+  const [url = '', queryString] = (req.url ?? '').split('?');
 
   if (req.method === 'GET' && url === '/health') {
     try {
@@ -319,7 +325,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
       return;
     }
     try {
-      const id = await recordPersonaMemory(pool, learnerId, parsed.data.content);
+      const id = await recordPersonaMemory(pool, learnerId, parsed.data.content, parsed.data.personaId);
       sendJson(res, 201, { status: 'ok', id });
     }
     catch {
@@ -335,9 +341,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
       sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
       return;
     }
+    // Ticket #34 / docs/adr/0023: which persona's memory to open with — omitted (every pre-#34 caller) defaults to Валентина inside selectAndMarkCallbackMemory itself, not here, so this stays `undefined` rather than duplicating that default. Zod-validated like every other untrusted-boundary input in this file (PRD §7.8) — `URLSearchParams.get` returns `null` for "absent," which Zod's own `.optional()` doesn't accept, so `?? undefined` bridges the two before parsing.
+    const personaIdQueryParam = new URLSearchParams(queryString ?? '').get('personaId') ?? undefined;
+    const personaIdParsed = z.enum(PERSONA_IDS).optional().safeParse(personaIdQueryParam);
+    if (!personaIdParsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid personaId' });
+      return;
+    }
     try {
-      const callbackLine = await selectAndMarkCallbackMemory(pool, learnerId);
+      const callbackLine = await selectAndMarkCallbackMemory(pool, learnerId, personaIdParsed.data);
       sendJson(res, 200, { status: 'ok', callbackLine });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const addressBookMatch = LEARNER_ADDRESS_BOOK_PATH.exec(url);
+  if (req.method === 'GET' && addressBookMatch) {
+    const learnerId = parseUuidParam(addressBookMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const entries = await getAddressBookForLearner(pool, learnerId);
+      sendJson(res, 200, { status: 'ok', entries });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -355,6 +385,40 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     try {
       const recorded = await recordAudioSamplingConsent(pool, learnerId);
       if (!recorded) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok' });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const calibrationVariantMatch = LEARNER_CALIBRATION_VARIANT_PATH.exec(url);
+  if (req.method === 'PATCH' && calibrationVariantMatch) {
+    const learnerId = parseUuidParam(calibrationVariantMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    }
+    catch {
+      sendJson(res, 400, { status: 'error', message: 'invalid JSON body' });
+      return;
+    }
+    const parsed = updateCalibrationVariantRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid request body', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const updated = await updateCalibrationVariant(pool, learnerId, parsed.data.calibrationVariant);
+      if (!updated) {
         sendJson(res, 404, { status: 'not found' });
         return;
       }
@@ -516,10 +580,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   (ticket #22 AC #1).
  * - `GET /learners/:id/callback` — the real callback line for the Open
  *   screen: the learner's least-recently-referenced memory, marked
- *   referenced so it doesn't repeat every day (ticket #22 AC #2).
+ *   referenced so it doesn't repeat every day (ticket #22 AC #2). Takes
+ *   an optional `?personaId=` query param (ticket #34 / docs/adr/0023),
+ *   scoping the callback to one persona's own memories — defaults to
+ *   Валентина when omitted, matching every pre-#34 caller's behavior.
+ * - `GET /learners/:id/address-book` — real sealed/next/reached status
+ *   per persona (ticket #34 AC #3), computed from real
+ *   `learner_structures` B1-readiness data — see address-book.ts /
+ *   docs/adr/0023 for what "B1-ready" is proxied from.
  * - `POST /learners/:id/audio-sampling-consent` — records
  *   `audio_sampling_consent_at`, separate from any ToS-acceptance flow
  *   (ticket #31 AC #2).
+ * - `PATCH /learners/:id/calibration-variant` — flips an existing
+ *   learner's `partner_learner`/`heritage_speaker` calibration (ticket
+ *   #36 UAT #1), affecting future sessions' dial defaults only.
  * - `DELETE /learners/:id` — the single deletion path (ticket #31 AC
  *   #4): removes the learner row, and via schema.sql's existing FK
  *   cascade graph, every row that hangs off it — memories, sessions,

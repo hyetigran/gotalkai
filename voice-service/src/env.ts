@@ -44,6 +44,17 @@ const envSchema = z.object({
    */
   ELEVENLABS_VALENTINA_VOICE_ID: z.string().min(1, 'ELEVENLABS_VALENTINA_VOICE_ID is required'),
   /**
+   * Ticket #34 / docs/adr/0023: Елена's own ElevenLabs voice id.
+   * Deliberately **optional**, unlike Валентина's own required one — no
+   * real ElevenLabs account exists in this environment to audition a
+   * voice for her either (same disclosed gap as docs/adr/0016), and she
+   * hasn't launched yet (Address book: "unlocks at B1"). If a
+   * `session_start` names her and this isn't configured, server.ts sends
+   * an error and leaves the connection on its current persona rather
+   * than crashing.
+   */
+  ELEVENLABS_ELENA_VOICE_ID: z.string().min(1).optional(),
+  /**
    * Ticket #29 / docs/adr/0022: where `app-service-client.ts` posts turn
    * artefacts (ARCHITECTURE.md §3's "posts turn artefacts / timings back
    * through app service after turns"). Defaults to app-service's own

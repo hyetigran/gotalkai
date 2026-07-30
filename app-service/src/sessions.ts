@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
 import { z } from 'zod';
 
+import { CALIBRATION_VARIANTS, DEFAULT_CALIBRATION_VARIANT, getDialDefaults } from './calibration-profiles';
+import type { CalibrationVariant } from './calibration-profiles';
 import { selectNextScenario } from './scenario-selector';
 import { countSessionsToday, DailySessionCapReachedError, hasReachedDailyCap } from './session-cap';
 import { seedStarterMemories } from './seed-starter-memories';
@@ -23,6 +25,8 @@ export type CreateSessionRequest = z.infer<typeof createSessionRequestSchema>;
 export const createLearnerRequestSchema = z.object({
   cyrillicLiterate: z.boolean().optional(),
   translitEnabled: z.boolean().optional(),
+  /** Ticket #36 / docs/adr/0024. Optional, same reasoning as the two fields above — omitted defaults to `partner_learner` (schema.sql's own column default). */
+  calibrationVariant: z.enum(CALIBRATION_VARIANTS).optional(),
 });
 
 export type CreateLearnerRequest = z.infer<typeof createLearnerRequestSchema>;
@@ -47,12 +51,13 @@ export type CreateLearnerRequest = z.infer<typeof createLearnerRequestSchema>;
 export async function createLearner(pool: Pool, answers: CreateLearnerRequest = {}): Promise<string> {
   const cyrillicLiterate = answers.cyrillicLiterate ?? false;
   const translitEnabled = answers.translitEnabled ?? true;
+  const calibrationVariant = answers.calibrationVariant ?? DEFAULT_CALIBRATION_VARIANT;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const result = await client.query<{ id: string }>(
-      'INSERT INTO learners (cyrillic_literate, translit_enabled) VALUES ($1, $2) RETURNING id',
-      [cyrillicLiterate, translitEnabled],
+      'INSERT INTO learners (cyrillic_literate, translit_enabled, calibration_variant) VALUES ($1, $2, $3) RETURNING id',
+      [cyrillicLiterate, translitEnabled, calibrationVariant],
     );
     const row = result.rows[0];
     if (!row)
@@ -74,25 +79,46 @@ export type LearnerView = {
   id: string;
   cyrillicLiterate: boolean;
   translitEnabled: boolean;
+  calibrationVariant: CalibrationVariant;
 };
 
 /**
  * Reads back a learner's onboarding answers — the Converse screen needs
  * `translitEnabled` to decide what occupies the shared reveal slot
- * (ticket #30 AC #3: transliteration or translation, never both).
- * Returns null for a nonexistent learner rather than throwing, matching
- * this codebase's established "not found" convention (getScenarioViewForSession,
- * selectAndMarkCallbackMemory).
+ * (ticket #30 AC #3: transliteration or translation, never both);
+ * `calibrationVariant` is ticket #36's own addition, read back the same
+ * way. Returns null for a nonexistent learner rather than throwing,
+ * matching this codebase's established "not found" convention
+ * (getScenarioViewForSession, selectAndMarkCallbackMemory).
  */
 export async function getLearner(pool: Pool, learnerId: string): Promise<LearnerView | null> {
-  const result = await pool.query<{ id: string; cyrillic_literate: boolean; translit_enabled: boolean }>(
-    'SELECT id, cyrillic_literate, translit_enabled FROM learners WHERE id = $1',
+  const result = await pool.query<{ id: string; cyrillic_literate: boolean; translit_enabled: boolean; calibration_variant: CalibrationVariant }>(
+    'SELECT id, cyrillic_literate, translit_enabled, calibration_variant FROM learners WHERE id = $1',
     [learnerId],
   );
   const row = result.rows[0];
   if (!row)
     return null;
-  return { id: row.id, cyrillicLiterate: row.cyrillic_literate, translitEnabled: row.translit_enabled };
+  return { id: row.id, cyrillicLiterate: row.cyrillic_literate, translitEnabled: row.translit_enabled, calibrationVariant: row.calibration_variant };
+}
+
+/** `PATCH /learners/:id/calibration-variant` request body. */
+export const updateCalibrationVariantRequestSchema = z.object({
+  calibrationVariant: z.enum(CALIBRATION_VARIANTS),
+});
+
+/**
+ * Ticket #36 UAT #1: "Set a test account to the heritage-speaker
+ * variant." Flips an existing learner's calibration profile — separate
+ * from `createLearner`'s onboarding-time answer, the same granular-
+ * endpoint pattern `privacy.ts`'s `recordAudioSamplingConsent` already
+ * uses. Only affects *future* sessions' dial defaults (`createSession`
+ * reads this at session-creation time); does not retroactively touch
+ * `calibration` on sessions that already exist.
+ */
+export async function updateCalibrationVariant(pool: Pool, learnerId: string, calibrationVariant: CalibrationVariant): Promise<boolean> {
+  const result = await pool.query('UPDATE learners SET calibration_variant = $2 WHERE id = $1', [learnerId, calibrationVariant]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**
@@ -102,7 +128,10 @@ export async function getLearner(pool: Pool, learnerId: string): Promise<Learner
  * written onto the new session row (`scenario_id`,
  * `scenario_sessions_since_last_use`, `calibration.complicationLevel`)
  * so it can be read back by the selector next time and rendered by the
- * Tomorrow screen this time.
+ * Tomorrow screen this time. Ticket #36 / docs/adr/0024: `calibration`
+ * also gets the three PRD §5.2 dial defaults for whichever
+ * `calibration_variant` this learner is on — the first ticket to write
+ * any of the three anywhere.
  *
  * Enforces the daily session cap first (ticket #24; PRD §9), before
  * doing any scenario-selection work — server-side, not a client-side
@@ -132,15 +161,21 @@ export async function createSession(pool: Pool, learnerId: string, dailySessionC
     if (hasReachedDailyCap(todaysSessionCount, dailySessionCap))
       throw new DailySessionCapReachedError(dailySessionCap);
 
-    // Scenario selection reads learner_structures/session history — it
-    // doesn't write anything the advisory lock needs to guard, so it can
-    // run against the shared pool rather than the locked client.
-    const selection = await selectNextScenario(pool, learnerId);
+    // Scenario selection and the learner's own calibration_variant read
+    // learner_structures/session history and the learners table — neither
+    // writes anything the advisory lock needs to guard, so both can run
+    // against the shared pool rather than the locked client.
+    const [selection, learner] = await Promise.all([
+      selectNextScenario(pool, learnerId),
+      getLearner(pool, learnerId),
+    ]);
+    const dialDefaults = getDialDefaults(learner?.calibrationVariant ?? DEFAULT_CALIBRATION_VARIANT);
+    const calibration = { complicationLevel: selection.level, ...dialDefaults };
     const result = await client.query<{ id: string }>(
       `INSERT INTO sessions (learner_id, scenario_id, scenario_sessions_since_last_use, calibration)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [learnerId, selection.scenarioId, selection.sessionsSinceLastUse, JSON.stringify({ complicationLevel: selection.level })],
+      [learnerId, selection.scenarioId, selection.sessionsSinceLastUse, JSON.stringify(calibration)],
     );
     const row = result.rows[0];
     if (!row)

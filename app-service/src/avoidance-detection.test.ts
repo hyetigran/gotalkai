@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { detectAndRecordAvoidance, detectAvoidance } from './avoidance-detection';
 import { applySchema } from './schema';
 import { seedScenarios } from './seed-scenarios';
+import { getStructureTaxonomyPriority } from './structure-taxonomy';
 
 describe('detectAvoidance', () => {
   it('is never avoidance when there is no target structure for this level', () => {
@@ -17,6 +18,22 @@ describe('detectAvoidance', () => {
   it('is not avoidance when the target was attempted at all, correctly or not (UAT #3: an outright wrong attempt is a normal error, not avoidance)', () => {
     expect(detectAvoidance('aspect_perfective', ['aspect_perfective'])).toBe(false);
     expect(detectAvoidance('aspect_perfective', ['genitive_plural', 'aspect_perfective'])).toBe(false);
+  });
+
+  /**
+   * Ticket #36 AC #4 / docs/adr/0024: "Avoidance detection operates
+   * correctly against the adjusted taxonomy priority for this variant."
+   * `detectAvoidance` never reads a priority order at all — it diffs a
+   * session's authored target against real observations by `structureKey`
+   * string equality alone. This test runs it against every structure in
+   * the heritage-reordered priority list, in that order, confirming
+   * nothing about the mechanism cares which order a structure came from.
+   */
+  it('ticket #36 AC #4: works correctly for every structure in the heritage-speaker taxonomy priority, regardless of its reordered position', () => {
+    for (const structureKey of getStructureTaxonomyPriority('heritage_speaker')) {
+      expect(detectAvoidance(structureKey, [])).toBe(true); // never attempted — avoided
+      expect(detectAvoidance(structureKey, [structureKey])).toBe(false); // attempted — not avoided
+    }
   });
 });
 

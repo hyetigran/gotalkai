@@ -1,3 +1,4 @@
+import { PERSONA_IDS } from './personas';
 import type { SafetyTriggerCategory } from './safety-detection';
 import { z } from 'zod';
 
@@ -23,6 +24,8 @@ const sessionStartMessageSchema = z.object({
   type: z.literal('session_start'),
   learnerId: z.string().uuid(),
   sessionId: z.string().uuid(),
+  /** Ticket #34 / docs/adr/0023: which persona this session is talking to. Optional — omitted (or 'valentina') preserves the pre-#34 default exactly, satisfying AC #1's "Валентина's existing behavior must be unaffected." */
+  personaId: z.enum(PERSONA_IDS).optional(),
 });
 
 /**

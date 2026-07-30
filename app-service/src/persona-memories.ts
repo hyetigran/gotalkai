@@ -1,5 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { inspect } from 'node:util';
+import type { PersonaId } from './personas';
+import { DEFAULT_PERSONA_ID } from './personas';
 
 const REDACTED = '[REDACTED:persona_memory]';
 
@@ -46,6 +48,7 @@ export function wrapPersonaMemoryContent(value: string): RedactedMemoryContent {
 export type PersonaMemoryRow = {
   id: string;
   learnerId: string;
+  personaId: PersonaId;
   content: RedactedMemoryContent;
   createdAt: Date;
   lastReferencedAt: Date | null;
@@ -55,21 +58,27 @@ export type PersonaMemoryRow = {
  * Exists so the redaction wrapper above has a real call site proving the
  * table can be read without the raw content ever sitting in a plain
  * string outside this function.
+ *
+ * Ticket #34 AC #4 / docs/adr/0023: scoped to one persona — "Елена does
+ * not inherit or leak Валентина's memories" means every real read path
+ * filters by `persona_id`, not just `learner_id`.
  */
-export async function getPersonaMemoriesForLearner(pool: Pool, learnerId: string): Promise<PersonaMemoryRow[]> {
+export async function getPersonaMemoriesForLearner(pool: Pool, learnerId: string, personaId: PersonaId = DEFAULT_PERSONA_ID): Promise<PersonaMemoryRow[]> {
   const result = await pool.query<{
     id: string;
     learner_id: string;
+    persona_id: PersonaId;
     content: string;
     created_at: Date;
     last_referenced_at: Date | null;
   }>(
-    'SELECT id, learner_id, content, created_at, last_referenced_at FROM persona_memories WHERE learner_id = $1 ORDER BY created_at ASC',
-    [learnerId],
+    'SELECT id, learner_id, persona_id, content, created_at, last_referenced_at FROM persona_memories WHERE learner_id = $1 AND persona_id = $2 ORDER BY created_at ASC',
+    [learnerId, personaId],
   );
   return result.rows.map(row => ({
     id: row.id,
     learnerId: row.learner_id,
+    personaId: row.persona_id,
     content: wrapPersonaMemoryContent(row.content),
     createdAt: row.created_at,
     lastReferencedAt: row.last_referenced_at,
@@ -90,11 +99,15 @@ export async function getPersonaMemoriesForLearner(pool: Pool, learnerId: string
  * this write inside a larger transaction (e.g. seeding starter memories
  * alongside the learner row that owns them) can pass their transaction's
  * client instead of a fresh pool connection.
+ *
+ * `personaId` defaults to Валентина (docs/adr/0023) — every pre-#34
+ * caller that never knew personas existed keeps writing exactly what it
+ * always wrote.
  */
-export async function recordPersonaMemory(pool: Pool | PoolClient, learnerId: string, content: string): Promise<string> {
+export async function recordPersonaMemory(pool: Pool | PoolClient, learnerId: string, content: string, personaId: PersonaId = DEFAULT_PERSONA_ID): Promise<string> {
   const result = await pool.query<{ id: string }>(
-    'INSERT INTO persona_memories (learner_id, content) VALUES ($1, $2) RETURNING id',
-    [learnerId, content],
+    'INSERT INTO persona_memories (learner_id, persona_id, content) VALUES ($1, $2, $3) RETURNING id',
+    [learnerId, personaId, content],
   );
   const row = result.rows[0];
   if (!row)
@@ -115,14 +128,19 @@ export async function recordPersonaMemory(pool: Pool | PoolClient, learnerId: st
  * entire purpose is producing the literal line shown to the learner —
  * the one legitimate reveal site for a callback memory, same as the
  * class's own doc comment describes for the persona-prompt case.
+ *
+ * Ticket #34 AC #4 / docs/adr/0023: scoped to one persona, defaulting to
+ * Валентина — the Open screen's callback line must draw only from
+ * whichever persona the learner is about to talk to, never a memory that
+ * belongs to a different one.
  */
-export async function selectAndMarkCallbackMemory(pool: Pool, learnerId: string): Promise<string | null> {
+export async function selectAndMarkCallbackMemory(pool: Pool, learnerId: string, personaId: PersonaId = DEFAULT_PERSONA_ID): Promise<string | null> {
   const result = await pool.query<{ id: string; content: string }>(
     `SELECT id, content FROM persona_memories
-     WHERE learner_id = $1
+     WHERE learner_id = $1 AND persona_id = $2
      ORDER BY last_referenced_at ASC NULLS FIRST, created_at ASC
      LIMIT 1`,
-    [learnerId],
+    [learnerId, personaId],
   );
   const row = result.rows[0];
   if (!row)
