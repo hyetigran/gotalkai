@@ -19,7 +19,7 @@ cp .env.example .env
 pnpm install
 pnpm db:migrate
 pnpm dev
-curl http://localhost:8081/health
+curl http://localhost:8082/health
 ```
 
 ## Scripts
