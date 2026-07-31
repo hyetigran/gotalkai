@@ -8,6 +8,7 @@ jest.mock('expo-audio', () => ({
     remove: jest.fn(),
     addListener: jest.fn(() => ({ remove: jest.fn() })),
   })),
+  setAudioModeAsync: jest.fn(),
 }));
 
 /**
@@ -30,6 +31,8 @@ jest.mock('expo-file-system', () => ({
   Paths: { cache: 'mock-cache-dir' },
 }));
 
+// eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
+import { setAudioModeAsync } from 'expo-audio';
 // eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
 import { useLiveConverseSession } from './use-live-converse-session';
 
@@ -76,6 +79,7 @@ beforeEach(() => {
   // @ts-expect-error test double standing in for the ambient WebSocket global
   globalThis.WebSocket = FakeWebSocket;
   jest.useFakeTimers();
+  (setAudioModeAsync as jest.Mock).mockClear();
 });
 
 afterEach(() => {
@@ -190,6 +194,28 @@ describe('useLiveConverseSession', () => {
 
     act(() => result.current.setMode('voice'));
     expect(result.current.mode).toBe('voice');
+  });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession audio session (UAT: no audio from the persona)', () => {
+  /**
+   * use-mic-capture.ts (the scripted-demo path) calls
+   * configureConverseAudioSession() before recording, which is what puts
+   * expo-audio into `playsInSilentMode: true` — without it, expo-audio's
+   * playback session defaults to NOT playing while the device is in silent
+   * mode (iOS) / at low media-stream priority (Android), so TTS chunks play
+   * into silence. The live pipeline uses native PCM capture instead of
+   * useMicCapture, so it never went through that call — this hook must
+   * configure the session itself.
+   */
+  it('configures the audio session for silent-mode playback before the session opens', () => {
+    renderHook(() => useLiveConverseSession(OPTIONS));
+
+    expect(setAudioModeAsync).toHaveBeenCalledWith(expect.objectContaining({
+      playsInSilentMode: true,
+      allowsRecording: true,
+    }));
   });
 });
 

@@ -1,6 +1,7 @@
 import type { ServerMessage, TurnTimestamps, VoiceConnectionState } from '@/lib/voice-service/voice-connection';
 import * as React from 'react';
 
+import { configureConverseAudioSession } from '@/lib/audio/audio-session';
 import { VoiceConnection } from '@/lib/voice-service/voice-connection';
 import { useTtsPlayback } from './use-tts-playback';
 
@@ -183,6 +184,15 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
   const autoReleaseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdingRef = React.useRef(false);
   const { enqueue: enqueueTts, stopAndClear: stopTts } = useTtsPlayback();
+
+  // The scripted demo's useMicCapture calls this before recording; the live
+  // pipeline uses native PCM capture instead (see use-native-pcm-capture.ts)
+  // and never went through that call, so expo-audio's playback session was
+  // left at its default — which does not play while the device is in silent
+  // mode. Without this, TTS chunks decode and "play" into silence.
+  React.useEffect(() => {
+    void configureConverseAudioSession();
+  }, []);
 
   // docs/adr/0002: holding does nothing during her turn. The scripted demo's
   // `phase` only ever had 'thinking' cover her whole turn; this hook splits
