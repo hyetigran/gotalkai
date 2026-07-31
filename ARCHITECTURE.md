@@ -2,13 +2,13 @@
 
 Living overview of how the system is designed to work. Product intent lives in [`PRD.md`](./PRD.md); decisions that changed the plan live in [`docs/adr/`](./docs/adr/). This doc is the map between them and the codebase.
 
-**Status today:** client scaffold exists under `mobile/`; app/voice services and the realtime pipeline are not implemented yet. Sections below describe the **target** architecture unless marked *current*.
+**Status today (2026-07-30):** Product UI loop, app service, and voice-service pipeline modules are substantially built. The **shipped Converse screen still runs the scripted demo** (`use-converse-session`); a live client hook and server orchestrator exist but are **not activated end-to-end on device** (ADR-0017). Formal STT/TTS bake-off was **skipped**; vendors locked to ElevenLabs (ADR-0013). Sections below mark *current* vs *target* where they differ.
 
 ---
 
 ## 1. Context
 
-Russian speaking-practice mobile app: one AI persona with memory and calibrated difficulty. The learner talks; the product is a conversation partner, not a drill UI.
+Russian speaking-practice mobile app: AI personas with memory and calibrated difficulty. The learner talks; the product is a conversation partner, not a drill UI.
 
 Core interaction is a **persistent bidirectional audio/control stream**, not request/response chat. Everything else (profile, cast map, debrief history) is ordinary HTTP + React Query.
 
@@ -16,7 +16,7 @@ Core interaction is a **persistent bidirectional audio/control stream**, not req
 flowchart LR
   subgraph client [Mobile — Expo]
     UI[Open / Converse / Debrief]
-    CM[Stream connection manager]
+    CM[VoiceConnection WS]
     RQ[React Query — non-realtime]
   end
 
@@ -27,20 +27,18 @@ flowchart LR
   end
 
   subgraph vendors [Providers]
-    STT[STT]
-    LLM[Persona LLM]
-    TTS[TTS]
+    EL[ElevenLabs STT + TTS]
+    LLM[Persona LLM — Sonnet 5]
   end
 
   UI --> CM
   UI --> RQ
   RQ --> AS
-  CM <-->|realtime stream| VS
+  CM <-->|WS + base64 PCM chunks| VS
   AS --> PG
   VS -->|session context once| AS
-  VS --> STT
+  VS --> EL
   VS --> LLM
-  VS --> TTS
 ```
 
 ---
@@ -49,73 +47,79 @@ flowchart LR
 
 | Principle | Implication |
 | --- | --- |
-| Cascaded pipeline, not speech-to-speech | Product needs STT confidence, phoneme timings, and text-before-speech for recasts / register / repair |
+| Cascaded pipeline, not speech-to-speech | Product needs STT confidence signals, phoneme timings, and text-before-speech for recasts / register / repair |
 | Two services from day one | Voice can move to Python/Pipecat later without rewriting auth, memory, or debrief |
 | Long-lived processes only | Cold starts exceed the latency budget; warm provider connections must stick |
 | Region before database | Pin voice near STT/TTS/LLM (typically US-East). Wrong region costs more than DB RTT |
 | Voice has zero DB mid-turn | Assemble context at session start. A Postgres query between turns is a bug |
-| Keys never in the bundle | Backend proxy from Phase 1 |
-| Zod at untrusted boundaries only | Persona LLM output, client↔server API, env at boot — not ORM↔Postgres |
+| Keys never in the bundle | Backend proxy / per-session credentials — never bake shared secrets into the mobile app |
+| Zod at untrusted boundaries only | Persona LLM output, client↔server API, env at boot — not ORM↔Postgres (ADR-0007) |
 
 ---
 
 ## 3. Components
 
-### 3.1 Mobile client (*current* + target)
+### 3.1 Mobile client (*current*)
 
-**Current:** Obytes Expo scaffold in `mobile/` (Expo SDK 54, Expo Router, Zustand + MMKV, React Query, TanStack Form + Zod, Uniwind/NativeWind, EAS). Design tokens foundation landed; template feed/auth demo still present.
+**Stack:** Obytes Expo scaffold in `mobile/` (Expo SDK 54, Expo Router, Zustand + MMKV, React Query, TanStack Form + Zod, Uniwind/NativeWind, EAS). App version in `mobile/package.json` (currently **0.1.31**).
 
-**Target additions:**
+**Product surfaces present:** Open, Converse, Debrief, Tomorrow, cast / address book, onboarding / session-zero, settings, monthly benchmark route, plus debug screens. Template `feed` / `login` routes may still exist — not the product loop.
 
-- `expo-audio` (not deprecated `expo-av`)
-- `react-native-webrtc` for AEC (echo cancellation is non-negotiable)
-- EAS **development builds** from day one — Expo Go cannot run the native audio/WebRTC stack
-- Later: Rive runtime for the face (v2); dialogue layer must already emit `comprehension` + `affect`
+**Audio / stream groundwork:**
 
-**Conversation screen is a special case.** Do not force React Query/axios onto the core loop. Own connection manager for the stream. React Query remains for profile, cast map, debrief history.
+- `expo-audio` for open-mic metering (`use-mic-capture`) and TTS playback helper (`use-tts-playback`)
+- `react-native-webrtc` local audio stream acquired on Converse for future AEC — **not** driving STT today (ADR-0017)
+- `VoiceConnection` + `use-live-converse-session` built and unit-tested; **Converse screen still mounts `use-converse-session` (scripted)**
 
-**Hardware notes the template does not solve:**
+**Conversation screen is a special case.** Do not force React Query/axios onto the core loop. Own connection manager for the stream. React Query remains for profile, cast, debrief history, session start, learner flags.
 
-- iOS audio session: `playAndRecord` with correct options; test routing on device
+**Hardware notes:**
+
+- iOS audio session: `playAndRecord`-equivalent via `configureConverseAudioSession`; test routing on device
 - Cyrillic font coverage including `ё` at scaffold-chip sizes
+- Live raw-PCM frames into JS are **not available** with current deps (ADR-0017) — blocks triggering the server pipeline from the phone until a native capture path or WebRTC peer exists
 
-### 3.2 App service (planned)
+### 3.2 App service (*current*)
 
-Node/TypeScript. Owns:
+Node/TypeScript under `app-service/`. Owns:
 
-- Auth, learner profile, onboarding flags (`cyrillic_literate`, translit)
-- Persistence: sessions, turns, `learner_structures`, `persona_memories`, observations / debrief items
-- Session assembly (persona memories, structures, scenario) **before** audio streams
-- Debrief analysis and tomorrow’s scenario selection
-- HTTP APIs consumed by React Query
+- Learner profile, onboarding flags (`cyrillic_literate`, translit derivation — ADR-0008)
+- Persistence: sessions, turns, `learner_structures`, `persona_memories`, observations / debrief items, scenario selection, avoidance, benchmark, privacy/retention hooks
+- Session start (daily cap — ADR-0006); HTTP APIs consumed by React Query
+- Schema: `app-service/schema.sql`, applied via `pnpm db:migrate` / `applySchema`
 
-### 3.3 Voice service (planned)
+**Still thin / missing for live Converse:** per-session voice-service credential minting (ADR-0017 blocker). `POST /sessions` returns session id without voice auth material.
 
-Node/TypeScript initially; realtime only. Owns:
+### 3.3 Voice service (*current*)
 
-- Bidirectional stream with the client
-- Pipeline orchestration: VAD → STT → LLM → stress annotation → TTS
-- Hold-to-think override (see §5)
-- Stage timing instrumentation (six timestamps per turn)
-- **No mid-conversation database access** — receives frozen context at session start
+Node/TypeScript under `voice-service/`. Owns:
 
-Split exists so turn detection can move to Python + Pipecat without touching the app service.
+- Authenticated WebSocket server (shared-secret placeholder today)
+- Pipeline modules: VAD, ElevenLabs STT, persona LLM (Sonnet 5 + Zod), stress annotation, ElevenLabs TTS, turn orchestrator, safety detection, cost/tracing hooks
+- Eval harness under `voice-service/src/eval/` (golden set, mechanical assertions, judge, canary)
+- Persona definitions for Валентина and Елена (ADR-0023); default remains Валентина
 
-### 3.4 Data store (planned)
+**Not yet:** production dogfooding of the full cascade from a physical device through the shipped Converse UI.
 
-Railway Postgres for v1 (one platform). Alternatives if backup/PITR is thin: Neon (branching for eval) or Supabase (only if adopting its auth/storage).
+### 3.4 Landing (*current*)
 
-**Irreplaceable:** `persona_memories`. Losing it resets every relationship. PITR is required before Phase 3. `sessions` / `turns` are high volume — retention policy from day one. Connection pooler required.
+Next.js app under `landing/` for marketing (waitlist / explain product) — **not** a web Converse client. Hosted on Vercel (ticket #38).
 
-Full DDL intended in `schema.sql` (not yet in repo). Load-bearing tables:
+### 3.5 Data store (*current* + target ops)
+
+Postgres (local + Railway target). DDL in `app-service/schema.sql`.
+
+**Irreplaceable:** `persona_memories`. Losing it resets every relationship. PITR required before relying on memories in production. Connection pooler + retention on high-volume `sessions` / `turns` still operational requirements.
+
+Load-bearing tables:
 
 | Table | Role |
 | --- | --- |
 | `learner_structures` | Engine: exposures, attempts, successes, avoidances, stability → scenario selection + debrief writes |
 | `persona_memories` | Callback mechanic; never logged or traced |
 | `observations` vs `debrief_items` | Keep all analyser notices; show three |
-| `sessions` | Calibration used; correlate with abandonment |
-| `persona_world_state` | Renewable domestic life (add early even if empty) |
+| `sessions` | Calibration used; correlate with abandonment; daily cap |
+| `persona_world_state` | Renewable domestic life |
 
 ---
 
@@ -125,7 +129,7 @@ Full DDL intended in `schema.sql` (not yet in repo). Load-bearing tables:
 VAD → streaming STT → persona LLM → stress annotation → sentence-chunked TTS
 ```
 
-Speech-to-speech is rejected: it hides STT confidence (“she doesn’t understand you”), phoneme timings (visemes), and editable text (recasts, register, repair dial).
+Speech-to-speech is rejected: it hides STT confidence, phoneme timings (visemes), and editable text (recasts, register, repair dial).
 
 ### 4.1 Latency
 
@@ -138,41 +142,35 @@ Buy-back:
 - In-character filler («ну…», «сейчас…») on end-of-turn to mask 300–500ms
 - Prompt caching on persona identity/memory prefix (Sonnet cache minimum ~1024 tokens)
 
-**Instrument six timestamps per turn** (turn-detect → first audio). One duration number cannot locate a regression.
+**Instrument six timestamps per turn** (turn-detect → first audio).
 
 ### 4.2 Persona LLM
 
-[ADR-0003](./docs/adr/0003-persona-llm-claude-sonnet-5.md): Claude Sonnet 5, `thinking` disabled, `effort` low/medium.
+[ADR-0003](./docs/adr/0003-persona-llm-claude-sonnet-5.md) + [ADR-0010](./docs/adr/0010-persona-llm-turn-generation.md): Claude Sonnet 5, `thinking` disabled, `effort` low/medium.
 
 - Structured output constrained by Zod schema (same schema for runtime + eval)
 - Mid-stream: parse early fields (`comprehension`, `affect`) for face reactivity
 - Stream close: full Zod validate before anything reaches TTS
-- Validation failure mid-conversation: in-character filler («простите, что-то я задумалась»), log raw output, continue — Phase 1 requirement
+- Validation failure mid-conversation: in-character filler, log raw output, continue
 
 ### 4.3 Stress annotation
 
-Russian-specific stage. Runtime-generated lines are never hand-checked; mis-stress teaches the wrong form.
+Russian-specific stage ([ADR-0015](./docs/adr/0015-stress-annotation-scope.md)). Under ElevenLabs (ADR-0013), stress control targets **IPA / SSML `<phoneme>` tags** (not only inline `+` / U+0301 as PRD §7.4 originally assumed). `ё` written explicitly.
 
-- Dictionary for high-frequency core; RUAccent-class model for the tail
-- Emit `+` or U+0301 into TTS input
-- Write `ё` explicitly
+### 4.4 Vendors (*current* — ADR-0013)
 
-### 4.4 Vendors (provisional until Phase 1 bake-off)
+**Decision:** ElevenLabs for **both** STT and TTS; formal bake-off skipped under deadline pressure.
 
-Build to **hard requirements**, not a locked SDK.
+| PRD hard req | ElevenLabs outcome |
+| --- | --- |
+| STT word-level confidence | Met via per-word `logprob` (needs threshold calibration) |
+| STT n-best alternatives | **Not met** — accepted; case/aspect-before-ASR-repair deferred |
+| STT bill by audio duration | Met |
+| TTS stress markers | Adapt to IPA phoneme tags (`eleven_v3` for non-English) |
+| TTS phoneme / char timings | Met |
+| TTS Unicode-codepoint billing | Met |
 
-**STT must:**
-
-- Word-level confidence + n-best (confidence mechanic + case errors before ASR repair)
-- Bill by **audio duration**, not connection time (VAD gating only helps then)
-
-**TTS must:**
-
-- Explicit stress markers
-- Phoneme timings / character alignment (visemes)
-- Per-Unicode-codepoint billing (Cyrillic is 2 UTF-8 bytes)
-
-**Provisional:** STT → Deepgram; TTS → Azure Neural vs ElevenLabs Turbo bake-off.
+Ticket #13 remains open as a reminder the empirical bake-off never ran.
 
 ---
 
@@ -189,7 +187,7 @@ Hardest UX problem: B1 learners pause mid-sentence hunting for a word. Silence-t
 - Meaning: *wait, I’m still going* — not “pause the session”
 - While held **and learner has the floor:** suspend turn detection + mute STT
 - During her turn, or before the learner has spoken: **no-op** (no queued-hold flag)
-- Auto-release timeout (~45s) still to specify before Phase 2
+- **Auto-release ~45s** implemented in scripted and live session hooks
 
 ---
 
@@ -198,17 +196,23 @@ Hardest UX problem: B1 learners pause mid-sentence hunting for a word. Silence-t
 ```
 ┌─────────────┐   HTTP (React Query)    ┌─────────────┐
 │   Mobile    │ ───────────────────────►│ App service │──► Postgres
-│             │   WS/WebRTC stream      └──────┬──────┘
+│             │   WebSocket + PCM       └──────┬──────┘
 │  Converse   │ ◄─────────────────────────────►│
 └─────────────┘                         ┌──────┴──────┐
-                                        │Voice service│──► STT / LLM / TTS
+                                        │Voice service│──► ElevenLabs / Sonnet
                                         └─────────────┘
 ```
 
-1. App service authenticates learner, assembles session context, returns session handle + voice endpoint credentials.
-2. Client opens realtime stream to voice service with that handle.
-3. Voice service runs the cascade; posts turn artefacts / timings back through app service **after** turns or at session end — never queries DB mid-turn for persona state.
+**Target flow:**
+
+1. App service authenticates learner, assembles session context, returns session handle + **voice endpoint credentials**.
+2. Client opens WebSocket to voice service with that handle.
+3. Voice service runs the cascade; posts turn artefacts / timings back through app service after turns or at session end — never queries DB mid-turn for persona state.
 4. Debrief runs on app service when the session closes.
+
+**Transport (*current*, ADR-0017):** audio as **base64 PCM chunks over WebSocket**, not a WebRTC `RTCPeerConnection`. Consequence: **no free AEC** on the path that would feed STT. WebRTC local stream from ticket #10 does not expose samples to JS for this protocol.
+
+**Activation gap (*current*):** Converse UI uses scripted turns. Live hook is ready but blocked by (1) no live mic→PCM source in JS, (2) no per-session voice credentials from app service.
 
 Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incremental parse for early fields, full object validation before TTS.
 
@@ -218,11 +222,11 @@ Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incre
 
 | Concern | Hook |
 | --- | --- |
-| Eval | Golden set + mechanical assertions + judge; same Zod schema as production (`eval/` planned) |
-| Observability | Health (pages) vs quality (sampled, never pages); canary golden cases against live endpoint; one trace per session, span per turn |
-| Cost | TTS largest line; prompt caching; VAD-gated STT; short turns; **daily session cap** |
-| Safety | Out-of-character escape hatch before launch (distress + sexualisation); sample audio 2–5% with separate consent; memories never in logs |
-| Privacy | Deletion clears memories + audio + transcripts together; check biometric (e.g. BIPA) before storing voice |
+| Eval | Golden set + mechanical assertions + judge under `voice-service/src/eval/` (ADR-0012); same Zod schema as production |
+| Observability | Health vs quality split; tracing hooks (ADR-0022); canary runners present |
+| Cost | TTS largest line; prompt caching; VAD-gated STT; short turns; **daily session cap** (ADR-0006) |
+| Safety | Out-of-character escape hatch design (ADR-0019); safety detection in voice service; memories never in logs |
+| Privacy | Deletion / sampling policy (ADR-0009); check biometric (e.g. BIPA) before storing voice |
 
 ---
 
@@ -230,24 +234,34 @@ Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incre
 
 | Path | Role |
 | --- | --- |
-| `mobile/` | Expo client (only runnable product code today) |
+| `mobile/` | Expo client — product loop UI + live Converse wiring (inactive on screen) |
+| `app-service/` | HTTP API, Postgres schema/migrate, session/memory/debrief |
+| `voice-service/` | Realtime WS + pipeline + eval harness |
+| `landing/` | Next.js marketing site (Vercel) |
 | `PRD.md` | Requirements and detailed tech rationale |
-| `docs/adr/` | Accepted decisions (WoZ skip, hold-to-think, persona LLM) |
+| `CHARACTER.md` | Persona / expression asset notes |
+| `docs/adr/` | Accepted decisions (**0001–0024**) |
 | `docs/agents/` | Tracker, triage, domain, versioning for agents |
 | `memory-bank/` | Agent session continuity |
 | `.cursor/rules/` | Review→commit, version bump, memory bank |
 
-**Versioning:** bump `mobile/package.json` `"version"` (PATCH per completed ticket/feature). Never a separate `VERSION` file.
+**Versioning:** bump `mobile/package.json` `"version"` (PATCH per completed ticket/feature). **Never** a separate root `VERSION` file — delete if it reappears; source of truth is `mobile/package.json` only.
 
-**Phasing:** Phase 1 = pipeline slice + bake-off + dogfooding; Phase 2 = three screens + memory + eval CI; Phase 3 = production readiness; Phase 4 = face / second persona / text path. See PRD §15 and [ADR-0001](./docs/adr/0001-skip-wizard-of-oz-build-demo-directly.md).
+**Phasing (PRD §15, adjusted by build reality):**
+
+1. **Phase 1 slice** — pipeline modules + vendor decision (bake-off skipped) + dogfooding once device path works  
+2. **Phase 2 loop** — screens + memory + debrief + scenario + session cap (largely coded; live Converse activation still open)  
+3. **Phase 3** — observability, canary, cost, safety, privacy, PITR  
+4. **Phase 4** — Rive face, second persona polish, text path, heritage calibration (ADRs 0021 / 0023 / 0024)
+
+See [ADR-0001](./docs/adr/0001-skip-wizard-of-oz-build-demo-directly.md).
 
 ---
 
 ## 9. Related docs
 
 - [`PRD.md`](./PRD.md) — §§7–12 (architecture, data, economics, QA, observability, safety)
-- [`docs/adr/0001-skip-wizard-of-oz-build-demo-directly.md`](./docs/adr/0001-skip-wizard-of-oz-build-demo-directly.md)
-- [`docs/adr/0002-hold-to-think-requires-the-floor.md`](./docs/adr/0002-hold-to-think-requires-the-floor.md)
-- [`docs/adr/0003-persona-llm-claude-sonnet-5.md`](./docs/adr/0003-persona-llm-claude-sonnet-5.md)
+- [`docs/adr/`](./docs/adr/) — especially 0001–0003 (founding), 0013 (vendors), 0017 (live Converse / transport)
 - [`memory-bank/systemPatterns.md`](./memory-bank/systemPatterns.md) — condensed patterns for agents
 - [`mobile/claude.md`](./mobile/claude.md) — Expo scaffold conventions
+- [`app-service/README.md`](./app-service/README.md) / [`voice-service/README.md`](./voice-service/README.md) — local run
