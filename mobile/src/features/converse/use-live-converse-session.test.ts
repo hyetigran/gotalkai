@@ -10,6 +10,26 @@ jest.mock('expo-audio', () => ({
   })),
 }));
 
+/**
+ * use-tts-playback.ts (via enqueue) now writes each chunk to a real file
+ * (docs/adr/0024's on-device fix — see that file's own header comment)
+ * instead of a `data:` URI; this hook doesn't care about file contents,
+ * only that construction/writing doesn't touch a real native module. Uses
+ * plain `function`s (not `class`), which are fully hoisted regardless of
+ * their position relative to `jest.mock`'s own hoisting — see
+ * use-tts-playback.test.ts's own mock for the longer explanation of why
+ * that ordering matters here.
+ */
+jest.mock('expo-file-system', () => ({
+  File: function MockFile() {
+    return { uri: 'file:///mock.mp3', exists: true, write: jest.fn(), delete: jest.fn() };
+  },
+  Directory: function MockDirectory() {
+    return { exists: true, create: jest.fn() };
+  },
+  Paths: { cache: 'mock-cache-dir' },
+}));
+
 // eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
 import { useLiveConverseSession } from './use-live-converse-session';
 
