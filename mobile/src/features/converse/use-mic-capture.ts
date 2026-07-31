@@ -21,6 +21,28 @@ type UseMicCaptureOptions = {
 };
 
 /**
+ * `record()`'s TS signature is `void` (synchronous), but confirmed on a
+ * physical device (docs/adr/0024's on-device testing pass) that it can
+ * genuinely throw a native `IllegalStateException` — this file's own
+ * header comment already flagged real hardware as unverified, and this
+ * is exactly the gap that disclosure predicted. Uncaught, that throw
+ * propagates out of a `useEffect`/`AppState` callback as an unhandled
+ * error React Native's error overlay treats as a crash. Every call site
+ * below goes through this rather than a bare `recorder.record()`, same
+ * "there's nothing actionable to do about it, don't take the screen
+ * down over it" reasoning already applied to `stop()`'s own catch in the
+ * cleanup effect.
+ */
+function safeRecord(recorder: ReturnType<typeof useAudioRecorder>): void {
+  try {
+    recorder.record();
+  }
+  catch {
+    // Intentionally silent — see this function's own comment.
+  }
+}
+
+/**
  * Continuous, open-mic capture for the Converse screen (PRD §6.2 — no
  * press-to-speak) — ticket #10. Recording starts once mounted and keeps
  * running for the screen's whole lifetime, pausing only for hold-to-think
@@ -34,10 +56,6 @@ type UseMicCaptureOptions = {
  * signal for "the user is back") retries again. Deliberately NOT retried
  * on every polled tick while still interrupted — that would hammer the
  * native recorder in a tight loop for the duration of a real phone call.
- *
- * This has not been verified on physical hardware — the ticket itself
- * notes the simulator misreports audio routing, and there's no dedicated
- * interruption-simulation tool available in this environment.
  */
 export function useMicCapture({ paused }: UseMicCaptureOptions) {
   const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
@@ -60,7 +78,7 @@ export function useMicCapture({ paused }: UseMicCaptureOptions) {
       if (cancelled)
         return;
       wantsRecordingRef.current = true;
-      recorder.record();
+      safeRecord(recorder);
     })();
     return () => {
       cancelled = true;
@@ -77,7 +95,7 @@ export function useMicCapture({ paused }: UseMicCaptureOptions) {
     if (paused)
       recorder.pause();
     else if (wantsRecordingRef.current)
-      recorder.record();
+      safeRecord(recorder);
   }, [paused, permissionGranted, recorder]);
 
   React.useEffect(() => {
@@ -92,7 +110,7 @@ export function useMicCapture({ paused }: UseMicCaptureOptions) {
       return undefined;
     const retryTimeoutId = setTimeout(() => {
       if (wantsRecordingRef.current && !paused)
-        recorder.record();
+        safeRecord(recorder);
     }, INTERRUPTION_RETRY_DELAY_MS);
     return () => clearTimeout(retryTimeoutId);
   }, [recorderState.isRecording, paused, permissionGranted, recorder]);
@@ -102,7 +120,7 @@ export function useMicCapture({ paused }: UseMicCaptureOptions) {
       return undefined;
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' && wantsRecordingRef.current && !paused && !recorderState.isRecording)
-        recorder.record();
+        safeRecord(recorder);
     });
     return () => subscription.remove();
   }, [permissionGranted, paused, recorderState.isRecording, recorder]);

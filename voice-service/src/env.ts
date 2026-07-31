@@ -6,7 +6,7 @@ import { z } from 'zod';
  * ticket #26 ("runtime validation hardening... superseding the minimal
  * check from ticket #11"): every env var this service actually reads
  * (grepped for `process.env` usage) is covered here — `PORT`,
- * `NODE_ENV`, `VOICE_SERVICE_AUTH_TOKEN` — so there's nothing left
+ * `NODE_ENV`, `SESSION_TOKEN_SECRET` — so there's nothing left
  * un-validated to add. Grows only if a real new config need shows up in
  * pipeline work (persona LLM keys, etc.), not preemptively.
  */
@@ -15,13 +15,18 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   /**
-   * Shared-secret bearer token clients must present to open a connection.
-   * A placeholder for real per-session credentials the app service will
-   * issue once it exists (ARCHITECTURE.md §6: "App service authenticates
-   * learner ... returns session handle + voice endpoint credentials") —
-   * this ticket only has to prove the auth *path* works end to end.
+   * Closes docs/adr/0017's disclosed gap: this used to be a static
+   * shared-secret bearer token every client presented (the placeholder
+   * "prove the auth *path* works end to end" ticket #11 built). Now it's
+   * the secret this service uses to *verify* short-lived, session-scoped
+   * tokens app-service mints in `POST /sessions` (session-token.ts) —
+   * ARCHITECTURE.md §6's "App service authenticates learner ... returns
+   * session handle + voice endpoint credentials", finally real. Must be
+   * the exact same value as app-service's own `SESSION_TOKEN_SECRET`
+   * (app-service/src/env.ts) — never sent to or read by the mobile
+   * client.
    */
-  VOICE_SERVICE_AUTH_TOKEN: z.string().min(16, 'VOICE_SERVICE_AUTH_TOKEN must be at least 16 characters'),
+  SESSION_TOKEN_SECRET: z.string().min(32, 'SESSION_TOKEN_SECRET must be at least 32 characters'),
   /**
    * Ticket #14: the persona LLM stage (ADR-0003: Claude Sonnet 5) needs a
    * real key to call the Anthropic API. No default — this is a secret, not

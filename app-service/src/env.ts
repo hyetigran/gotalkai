@@ -85,6 +85,21 @@ const envSchema = z.object({
    * cosmetic. Never paged into; see observability/alerting.ts.
    */
   QUALITY_REPORT_WEBHOOK_URL: z.string().url().optional(),
+  /**
+   * Closes the gap docs/adr/0017 disclosed ("Real per-session credential
+   * issuance from app-service ... doesn't exist"): the secret this
+   * service uses to sign short-lived, session-scoped voice-service
+   * tokens (session-token.ts), minted in `POST /sessions`'s response and
+   * validated by voice-service against the *same* secret
+   * (voice-service/src/env.ts's own `SESSION_TOKEN_SECRET` — must match
+   * across both services' deployment config, the same operational
+   * requirement `VOICE_SERVICE_AUTH_TOKEN` used to have before this
+   * replaced it). Never sent to or read by the mobile client. No
+   * default, and a 32-char minimum (matching the entropy the old shared
+   * secret required) — a weak or missing signing secret should fail loud
+   * at boot, not produce forgeable tokens silently.
+   */
+  SESSION_TOKEN_SECRET: z.string().min(32, 'SESSION_TOKEN_SECRET must be at least 32 characters'),
 });
 
 export type Env = z.infer<typeof envSchema>;

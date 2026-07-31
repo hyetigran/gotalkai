@@ -2,7 +2,7 @@ import { loadEnv } from './env';
 
 describe('loadEnv', () => {
   const validBase = {
-    VOICE_SERVICE_AUTH_TOKEN: 'a'.repeat(32),
+    SESSION_TOKEN_SECRET: 'a'.repeat(32),
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     ELEVENLABS_API_KEY: 'el-test-key',
     ELEVENLABS_VALENTINA_VOICE_ID: 'voice-test-id',
@@ -12,7 +12,7 @@ describe('loadEnv', () => {
     const env = loadEnv(validBase);
     expect(env.PORT).toBe(8080);
     expect(env.NODE_ENV).toBe('development');
-    expect(env.VOICE_SERVICE_AUTH_TOKEN).toBe(validBase.VOICE_SERVICE_AUTH_TOKEN);
+    expect(env.SESSION_TOKEN_SECRET).toBe(validBase.SESSION_TOKEN_SECRET);
   });
 
   it('coerces a string PORT to a number', () => {
@@ -20,12 +20,12 @@ describe('loadEnv', () => {
     expect(env.PORT).toBe(9090);
   });
 
-  it('rejects a missing auth token', () => {
-    expect(() => loadEnv({})).toThrow(/VOICE_SERVICE_AUTH_TOKEN/);
+  it('rejects a missing session token secret', () => {
+    expect(() => loadEnv({})).toThrow(/SESSION_TOKEN_SECRET/);
   });
 
-  it('rejects an auth token shorter than 16 characters', () => {
-    expect(() => loadEnv({ ...validBase, VOICE_SERVICE_AUTH_TOKEN: 'short' })).toThrow(/VOICE_SERVICE_AUTH_TOKEN/);
+  it('rejects a session token secret shorter than 32 characters', () => {
+    expect(() => loadEnv({ ...validBase, SESSION_TOKEN_SECRET: 'short' })).toThrow(/SESSION_TOKEN_SECRET/);
   });
 
   function withoutField(field: keyof typeof validBase): Record<string, string> {
@@ -63,7 +63,7 @@ describe('loadEnv', () => {
     catch (error) {
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain('Invalid environment configuration');
-      expect((error as Error).message).toContain('VOICE_SERVICE_AUTH_TOKEN');
+      expect((error as Error).message).toContain('SESSION_TOKEN_SECRET');
       expect((error as Error).message).toContain('NODE_ENV');
     }
   });

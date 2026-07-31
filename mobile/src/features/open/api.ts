@@ -15,7 +15,15 @@ export const useCallbackLine = createQuery<string | null, CallbackLineVariables,
       .then(response => response.data.callbackLine),
 });
 
-type StartSessionResponse = { id: string };
+/**
+ * `voiceServiceToken` (docs/adr/0023): a short-lived, session-scoped
+ * credential for voice-service's WS upgrade — see
+ * app-service/src/session-token.ts. Forwarded straight through to
+ * Converse (`use-open-screen.ts`'s `handleAnswer`) rather than fetched
+ * separately, since app-service mints it as part of session creation
+ * itself, not a distinct endpoint.
+ */
+type StartSessionResponse = { id: string; voiceServiceToken: string };
 type StartSessionVariables = { learnerId: string };
 export type StartSessionErrorBody = { code?: string; message?: string };
 

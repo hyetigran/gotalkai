@@ -53,9 +53,9 @@ export const CONVERSE_SCRIPT: ScriptedTurn[] = [
   },
   {
     who: 'her',
-    ru: '«Что-что? Погро́мче, я пло́хо слы́шу.»',
-    en: 'What was that? Louder, I don’t hear well.',
-    translit: 'Chto-chto? Pogrómche, ya plókho slýshu.',
+    ru: '«Что-что? Погро́мче, пожа́луйста.»',
+    en: 'What was that? A little louder, please.',
+    translit: 'Chto-chto? Pogrómche, pozháluysta.',
   },
   {
     who: 'you',
