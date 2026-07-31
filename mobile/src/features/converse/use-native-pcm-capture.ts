@@ -93,6 +93,23 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
     onErrorRef.current?.(message);
   }, []);
 
+  // `requireOptionalNativeModule` (expo-live-pcm-capture-module.ts) returns
+  // null, silently, if the native module isn't registered — correct
+  // behavior on iOS/web/Jest (this module is Android-only by design), but
+  // on Android itself a null result means the native side never actually
+  // linked into this build (e.g. a stale install predating this module,
+  // or a Gradle/autolinking failure) — every symptom of that looks
+  // identical to "the mic is just off," with nothing to distinguish it:
+  // no permission prompt (the code path is never reached), no error text,
+  // level meter never moves — indistinguishable from a permission or VAD
+  // problem (UAT: "my voice doesn't get captured", even after a full
+  // `expo run:android` rebuild). Surfacing it loudly here is the only way
+  // this failure mode is diagnosable at all instead of a dead end.
+  React.useEffect(() => {
+    if (Platform.OS === 'android' && ExpoLivePcmCaptureModule == null)
+      reportError('ExpoLivePcmCapture native module did not load — try a full rebuild (expo run:android or a fresh dev-client/EAS build), not just a JS/Metro reload.');
+  }, [reportError]);
+
   const { startCaptureIfWanted, stopCapture } = useCaptureLifecycleActions({
     isSupported,
     wantsCaptureRef,
