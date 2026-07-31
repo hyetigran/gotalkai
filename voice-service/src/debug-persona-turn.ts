@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { loadEnv } from './env';
 import { generatePersonaTurn } from './persona-turn';
 import type { TranscriptTurn } from './persona';
+import { PERSONA_DEFINITIONS } from './personas';
 
 /**
  * Ticket #14 UAT #1: "send it a fixed test transcript containing a
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
   console.log('--- transcript ---');
   for (const turn of transcript) console.log(`${turn.speaker}: ${turn.text}`);
 
-  const result = await generatePersonaTurn(client, transcript, {
+  const result = await generatePersonaTurn(client, transcript, PERSONA_DEFINITIONS.valentina, {
     onPartial: partial => console.log('[partial, mid-stream]', partial),
   });
 

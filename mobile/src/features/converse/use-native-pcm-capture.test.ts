@@ -190,7 +190,7 @@ describe('useNativePcmCapture', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
-describe('useNativePcmCapture amplitude (docs/adr/0023)', () => {
+describe('useNativePcmCapture amplitude (docs/adr/0026)', () => {
   it('derives amplitude from each emitted frame via derivePcmAmplitude, and resets it to zero on stop', async () => {
     Platform.OS = 'android';
     const { result, rerender } = renderHook(

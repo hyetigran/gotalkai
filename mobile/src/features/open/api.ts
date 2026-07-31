@@ -16,7 +16,7 @@ export const useCallbackLine = createQuery<string | null, CallbackLineVariables,
 });
 
 /**
- * `voiceServiceToken` (docs/adr/0023): a short-lived, session-scoped
+ * `voiceServiceToken` (docs/adr/0026): a short-lived, session-scoped
  * credential for voice-service's WS upgrade — see
  * app-service/src/session-token.ts. Forwarded straight through to
  * Converse (`use-open-screen.ts`'s `handleAnswer`) rather than fetched

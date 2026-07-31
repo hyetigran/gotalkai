@@ -230,7 +230,7 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
   }, [connectionRef]);
 
   /**
-   * docs/adr/0023: the send-side counterpart to real mic capture
+   * docs/adr/0026: the send-side counterpart to real mic capture
    * (`use-native-pcm-capture.ts`) now existing. This hook already owned
    * `VoiceConnection` for every other message type — audio chunks are no
    * different, just not needed until a real frame source existed to call

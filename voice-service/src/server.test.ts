@@ -248,6 +248,48 @@ describe('voice service server', () => {
       await handle.close();
     });
 
+    it('ticket #34: accepts a session_start naming a configured second persona without erroring', async () => {
+      const handle = await startServer(testEnv({ ELEVENLABS_ELENA_VOICE_ID: 'elena-voice-test-id' }));
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: '5c86bf64-d8fa-4b35-8f17-8f797a5cad38', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f', personaId: 'elena' }));
+      await assertStillResponsive(ws);
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('ticket #34: sends an error, not a crash, when session_start names a persona whose voice id isn\'t configured', async () => {
+      // testEnv() never sets ELEVENLABS_ELENA_VOICE_ID — the real "not launched yet" case.
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: '5c86bf64-d8fa-4b35-8f17-8f797a5cad38', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f', personaId: 'elena' }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error', message: expect.stringContaining('elena') });
+
+      // The connection itself stays alive and usable — a missing voice id degrades gracefully, doesn't kill the session.
+      await assertStillResponsive(ws);
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('rejects a session_start naming an unrecognized personaId', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: '5c86bf64-d8fa-4b35-8f17-8f797a5cad38', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f', personaId: 'not-a-real-persona' }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
+
+      ws.close();
+      await handle.close();
+    });
+
     // No "accepts a well-formed text_input" happy-path test here, deliberately — unlike
     // audio_chunk (where silent audio never crosses the VAD threshold, so it never triggers a
     // real vendor call), there is no equivalent inert text_input payload: any non-empty text

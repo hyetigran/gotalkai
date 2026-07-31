@@ -12,7 +12,7 @@ jest.mock('expo-audio', () => ({
 
 /**
  * use-tts-playback.ts (via enqueue) now writes each chunk to a real file
- * (docs/adr/0024's on-device fix — see that file's own header comment)
+ * (docs/adr/0026's on-device fix — see that file's own header comment)
  * instead of a `data:` URI; this hook doesn't care about file contents,
  * only that construction/writing doesn't touch a real native module. Uses
  * plain `function`s (not `class`), which are fully hoisted regardless of
@@ -194,7 +194,7 @@ describe('useLiveConverseSession', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
-describe('useLiveConverseSession audio send (docs/adr/0023)', () => {
+describe('useLiveConverseSession audio send (docs/adr/0026)', () => {
   it('sends audio_chunk over the wire — the send-side counterpart to real mic capture', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());

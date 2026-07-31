@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
+  buildElenaSystemPrompt,
   buildValentinaSystemPrompt,
+  ELENA_IDENTITY_PROMPT,
   FILLER_LINE,
   personaTurnSchema,
   toMessageParams,
@@ -96,6 +98,39 @@ describe('buildValentinaSystemPrompt', () => {
     // Cyrillic BPE tokenization, but "comfortably" here is a judgment
     // call pending real verification, not a guarantee.
     const wordCount = VALENTINA_IDENTITY_PROMPT.split(/\s+/).filter(Boolean).length;
+    expect(wordCount).toBeGreaterThan(400);
+  });
+});
+
+describe('buildElenaSystemPrompt', () => {
+  it('returns a single text block carrying the identity prompt, marked for prompt caching', () => {
+    const blocks = buildElenaSystemPrompt();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toEqual({
+      type: 'text',
+      text: ELENA_IDENTITY_PROMPT,
+      cache_control: { type: 'ephemeral' },
+    });
+  });
+
+  it('encodes a mutual вы register, not Валентина\'s ты/вы asymmetry — docs/adr/0023', () => {
+    const vyMatches = ELENA_IDENTITY_PROMPT.match(/"вы"/g) ?? [];
+    expect(vyMatches.length).toBeGreaterThanOrEqual(2); // both "she says вы" and "learner says вы"
+    expect(ELENA_IDENTITY_PROMPT).not.toContain('на "ты"');
+  });
+
+  it('encodes the in-flow-recast-only correction policy — PRD §5.4, same as every persona', () => {
+    expect(ELENA_IDENTITY_PROMPT).toMatch(/не более\s+одного исправления/);
+    expect(ELENA_IDENTITY_PROMPT).toMatch(/не хвали/);
+  });
+
+  it('is a distinct character from Валентина, not a copy — different identity text, different pacing', () => {
+    expect(ELENA_IDENTITY_PROMPT).not.toBe(VALENTINA_IDENTITY_PROMPT);
+    expect(ELENA_IDENTITY_PROMPT).toMatch(/завуч/);
+  });
+
+  it('rough word-count sanity check for the 1024-token cache minimum (ADR-0003), same heuristic as Валентина\'s own', () => {
+    const wordCount = ELENA_IDENTITY_PROMPT.split(/\s+/).filter(Boolean).length;
     expect(wordCount).toBeGreaterThan(400);
   });
 });

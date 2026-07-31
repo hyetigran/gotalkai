@@ -240,14 +240,14 @@ type LiveConverseScreenProps = {
 };
 
 /**
- * The real pipeline (docs/adr/0017, docs/adr/0023) — STT → persona LLM →
+ * The real pipeline (docs/adr/0017, docs/adr/0026) — STT → persona LLM →
  * TTS over a live voice-service connection, mic audio via the native
  * `expo-live-pcm-capture` module (Android only). Rendered once a real
  * learner, session, and voice-service token are all present (see
  * `ConverseScreen` below); `ScriptedConverseScreen` handles every other
  * case.
  *
- * Still unverified end to end on a physical device (docs/adr/0023's own
+ * Still unverified end to end on a physical device (docs/adr/0026's own
  * "what's still not done") — every piece here is real and independently
  * tested, but nothing has proven the full round trip on real hardware.
  */
@@ -324,7 +324,7 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
 /**
  * Ticket #25: `learnerId`/`sessionId` are sent by Open's navigation
  * (`use-open-screen.ts`'s `router.replace`); `voiceServiceToken`
- * (docs/adr/0023) is sent alongside them for a real session. All three
+ * (docs/adr/0026) is sent alongside them for a real session. All three
  * present means a real, live conversation; anything less (no real
  * learner at all, or the daily-cap "come back tomorrow" path that never
  * reaches session creation) falls back to the scripted demo — the same

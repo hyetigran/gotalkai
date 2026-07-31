@@ -2,7 +2,6 @@ import type { ParseableMessageCreateParams } from '@anthropic-ai/sdk';
 import type Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
-  buildValentinaSystemPrompt,
   FILLER_LINE,
   PERSONA_AFFECT_VALUES,
   PERSONA_COMPREHENSION_VALUES,
@@ -10,6 +9,7 @@ import {
   toMessageParams,
 } from './persona';
 import type { PersonaAffect, PersonaComprehension, PersonaTurn, TranscriptTurn } from './persona';
+import type { PersonaDefinition } from './personas';
 
 /** ADR-0003: Claude Sonnet 5, thinking disabled, effort low/medium. Low, not medium — turns are 1-2 sentences (ADR-0003's own reasoning), not worth the latency of a higher tier. */
 const MODEL = 'claude-sonnet-5';
@@ -55,12 +55,19 @@ export function extractPartialFields(jsonSnapshot: string): PartialPersonaFields
  * as thin as possible (this environment has no real `ANTHROPIC_API_KEY`,
  * see docs/adr/0010, so keeping the untestable surface minimal matters
  * more than usual here).
+ *
+ * Ticket #34 / docs/adr/0023: `persona` is now a parameter, not a call to
+ * `buildValentinaSystemPrompt()` — the one signature change that makes
+ * this "generalized" rather than "duplicated for a second character."
+ * Every other call site (turn-orchestrator.ts) threads the active
+ * session's own `PersonaDefinition` through; nothing here still assumes
+ * Валентина specifically.
  */
-export function buildPersonaTurnRequest(transcript: TranscriptTurn[]): ParseableMessageCreateParams {
+export function buildPersonaTurnRequest(transcript: TranscriptTurn[], persona: PersonaDefinition): ParseableMessageCreateParams {
   return {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: buildValentinaSystemPrompt(),
+    system: persona.systemPromptBlocks,
     messages: toMessageParams(transcript),
     // ADR-0003: thinking disabled — dialogue generation for 1-2 sentence
     // turns is not reasoning-heavy work.
@@ -78,8 +85,12 @@ export function buildPersonaTurnRequest(transcript: TranscriptTurn[]): Parseable
  * `affect: 'warm'` are documented placeholders, not a real signal — the
  * model's actual output was unusable, so there is nothing honest to report
  * for either field. `'partial'` reads as "uncertain" rather than falsely
- * claiming full understanding or failure; `'warm'` is Валентина's baseline
- * demeanor (PRD §6.4), the safest default when no real affect was produced.
+ * claiming full understanding or failure. `'warm'` is used regardless of
+ * which persona is active — it's the safest generic default when no real
+ * affect was produced (Валентина's own baseline demeanor per PRD §6.4;
+ * Елена's is brisker, but a wrong-but-harmless affect guess on the one
+ * turn per session this path should ever fire for isn't worth a
+ * per-persona fallback-affect table).
  */
 function buildFallbackTurn(): PersonaTurn {
   return { comprehension: 'partial', affect: 'warm', text: FILLER_LINE };
@@ -126,9 +137,10 @@ const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 
 export async function generatePersonaTurn(
   client: Anthropic,
   transcript: TranscriptTurn[],
+  persona: PersonaDefinition,
   options: { onPartial?: (partial: PartialPersonaFields) => void } = {},
 ): Promise<GeneratePersonaTurnResult> {
-  const request = buildPersonaTurnRequest(transcript);
+  const request = buildPersonaTurnRequest(transcript, persona);
   const stream = client.messages.stream(request);
 
   let rawOutput = '';

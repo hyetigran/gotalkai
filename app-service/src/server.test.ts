@@ -64,10 +64,18 @@ function post(port: number, path: string, body: unknown): Promise<JsonResponse> 
   });
 }
 
-function patch(port: number, path: string): Promise<JsonResponse> {
+function patch(port: number, path: string, body?: unknown): Promise<JsonResponse> {
   return new Promise((resolve, reject) => {
+    // Ticket #29's own reveal endpoint takes no body; ticket #36's calibration-variant endpoint does — `body` stays optional so both keep using this one helper.
+    const payload = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(
-      { host: '127.0.0.1', port, path, method: 'PATCH' },
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method: 'PATCH',
+        headers: payload === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+      },
       (res) => {
         let raw = '';
         res.on('data', chunk => (raw += chunk));
@@ -77,7 +85,7 @@ function patch(port: number, path: string): Promise<JsonResponse> {
       },
     );
     req.on('error', reject);
-    req.end();
+    req.end(payload);
   });
 }
 
@@ -201,7 +209,7 @@ describe('app service server', () => {
 
       const getResponse = await get(handle.port, `/learners/${learnerId}`);
       expect(getResponse.statusCode).toBe(200);
-      expect(getResponse.body?.learner).toEqual({ id: learnerId, cyrillicLiterate: false, translitEnabled: true });
+      expect(getResponse.body?.learner).toEqual({ id: learnerId, cyrillicLiterate: false, translitEnabled: true, calibrationVariant: 'partner_learner' });
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
@@ -216,8 +224,8 @@ describe('app service server', () => {
       const learnerResponse = await post(handle.port, '/learners', {});
       const learnerId = learnerResponse.body?.id as string;
 
-      const stored = await pool.query('SELECT cyrillic_literate, translit_enabled FROM learners WHERE id = $1', [learnerId]);
-      expect(stored.rows[0]).toEqual({ cyrillic_literate: false, translit_enabled: true });
+      const stored = await pool.query('SELECT cyrillic_literate, translit_enabled, calibration_variant FROM learners WHERE id = $1', [learnerId]);
+      expect(stored.rows[0]).toEqual({ cyrillic_literate: false, translit_enabled: true, calibration_variant: 'partner_learner' });
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();
@@ -232,6 +240,97 @@ describe('app service server', () => {
       const response = await get(handle.port, '/learners/00000000-0000-0000-0000-000000000000');
       expect(response.statusCode).toBe(404);
 
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #36: POST /learners accepts calibrationVariant at onboarding, and GET /learners/:id reads it back', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', { calibrationVariant: 'heritage_speaker' });
+      expect(learnerResponse.statusCode).toBe(201);
+      const learnerId = learnerResponse.body?.id as string;
+
+      const getResponse = await get(handle.port, `/learners/${learnerId}`);
+      expect(getResponse.body?.learner).toMatchObject({ calibrationVariant: 'heritage_speaker' });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #36 UAT #1: PATCH /learners/:id/calibration-variant flips an existing learner\'s calibration', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const patchResponse = await patch(handle.port, `/learners/${learnerId}/calibration-variant`, { calibrationVariant: 'heritage_speaker' });
+      expect(patchResponse.statusCode).toBe(200);
+
+      const getResponse = await get(handle.port, `/learners/${learnerId}`);
+      expect(getResponse.body?.learner).toMatchObject({ calibrationVariant: 'heritage_speaker' });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('PATCH /learners/:id/calibration-variant returns 404 for a nonexistent learner', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await patch(handle.port, '/learners/00000000-0000-0000-0000-000000000000/calibration-variant', { calibrationVariant: 'heritage_speaker' });
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('PATCH /learners/:id/calibration-variant rejects an unrecognized variant with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await patch(handle.port, '/learners/00000000-0000-0000-0000-000000000000/calibration-variant', { calibrationVariant: 'not-a-real-variant' });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #36 UAT #1: POST /sessions writes noticeably different dial defaults for heritage_speaker than the standard partner_learner calibration', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      await seedScenarios(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const partnerLearnerResponse = await post(handle.port, '/learners', {});
+      const partnerLearnerId = partnerLearnerResponse.body?.id as string;
+      const heritageResponse = await post(handle.port, '/learners', { calibrationVariant: 'heritage_speaker' });
+      const heritageLearnerId = heritageResponse.body?.id as string;
+
+      const partnerSession = await post(handle.port, '/sessions', { learnerId: partnerLearnerId });
+      const heritageSession = await post(handle.port, '/sessions', { learnerId: heritageLearnerId });
+
+      const partnerCalibration = await pool.query<{ calibration: { comprehensionLoad: number; productionDemand: number } }>(
+        'SELECT calibration FROM sessions WHERE id = $1',
+        [partnerSession.body?.id],
+      );
+      const heritageCalibration = await pool.query<{ calibration: { comprehensionLoad: number; productionDemand: number } }>(
+        'SELECT calibration FROM sessions WHERE id = $1',
+        [heritageSession.body?.id],
+      );
+
+      expect(heritageCalibration.rows[0]?.calibration.comprehensionLoad).toBeGreaterThan(partnerCalibration.rows[0]?.calibration.comprehensionLoad as number);
+      expect(heritageCalibration.rows[0]?.calibration.productionDemand).toBeLessThan(partnerCalibration.rows[0]?.calibration.productionDemand as number);
+
+      await pool.query('DELETE FROM learners WHERE id = ANY($1)', [[partnerLearnerId, heritageLearnerId]]);
       await handle.close();
       await pool.end();
     });
@@ -655,6 +754,139 @@ describe('app service server', () => {
       expect(response.body?.callbackLine).toBeNull();
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #34: POST /learners/:id/memories with personaId writes that persona\'s row, and GET /learners/:id/callback?personaId scopes the read to it', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const memoryResponse = await post(handle.port, `/learners/${learnerId}/memories`, {
+        content: 'Она рассказала о родительском собрании.',
+        personaId: 'elena',
+      });
+      expect(memoryResponse.statusCode).toBe(201);
+
+      const stored = await pool.query<{ persona_id: string }>('SELECT persona_id FROM persona_memories WHERE id = $1', [memoryResponse.body?.id]);
+      expect(stored.rows[0]?.persona_id).toBe('elena');
+
+      // Валентина's own callback (no query param, the default) never sees Елена's memory.
+      const valentinaCallback = await get(handle.port, `/learners/${learnerId}/callback`);
+      expect(valentinaCallback.body?.callbackLine).not.toBe('Она рассказала о родительском собрании.');
+
+      const elenaCallback = await get(handle.port, `/learners/${learnerId}/callback?personaId=elena`);
+      expect(elenaCallback.body?.callbackLine).toBe('Она рассказала о родительском собрании.');
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #34: GET /learners/:id/callback rejects an unrecognized personaId with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/learners/00000000-0000-0000-0000-000000000000/callback?personaId=not-a-real-persona');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #34: POST /learners/:id/memories rejects an unrecognized personaId with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/learners/00000000-0000-0000-0000-000000000000/memories', {
+        content: 'test',
+        personaId: 'not-a-real-persona',
+      });
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('address book endpoint (ticket #34)', () => {
+    it('GET /learners/:id/address-book returns Валентина reached and Елена next for a fresh learner', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const response = await get(handle.port, `/learners/${learnerId}/address-book`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body?.entries).toEqual(expect.arrayContaining([
+        { personaId: 'valentina', status: 'reached', dials: { comprehensionLoad: 2, productionDemand: 2, repairBehaviour: 1 } },
+        { personaId: 'elena', status: 'next', dials: { comprehensionLoad: 4, productionDemand: 3, repairBehaviour: 4 } },
+      ]));
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('ticket #34 AC #2: Елена\'s address-book dial calibration is her own, distinct from Валентина\'s — not the same numbers under a different name', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const response = await get(handle.port, `/learners/${learnerId}/address-book`);
+      const entries = response.body?.entries as { personaId: string; dials: Record<string, number> }[];
+      const valentinaDials = entries.find(entry => entry.personaId === 'valentina')?.dials;
+      const elenaDials = entries.find(entry => entry.personaId === 'elena')?.dials;
+      expect(elenaDials).not.toEqual(valentinaDials);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/address-book returns Елена reached once real learner_structures data crosses B1-readiness', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      for (const structureKey of ['aspect_perfective', 'verbs_of_motion', 'case_government']) {
+        await pool.query(
+          `INSERT INTO learner_structures (learner_id, structure_key, stability) VALUES ($1, $2, 0.9)`,
+          [learnerId, structureKey],
+        );
+      }
+
+      const response = await get(handle.port, `/learners/${learnerId}/address-book`);
+      expect(response.body?.entries).toEqual(expect.arrayContaining([
+        { personaId: 'elena', status: 'reached', dials: { comprehensionLoad: 4, productionDemand: 3, repairBehaviour: 4 } },
+      ]));
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/address-book with a malformed learner id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/learners/not-a-uuid/address-book');
+      expect(response.statusCode).toBe(400);
+
       await handle.close();
       await pool.end();
     });

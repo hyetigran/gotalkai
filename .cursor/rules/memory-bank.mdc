@@ -1,0 +1,19 @@
+---
+description: Always read Memory Bank files at the start of every task
+alwaysApply: true
+---
+
+# Memory Bank
+
+After every reset, rely on `memory-bank/` for project continuity. **Read all core files before non-trivial work:**
+
+1. `memory-bank/projectbrief.md`
+2. `memory-bank/productContext.md`
+3. `memory-bank/systemPatterns.md`
+4. `memory-bank/techContext.md`
+5. `memory-bank/activeContext.md`
+6. `memory-bank/progress.md`
+
+Update Memory Bank when discovering new patterns, after significant changes, or when the user says **update memory bank** (especially `activeContext.md` and `progress.md`).
+
+Do not invent a root `VERSION` file; version lives in `mobile/package.json` (see `docs/agents/versioning.md`).

@@ -67,7 +67,7 @@ export function useOpenAnswerHandler(options: {
           // showing translation for every real learner, regardless of
           // their actual onboarding answer.
           //
-          // voiceServiceToken (docs/adr/0023): forwarded the same way —
+          // voiceServiceToken (docs/adr/0026): forwarded the same way —
           // Converse needs it to open the live voice-service connection.
           // Without it, Converse falls back to the scripted demo (see
           // its own "real when present" branch), same as it already does

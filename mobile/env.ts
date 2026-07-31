@@ -13,7 +13,7 @@ const envSchema = z.object({
   EXPO_PUBLIC_API_URL: z.string().url(),
   /** app-service's base URL (ARCHITECTURE.md §3.2) — separate from EXPO_PUBLIC_API_URL, which is still the scaffold's demo feed API. */
   EXPO_PUBLIC_APP_SERVICE_URL: z.string().url(),
-  /** voice-service's WebSocket base URL (ARCHITECTURE.md §3.2/§6) — `ws://`/`wss://`, not `http(s)://`; `VoiceConnection` (mobile/src/lib/voice-service/voice-connection.ts) appends nothing else to it. Was missing entirely until docs/adr/0023's live-pipeline wiring needed somewhere real to point at. */
+  /** voice-service's WebSocket base URL (ARCHITECTURE.md §3.2/§6) — `ws://`/`wss://`, not `http(s)://`; `VoiceConnection` (mobile/src/lib/voice-service/voice-connection.ts) appends nothing else to it. Was missing entirely until docs/adr/0026's live-pipeline wiring needed somewhere real to point at. */
   EXPO_PUBLIC_VOICE_SERVICE_URL: z.string().url(),
   EXPO_PUBLIC_ASSOCIATED_DOMAIN: z.string().url().optional(),
   EXPO_PUBLIC_VAR_NUMBER: z.number(),

@@ -2,7 +2,7 @@ import { inspect } from 'node:util';
 
 import { Pool } from 'pg';
 
-import { recordPersonaMemory, selectAndMarkCallbackMemory, wrapPersonaMemoryContent } from './persona-memories';
+import { getPersonaMemoriesForLearner, recordPersonaMemory, selectAndMarkCallbackMemory, wrapPersonaMemoryContent } from './persona-memories';
 import { applySchema } from './schema';
 
 describe('RedactedMemoryContent', () => {
@@ -109,5 +109,57 @@ describe('recordPersonaMemory / selectAndMarkCallbackMemory', () => {
     // With only two memories, the third call cycles back to whichever
     // was referenced longest ago — the first one again.
     expect(third).toBe(first);
+  });
+
+  it('ticket #34 AC #4 / docs/adr/0023: defaults to Валентина when personaId is omitted — every pre-#34 call site keeps writing/reading exactly what it always did', async () => {
+    const learnerId = await makeLearner();
+    const id = await recordPersonaMemory(pool, learnerId, 'по умолчанию');
+
+    const stored = await pool.query<{ persona_id: string }>('SELECT persona_id FROM persona_memories WHERE id = $1', [id]);
+    expect(stored.rows[0]?.persona_id).toBe('valentina');
+
+    const callbackLine = await selectAndMarkCallbackMemory(pool, learnerId);
+    expect(callbackLine).toBe('по умолчанию');
+  });
+
+  it('ticket #34 AC #4: Елена does not inherit or leak Валентина\'s memories — selectAndMarkCallbackMemory is scoped per persona', async () => {
+    const learnerId = await makeLearner();
+    await recordPersonaMemory(pool, learnerId, 'воспоминание Валентины', 'valentina');
+    await recordPersonaMemory(pool, learnerId, 'воспоминание Елены', 'elena');
+
+    expect(await selectAndMarkCallbackMemory(pool, learnerId, 'valentina')).toBe('воспоминание Валентины');
+    expect(await selectAndMarkCallbackMemory(pool, learnerId, 'elena')).toBe('воспоминание Елены');
+  });
+
+  it('ticket #34 AC #4: a persona with no memories of its own returns null, never another persona\'s memory', async () => {
+    const learnerId = await makeLearner();
+    await recordPersonaMemory(pool, learnerId, 'воспоминание Валентины', 'valentina');
+
+    expect(await selectAndMarkCallbackMemory(pool, learnerId, 'elena')).toBeNull();
+  });
+
+  it('ticket #34 AC #4: getPersonaMemoriesForLearner reads only the requested persona\'s rows', async () => {
+    const learnerId = await makeLearner();
+    await recordPersonaMemory(pool, learnerId, 'первое воспоминание Валентины', 'valentina');
+    await recordPersonaMemory(pool, learnerId, 'второе воспоминание Валентины', 'valentina');
+    await recordPersonaMemory(pool, learnerId, 'воспоминание Елены', 'elena');
+
+    const valentinaMemories = await getPersonaMemoriesForLearner(pool, learnerId, 'valentina');
+    expect(valentinaMemories).toHaveLength(2);
+    expect(valentinaMemories.every(memory => memory.personaId === 'valentina')).toBe(true);
+
+    const elenaMemories = await getPersonaMemoriesForLearner(pool, learnerId, 'elena');
+    expect(elenaMemories).toHaveLength(1);
+    expect(elenaMemories[0]?.personaId).toBe('elena');
+  });
+
+  it('ticket #34: rotation (least-recently-referenced-first) stays scoped within one persona, unaffected by the other persona\'s referenced state', async () => {
+    const learnerId = await makeLearner();
+    const valentinaOld = await recordPersonaMemory(pool, learnerId, 'старое Валентины', 'valentina');
+    await pool.query('UPDATE persona_memories SET last_referenced_at = now() WHERE id = $1', [valentinaOld]);
+    await recordPersonaMemory(pool, learnerId, 'новое Елены', 'elena');
+
+    // Валентина has only the just-referenced memory — it's still the only (and therefore next) one for her, regardless of Елена's own fresh, never-referenced row.
+    expect(await selectAndMarkCallbackMemory(pool, learnerId, 'valentina')).toBe('старое Валентины');
   });
 });
