@@ -66,7 +66,13 @@ export function useOpenAnswerHandler(options: {
           // #30 AC #3). Forgetting it here would silently fall back to
           // showing translation for every real learner, regardless of
           // their actual onboarding answer.
-          router.replace({ pathname: '/converse', params: { sessionId: data.id, learnerId } });
+          //
+          // voiceServiceToken (docs/adr/0026): forwarded the same way —
+          // Converse needs it to open the live voice-service connection.
+          // Without it, Converse falls back to the scripted demo (see
+          // its own "real when present" branch), same as it already does
+          // for a missing learnerId/sessionId.
+          router.replace({ pathname: '/converse', params: { sessionId: data.id, learnerId, voiceServiceToken: data.voiceServiceToken } });
         },
         onError: (error) => {
           if (error.response?.status === 429 && error.response.data.code === 'daily_cap_reached') {

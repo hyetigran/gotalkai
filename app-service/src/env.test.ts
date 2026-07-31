@@ -3,6 +3,7 @@ import { loadEnv } from './env';
 describe('loadEnv', () => {
   const validBase = {
     DATABASE_URL: 'postgres://user:pass@localhost:5432/app_service',
+    SESSION_TOKEN_SECRET: 'a'.repeat(32),
   };
 
   it('accepts a minimal valid environment and applies defaults', () => {
@@ -52,6 +53,14 @@ describe('loadEnv', () => {
 
   it('rejects an unrecognized NODE_ENV', () => {
     expect(() => loadEnv({ ...validBase, NODE_ENV: 'staging' })).toThrow();
+  });
+
+  it('rejects a missing SESSION_TOKEN_SECRET', () => {
+    expect(() => loadEnv({ DATABASE_URL: validBase.DATABASE_URL })).toThrow(/SESSION_TOKEN_SECRET/);
+  });
+
+  it('rejects a SESSION_TOKEN_SECRET shorter than 32 characters', () => {
+    expect(() => loadEnv({ ...validBase, SESSION_TOKEN_SECRET: 'too-short' })).toThrow(/SESSION_TOKEN_SECRET/);
   });
 
   it('throws a readable message listing every issue, not a raw ZodError', () => {

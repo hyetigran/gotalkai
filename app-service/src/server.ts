@@ -17,6 +17,7 @@ import { deleteLearner, recordAudioSamplingConsent } from './privacy';
 import { getScenarioViewForSession } from './scenario-view';
 import { DailySessionCapReachedError } from './session-cap';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from './sessions';
+import { issueSessionToken } from './session-token';
 import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from './turns';
 
 export type AppServiceHandle = {
@@ -115,7 +116,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     }
     try {
       const id = await createSession(pool, parsed.data.learnerId, env.DAILY_SESSION_CAP);
-      sendJson(res, 201, { status: 'ok', id });
+      // docs/adr/0017's other disclosed gap, alongside mic capture: a
+      // real per-session credential for voice-service, not a shared
+      // static secret. Minted here, not read back later — this response
+      // is the only place a caller can ever obtain it.
+      const { token, expiresAt } = issueSessionToken(env.SESSION_TOKEN_SECRET, id);
+      sendJson(res, 201, { status: 'ok', id, voiceServiceToken: token, voiceServiceTokenExpiresAt: expiresAt });
     }
     catch (error) {
       if (error instanceof DailySessionCapReachedError) {
@@ -555,7 +561,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   (ticket #30 AC #3).
  * - `POST /sessions` — creates a session AND runs scenario selection
  *   (ticket #21) against the learner's real learner_structures/session
- *   history, writing the result onto the new row.
+ *   history, writing the result onto the new row. Also mints and returns
+ *   a short-lived, session-scoped `voiceServiceToken` (session-token.ts)
+ *   — the real per-session credential docs/adr/0017 disclosed as
+ *   missing, replacing voice-service's previous static shared secret.
  * - `POST /sessions/:id/observations` — writes every observation the
  *   caller reports, diffs the session's real observations against its
  *   injected target structure and writes a distinct `avoidance`

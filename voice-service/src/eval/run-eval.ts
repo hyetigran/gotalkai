@@ -70,7 +70,7 @@ if (require.main === module) {
   void (async () => {
     // Reads ANTHROPIC_API_KEY directly rather than going through
     // env.ts's `loadEnv` — that schema also requires
-    // VOICE_SERVICE_AUTH_TOKEN, which the eval harness has no use for
+    // SESSION_TOKEN_SECRET, which the eval harness has no use for
     // and shouldn't need configured just to run.
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {

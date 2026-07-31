@@ -702,7 +702,7 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     await waiter.waitFor('turn_complete');
 
     expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', content: 'мумбл мумбл' }));
-    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'persona', content: expect.stringContaining('расслышала') }));
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'persona', content: expect.stringContaining('поняла') }));
   });
 
   it('the "didn\'t catch that" path records only the persona line, no learner turn, when the STT vendor errors outright — there is no transcript to record', async () => {

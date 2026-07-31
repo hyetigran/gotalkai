@@ -94,8 +94,13 @@ const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
  * different mechanic). This line is a judgment call: in-character, and
  * deliberately distinct from FILLER_LINE so the two failure modes read
  * differently to anyone debugging logs later.
+ *
+ * Wording deliberately says "didn't understand" (не поняла), not
+ * "didn't hear" (не расслышала) — matching PRD §5.7's own framing of
+ * this mechanic exactly ("doesn't understand you"), not a hard-of-hearing
+ * characterization of the persona, which was never the intent here.
  */
-const DIDNT_CATCH_THAT_LINE = 'Прости, я не расслышала — повтори, пожалуйста?';
+const DIDNT_UNDERSTAND_LINE = 'Прости, я не поняла — повтори, пожалуйста?';
 
 /**
  * PRD §5.7 doesn't specify a numeric threshold — ElevenLabs' `logprob` is
@@ -523,7 +528,7 @@ export class TurnOrchestrator {
       return;
     const now = this.deps.now ?? Date.now;
     const timestamp = t1SttFinal ?? now();
-    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_CATCH_THAT_LINE, comprehension: 'not_understood', affect: 'concerned' });
+    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_UNDERSTAND_LINE, comprehension: 'not_understood', affect: 'concerned' });
     // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
     const timestamps: TurnTimestamps = { t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp };
     this.sendTurnComplete(timestamps);
@@ -535,7 +540,7 @@ export class TurnOrchestrator {
           console.error('[turn-orchestrator] failed to record learner turn', { error });
         });
       }
-      void this.deps.recordTurn(this.sessionId, { speaker: 'persona', content: DIDNT_CATCH_THAT_LINE, personaRegister: this.activePersona.personaRegister, timings: timestamps }).catch((error) => {
+      void this.deps.recordTurn(this.sessionId, { speaker: 'persona', content: DIDNT_UNDERSTAND_LINE, personaRegister: this.activePersona.personaRegister, timings: timestamps }).catch((error) => {
         console.error('[turn-orchestrator] failed to record persona turn', { error });
       });
     }

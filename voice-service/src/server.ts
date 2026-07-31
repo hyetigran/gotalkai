@@ -12,6 +12,7 @@ import { generatePersonaTurn } from './persona-turn';
 import { DEFAULT_PERSONA_ID, PERSONA_DEFINITIONS } from './personas';
 import type { PersonaId } from './personas';
 import { detectSafetyTrigger } from './safety-detection';
+import { verifySessionToken } from './session-token';
 import { annotateText } from './stress/stress-annotation';
 import { createSttSession } from './stt';
 import { synthesizeSpeech } from './tts';
@@ -51,9 +52,13 @@ function decodePcm16(pcmBase64: string): Int16Array {
 /**
  * Starts the voice service: an HTTP server (health check only, for now)
  * plus a WebSocket server on the same port. Auth happens during the
- * upgrade handshake — before any WS connection is accepted — checking a
- * bearer token against `env.VOICE_SERVICE_AUTH_TOKEN` (see env.ts for why
- * this is a placeholder for real per-session credentials).
+ * upgrade handshake — before any WS connection is accepted — verifying a
+ * bearer token as a real, short-lived, session-scoped credential minted
+ * by app-service's `POST /sessions` (session-token.ts; docs/adr/0017's
+ * disclosed credential-issuance gap, closed). The token's own embedded
+ * `sessionId` becomes this connection's authenticated session id
+ * immediately — the orchestrator never has to trust a client-supplied
+ * session id (see the `session_start` case below).
  *
  * Ticket #18: each connection gets its own `TurnOrchestrator` (#14-#17's
  * modules assembled into one live cascade — see turn-orchestrator.ts and
@@ -88,17 +93,27 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
 
     httpServer.on('upgrade', (req, socket, head) => {
       const token = extractBearerToken(req);
-      if (token !== env.VOICE_SERVICE_AUTH_TOKEN) {
+      const verified = token ? verifySessionToken(env.SESSION_TOKEN_SECRET, token) : null;
+      if (!verified) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
+        setUpConnection(ws, verified.sessionId);
       });
     });
 
-    wss.on('connection', (ws) => {
+    /**
+     * Deliberately called directly from the `upgrade` handler above
+     * rather than via `wss.on('connection', ...)` — the standard `ws`
+     * pattern — because that event's listener signature has no room for
+     * a third, service-specific argument like `authenticatedSessionId`
+     * without losing type safety on the other two. Calling this directly
+     * keeps the authenticated session id's provenance (the upgrade-time
+     * token, not any client message) obvious at the call site.
+     */
+    function setUpConnection(ws: WebSocket, authenticatedSessionId: string): void {
       const orchestrator = new TurnOrchestrator({
         createSttSession,
         generatePersonaTurn,
@@ -114,6 +129,12 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
         recordTurn: appServiceClient.recordTurn,
         recordInterruption: appServiceClient.recordInterruption,
       });
+      // The token verified at upgrade time is the only trustworthy source
+      // of this connection's session id — set it immediately rather than
+      // waiting for (or blindly trusting) the client's own `session_start`
+      // message. See the `session_start` case below for why that message
+      // is still handled, just no longer the source of truth.
+      orchestrator.sessionStart(authenticatedSessionId);
 
       ws.on('message', (raw) => {
         let parsed: unknown;
@@ -143,13 +164,21 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             orchestrator.holdEnd();
             return;
           case 'session_start': {
-            // Ticket #29 / docs/adr/0022: the persistence link
-            // docs/adr/0017 disclosed as missing — every subsequent
-            // recordTurn/recordInterruption call needs this real
-            // session id to attribute a turn to. learnerId isn't used
-            // here: app-service's POST /sessions/:id/turns is keyed
-            // only by session, not learner.
-            orchestrator.sessionStart(result.data.sessionId);
+            // The orchestrator's real session id already comes from the
+            // upgrade-time token (see `setUpConnection` above) — that's
+            // the trustworthy source now, not this message. This
+            // case still exists because the mobile client still sends it
+            // (voice-connection.ts's `sendSessionStart`) and
+            // `learnerId` is reserved here for future use, but the
+            // client-supplied `sessionId` is no longer taken at face
+            // value: a mismatch against the authenticated session id
+            // means either a stale/reused connection or a client bug,
+            // either way not something to silently paper over by
+            // re-pointing turn recording at an unverified id.
+            if (result.data.sessionId !== authenticatedSessionId) {
+              send(ws, { type: 'error', message: 'session_start sessionId does not match the authenticated session' });
+              return;
+            }
 
             // Ticket #34 / docs/adr/0023: only switch personas when the
             // message actually names one other than the connection-time
@@ -171,7 +200,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             return;
         }
       });
-    });
+    }
 
     httpServer.once('error', reject);
     httpServer.listen(env.PORT, () => {
