@@ -9,10 +9,12 @@ import { Pressable, Text, View } from 'react-native';
 import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
 import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useLearner } from './api';
+import { FrequencyBackground } from './components/frequency-background';
 import { HoldToThinkButton } from './components/hold-to-think-button';
 import { InputModeToggle } from './components/input-mode-toggle';
 import { LevelMeter } from './components/level-meter';
 import { LiveTranscript } from './components/live-transcript';
+import { PersonaPortrait3D } from './components/persona-portrait-3d';
 import { SuggestionChips } from './components/suggestion-chips';
 import { TextInputBar } from './components/text-input-bar';
 import { Transcript } from './components/transcript';
@@ -205,6 +207,11 @@ function ScriptedConverseScreen({ learnerId, sessionId }: ScriptedConverseScreen
     <View className="flex-1 bg-paper">
       <ConverseHeader clock={clock} onBack={goBackToOpen} />
 
+      <View className="px-[22px]">
+        {/* Scripted demo's `phase` collapses "generating" and "audio playing" into one 'thinking' — same mapping LevelMeter's label already relies on (see mapLivePhaseToMeterPhase's comment). */}
+        <PersonaPortrait3D background={<FrequencyBackground active={phase === 'thinking'} />} />
+      </View>
+
       <Transcript
         turns={turns}
         thinking={phase === 'thinking'}
@@ -288,6 +295,10 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
   return (
     <View className="flex-1 bg-paper">
       <ConverseHeader clock={clock} onBack={goBackToOpen} />
+
+      <View className="px-[22px]">
+        <PersonaPortrait3D background={<FrequencyBackground active={live.phase === 'speaking'} />} />
+      </View>
 
       <LiveTranscript turns={live.turns} thinking={live.phase === 'thinking'} />
 
