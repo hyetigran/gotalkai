@@ -147,8 +147,13 @@ function useVoiceConnectionLifecycle(options: {
       token,
       onStateChange: (connectionState) => {
         dispatch({ type: 'connection_state', state: connectionState });
-        if (connectionState === 'open')
+        if (connectionState === 'open') {
           connection.sendSessionStart(learnerId, sessionId);
+          // PRD §6.2: "she opens, not the learner" — tells the server it's
+          // safe to start her opening line now that this screen is actually
+          // ready to receive tts_chunks, not just that the raw socket opened.
+          connection.sendBeginConversation();
+        }
       },
       onMessage: (message) => {
         dispatch({ type: 'server_message', message });

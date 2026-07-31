@@ -758,3 +758,86 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     errorSpy.mockRestore();
   });
 });
+
+// Sibling describe, not nested inside the top-level one above — keeps this
+// file's per-describe test count from growing unbounded as coverage accretes.
+describe('TurnOrchestrator opening line (PRD §6.2: "she opens, not the learner")', () => {
+  it('sends a filler, then a persona_turn and tts_chunk(s), then turn_complete — with no preceding learner turn', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn, synthesizeSpeech } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.openConversation();
+
+    expect(waiter.messages[0]).toMatchObject({ type: 'persona_filler' });
+    const personaTurn = waiter.messages.find(message => message.type === 'persona_turn');
+    expect(personaTurn).toMatchObject({ type: 'persona_turn', comprehension: 'understood', affect: 'warm' });
+    expect(waiter.messages.some(message => message.type === 'tts_chunk')).toBe(true);
+    expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
+    // No LLM call for a fixed opening line, and nothing to have generated it from anyway.
+    expect(generatePersonaTurn).not.toHaveBeenCalled();
+    expect(synthesizeSpeech).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('[annotated]'), expect.anything());
+  });
+
+  it(
+    'does not add the opening line to history — the learner\'s first real turn is still the only, and first, message sent to the persona LLM',
+    async () => {
+      // Anthropic's Messages API requires the first message in a request to
+      // be role 'user'. this.history feeds toMessageParams (persona.ts),
+      // which maps speaker 'persona' -> role 'assistant'. If the opening
+      // line were pushed onto history, it would be the first (and, until
+      // now, only) entry, making this call structurally invalid.
+      const waiter = createMessageWaiter();
+      const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      await orchestrator.openConversation();
+      await waiter.waitFor('turn_complete'); // the opening line's own turn_complete — consume it before waiting for the real turn's
+      speakOneUtterance(orchestrator);
+      sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+      await waiter.waitFor('turn_complete');
+
+      expect(generatePersonaTurn).toHaveBeenCalledWith(expect.anything(), [{ speaker: 'learner', text: goodTranscript.text }]);
+    },
+  );
+
+  it('records the opening line via recordTurn once session id is set, with zero LLM usage and a real TTS character count', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    await orchestrator.openConversation();
+
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({
+      speaker: 'persona',
+      costUsd: expect.any(Number),
+    }));
+  });
+
+  it('a barge-in while she is still opening stops her, same as any other turn', async () => {
+    const waiter = createMessageWaiter();
+    let releaseSynthesis: (() => void) | undefined;
+    const { deps } = fakeDeps(waiter);
+    deps.synthesizeSpeech = jest.fn((_client, _voiceId, _text, handlers) => {
+      handlers?.onChunk?.({ audioBase64: 'chunk-0' } as never, 0);
+      return new Promise((resolve) => {
+        releaseSynthesis = () => resolve([]);
+      });
+    });
+    const orchestrator = new TurnOrchestrator(deps);
+
+    const opening = orchestrator.openConversation();
+    await waiter.waitFor('tts_chunk');
+    expect(orchestrator.currentState).toBe('speaking');
+
+    orchestrator.pushAudioFrame(loudFrame(), 'loud-base64', 8000); // learner speaks over her opening line
+    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
+    expect(orchestrator.currentState).toBe('listening');
+
+    releaseSynthesis?.();
+    await opening;
+    // The stale opening turn must not still send turn_complete after being superseded.
+    expect(waiter.messages.filter(message => message.type === 'turn_complete')).toHaveLength(0);
+  });
+});

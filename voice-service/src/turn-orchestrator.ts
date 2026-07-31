@@ -110,6 +110,31 @@ const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
 const DIDNT_UNDERSTAND_LINE = 'Прости, я не поняла — повтори, пожалуйста?';
 
 /**
+ * PRD §6.2 / docs/adr/0002: "she opens, not the learner" — the scripted
+ * demo shows this exact line (scripted-demo-script.ts's turn 0)
+ * immediately on entering Converse, no learner input required. The live
+ * pipeline had no equivalent: nothing ever triggered a persona turn
+ * until the learner spoke first, so she never said anything at all
+ * until then (UAT-reported: "the persona doesn't open"). Same copy as
+ * the scripted demo, stripped of its hand-authored stress marks —
+ * `annotateText` computes those itself from plain text, same as every
+ * other live persona turn; passing pre-stressed text through it would
+ * double-mark or misparse it.
+ *
+ * Fixed, not LLM-generated: the Open screen's callback line (ticket
+ * #22) already delivers the personalized "she remembers you" beat
+ * before the learner ever reaches this screen — Converse's opening
+ * line only needs to be a natural, in-character entrance, which a
+ * fixed line provides without the latency, cost, or (at the single
+ * most visible moment in the session) generation-failure risk of a
+ * real model call.
+ */
+const OPENING_LINE = 'Ну наконец-то ты позвонил! Садись, я чай поставила. Как выходные?';
+
+/** OPENING_LINE is fixed copy, not a real `generatePersonaTurn` call — no LLM tokens spent, so `recordPersonaTurn`'s cost accounting has nothing to attribute beyond the real TTS characters. */
+const ZERO_USAGE: GeneratePersonaTurnResult['usage'] = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
+
+/**
  * PRD §5.7 doesn't specify a numeric threshold — ElevenLabs' `logprob` is
  * a log-probability (range (-∞, 0]), not the 0-100% score PRD's own
  * framing implicitly assumes. This value is an unvalidated placeholder:
@@ -176,6 +201,67 @@ export class TurnOrchestrator {
   /** Ticket #29: called from server.ts on the `session_start` message — the real session id every subsequent `recordTurn`/`recordInterruption` call needs. */
   sessionStart(sessionId: string): void {
     this.sessionId = sessionId;
+  }
+
+  /**
+   * Sends OPENING_LINE through the same filler → persona_turn → TTS →
+   * turn_complete cascade a normal turn uses, without a preceding
+   * learner utterance. A separate, explicitly-called method rather than
+   * folded into `sessionStart` above — every existing test in this file
+   * calls `sessionStart` as pure setup with no side effects, and firing
+   * a full async cascade from inside it would race every one of those
+   * tests' own `pushAudioFrame`/`submitTextInput` calls (both check
+   * `this.state === 'speaking'` for barge-in) against this cascade's
+   * `state` transitions. server.ts calls this once, right after
+   * `sessionStart`, at real connection setup.
+   *
+   * Deliberately does NOT push onto `this.history`: the Anthropic
+   * Messages API requires the first message in a request to be role
+   * `user`. Every later real turn calls `toMessageParams(this.history)`
+   * (persona.ts) to build that request — if this turn's line were in
+   * `this.history`, it would be the first (and, until the learner's
+   * first reply, only) entry, with role `assistant`, making every
+   * subsequent `generatePersonaTurn` call structurally invalid. The
+   * model not "remembering" its own opening line is an accepted,
+   * disclosed tradeoff of staying out of that transcript — the same
+   * precedent `respondWithSafetyMessage` already establishes for a
+   * different reason (see its own comment).
+   */
+  async openConversation(): Promise<void> {
+    const { myToken, t0TurnDetected } = this.beginTurn();
+    const now = this.deps.now ?? Date.now;
+    // Collapsed to t0: no STT or persona-LLM stage runs for a fixed opening line.
+    const t1SttFinal = t0TurnDetected;
+    const t2PersonaStart = t0TurnDetected;
+    const t3PersonaComplete = t0TurnDetected;
+
+    this.deps.sendMessage({ type: 'persona_turn', text: OPENING_LINE, comprehension: 'understood', affect: 'warm' });
+
+    const annotated = this.deps.annotateText(OPENING_LINE);
+    const t4StressAnnotated = now();
+
+    this.state = 'speaking';
+    this.lastPersonaTurn = null;
+    let finalTimestamps: TurnTimestamps | null = null;
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, annotated.text, {
+      onChunk: (chunk, sentenceIndex) => {
+        if (myToken !== this.generationToken)
+          return;
+        if (!finalTimestamps) {
+          finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: now() };
+          this.recordPersonaTurn(OPENING_LINE, finalTimestamps, ZERO_USAGE, annotated.text.length);
+        }
+        this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: chunk.audioBase64 });
+      },
+    });
+    if (myToken !== this.generationToken)
+      return;
+    if (!finalTimestamps) {
+      finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: t4StressAnnotated };
+      this.recordPersonaTurn(OPENING_LINE, finalTimestamps, ZERO_USAGE, annotated.text.length);
+    }
+    this.sendTurnComplete(finalTimestamps);
+    this.state = 'listening';
   }
 
   /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. Applies uniformly to text input too (ticket #32) — hold-to-think is about giving the learner space, not specifically about audio. */

@@ -42,6 +42,18 @@ const textInputMessageSchema = z.object({
   text: z.string().min(1),
 });
 
+/**
+ * PRD §6.2 / docs/adr/0002: "she opens, not the learner." Sent once the
+ * client is actually ready to receive `tts_chunk`s — not implied by the
+ * WS connection opening (server.ts's connection setup runs before the
+ * client has necessarily mounted its playback UI), and not folded into
+ * `session_start` above (that message is a legacy no-op the client
+ * still sends; auth already comes from the upgrade-time token). No
+ * payload: `turn-orchestrator.ts`'s `openConversation` needs nothing
+ * beyond "go."
+ */
+const beginConversationMessageSchema = z.object({ type: z.literal('begin_conversation') });
+
 export const clientMessageSchema = z.union([
   z.object({
     type: z.literal('ping'),
@@ -53,6 +65,7 @@ export const clientMessageSchema = z.union([
   holdStartMessageSchema,
   holdEndMessageSchema,
   textInputMessageSchema,
+  beginConversationMessageSchema,
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

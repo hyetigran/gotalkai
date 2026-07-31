@@ -154,6 +154,11 @@ export class VoiceConnection {
     this.trySend({ type: 'session_start', learnerId, sessionId });
   }
 
+  /** PRD §6.2: "she opens, not the learner" — tells the server it's safe to start her opening line (turn-orchestrator.ts's `openConversation`). Sent once, right alongside `session_start`. */
+  sendBeginConversation(): void {
+    this.trySend({ type: 'begin_conversation' });
+  }
+
   /** Ticket #32: the text-input path — bypasses audio entirely, funnels into the exact same server-side pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */
   sendTextInput(text: string): void {
     this.trySend({ type: 'text_input', text });

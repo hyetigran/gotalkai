@@ -98,6 +98,8 @@ describe('useLiveConverseSession', () => {
     expect(result.current.phase).toBe('listening');
     const sent = latestSocket().sent.map(raw => JSON.parse(raw));
     expect(sent).toContainEqual({ type: 'session_start', learnerId: 'learner-1', sessionId: 'session-1' });
+    // PRD §6.2: "she opens, not the learner" — tells the server it's safe to start her opening line.
+    expect(sent).toContainEqual({ type: 'begin_conversation' });
   });
 
   it('runs the full cascade through phase and turns: filler -> transcript -> reply -> tts -> turn_complete', () => {

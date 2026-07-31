@@ -138,7 +138,7 @@ describe('voiceConnection', () => {
 // Sibling describe, not nested inside the block above — keeps each describe
 // callback under the max-lines-per-function limit.
 describe('voiceConnection pipeline messages (ticket #18)', () => {
-  it('sends audio_chunk, hold_start, hold_end, session_start, and text_input with the expected shape', () => {
+  it('sends audio_chunk, hold_start, hold_end, session_start, text_input, and begin_conversation with the expected shape', () => {
     const connection = new VoiceConnection({ url: 'ws://example.test', token: 't' });
     connection.connect();
     FakeWebSocket.instances[0]?.simulateOpen();
@@ -148,6 +148,7 @@ describe('voiceConnection pipeline messages (ticket #18)', () => {
     connection.sendHoldEnd();
     connection.sendSessionStart('learner-1', 'session-1');
     connection.sendTextInput('Привет!');
+    connection.sendBeginConversation();
 
     const sent = (FakeWebSocket.instances[0]?.sent ?? []).map(raw => JSON.parse(raw));
     expect(sent).toEqual([
@@ -156,6 +157,7 @@ describe('voiceConnection pipeline messages (ticket #18)', () => {
       { type: 'hold_end' },
       { type: 'session_start', learnerId: 'learner-1', sessionId: 'session-1' },
       { type: 'text_input', text: 'Привет!' },
+      { type: 'begin_conversation' },
     ]);
   });
 

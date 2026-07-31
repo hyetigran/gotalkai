@@ -255,6 +255,10 @@ describe('voice service server', () => {
     // environment's fake vendor credentials (docs/adr/0021). The real, meaningful happy-path
     // coverage for ticket #32's text-input pipeline lives in turn-orchestrator.test.ts, against
     // injected fakes — the same place voice's own happy-path pipeline coverage lives.
+    //
+    // Same reasoning, same absence, for begin_conversation (PRD §6.2's opening line): it has no
+    // fields to send malformed, and its only real behavior is a real TTS call — happy-path
+    // coverage for openConversation lives in turn-orchestrator.test.ts's own describe block.
     it('rejects a malformed text_input (empty text) the same way as any other unrecognized message', async () => {
       const handle = await startServer(testEnv());
       const ws = connect(handle.port, AUTH_TOKEN);

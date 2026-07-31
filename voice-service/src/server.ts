@@ -175,6 +175,9 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
           case 'text_input':
             void orchestrator.submitTextInput(result.data.text);
             return;
+          case 'begin_conversation':
+            void orchestrator.openConversation();
+            return;
         }
       });
     }
