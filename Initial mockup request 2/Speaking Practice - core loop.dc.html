@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<style>
+body{margin:0;background:#E7E0D2;font-family:-apple-system,system-ui,"Helvetica Neue",Helvetica,sans-serif;color:#231F18}
+a{color:#A0543A;text-decoration:none}a:hover{color:#7E3F2B}
+@keyframes vp-ring{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.1);opacity:0}}
+@keyframes vp-blink{0%,100%{opacity:.25}50%{opacity:.9}}
+@keyframes vp-bar{0%,100%{transform:scaleY(.18)}50%{transform:scaleY(1)}}
+@keyframes vp-fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+
+<div style="display:flex;align-items:flex-start;gap:44px;padding:56px 64px 80px">
+
+  <div style="width:236px;display:flex;flex-direction:column;gap:26px;flex:none;position:sticky;top:56px">
+    <div>
+      <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(35,31,24,.45)">Mockup v0.1 · iPhone</div>
+      <h1 style="font:400 30px/1.15 'PT Serif',Georgia,serif;margin:12px 0 8px;letter-spacing:-.01em">Russian speaking practice</h1>
+      <p style="font:400 13px/1.55 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.6);margin:0;text-wrap:pretty">The daily loop, clickable. Tap the level meter or a chip to take a turn — the mic is always open. Hold to think appears once you hesitate.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(35,31,24,.45);margin-bottom:10px">The loop</div>
+      <sc-for list="{{ steps }}" as="s" hint-placeholder-count="5">
+        <div onClick="{{ s.go }}" style="{{ s.style }}">
+          <span style="font:500 10px/1 'IBM Plex Mono',monospace;opacity:.5;width:14px;flex:none">{{ s.n }}</span>
+          <span style="font:400 14px/1.2 'PT Serif',Georgia,serif">{{ s.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:9px;padding-top:20px;border-top:1px solid rgba(35,31,24,.14)">
+      <div onClick="{{ toggleDev }}" style="{{ devToggleStyle }}">Pipeline overlay</div>
+      <div style="font:400 11px/1.5 'IBM Plex Mono',monospace;color:rgba(35,31,24,.45);text-wrap:pretty">Shows STT confidence, the six per-turn timestamps, and the affect tag the face will consume.</div>
+    </div>
+  </div>
+
+  <div style="flex:none">
+    <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="402px,874px">
+
+      <sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="height:100%;background:#FBF6EC;padding:66px 22px 44px;box-sizing:border-box;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+            <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(35,31,24,.42)">{{ t.openDay }}</div>
+            <div style="display:flex;gap:14px;align-items:baseline;flex:none">
+              <div onClick="{{ goCast }}" style="font:400 13px/1 -apple-system,system-ui,sans-serif;color:#A0543A;cursor:pointer">{{ t.whoElse }}</div>
+              <div onClick="{{ goSettings }}" style="font:400 13px/1 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.42);cursor:pointer">{{ t.settingsLink }}</div>
+            </div>
+          </div>
+
+          <div style="margin-top:26px;background:#fff;border:1px solid rgba(35,31,24,.1);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(35,31,24,.05)">
+            <div style="height:196px;background:#F0E4E4;display:flex;align-items:flex-start;justify-content:center;overflow:hidden">
+              <img src="./assets/cast-rosa.png" alt="Валентина Сергеевна" style="width:240px;height:343px;flex:none;display:block;margin-top:-14px">
+            </div>
+            <div style="padding:20px 20px 22px">
+              <div style="font:400 21px/1.2 'PT Serif',Georgia,serif">Валентина Сергеевна</div>
+              <div style="font:400 12px/1.4 'IBM Plex Mono',monospace;color:rgba(35,31,24,.5);margin-top:6px">{{ t.personaMeta }}</div>
+              <div style="margin-top:18px;padding-top:18px;border-top:1px solid rgba(35,31,24,.09)">
+                <p style="font:400 19px/1.45 'PT Serif',Georgia,serif;margin:0;text-wrap:pretty">«Ну наконе́ц-то ты позвони́л. Ты говори́л, что соба́ка пропа́ла — нашла́сь?»</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:auto;padding-top:26px">
+            <div style="font:400 12px/1.5 'IBM Plex Mono',monospace;color:rgba(35,31,24,.5);margin-bottom:10px">{{ t.scenarioLine }}</div>
+            <div style="font:400 15px/1.45 'PT Serif',Georgia,serif;color:rgba(35,31,24,.62);margin-bottom:16px;text-wrap:pretty">{{ t.openMicLine }}</div>
+            <div onClick="{{ goConverse }}" style="background:#A0543A;color:#FBF6EC;border-radius:16px;padding:19px;text-align:center;font:400 18px/1 'PT Serif',Georgia,serif;cursor:pointer;box-shadow:0 2px 0 rgba(35,31,24,.14)" style-hover="background:#8E4831">{{ t.answer }}</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isConverse }}">
+        <div style="height:100%;background:#FBF6EC;display:flex;flex-direction:column">
+          <div style="padding:60px 22px 12px;display:flex;justify-content:space-between;align-items:center;flex:none">
+            <div onClick="{{ goOpen }}" style="font:400 15px/1 -apple-system,system-ui,sans-serif;color:#A0543A;cursor:pointer">‹</div>
+            <div style="font:400 13px/1 'PT Serif',Georgia,serif;color:rgba(35,31,24,.6)">Валентина Сергеевна</div>
+            <div style="font:500 10px/1 'IBM Plex Mono',monospace;color:rgba(35,31,24,.4)">{{ clock }}</div>
+          </div>
+
+          <div ref="{{ scrollRef }}" style="flex:1;overflow:auto;padding:12px 22px 8px;display:flex;flex-direction:column;gap:18px">
+            <sc-for list="{{ turns }}" as="t" hint-placeholder-count="3">
+              <div>
+                <sc-if value="{{ t.isHer }}" hint-placeholder-val="{{ true }}">
+                  <div onClick="{{ t.reveal }}">
+                    <p style="{{ t.herStyle }}">{{ t.ru }}</p>
+                    <sc-if value="{{ t.showEn }}" hint-placeholder-val="{{ false }}">
+                      <p style="font:400 14px/1.45 -apple-system,system-ui,sans-serif;margin:8px 0 0;color:rgba(35,31,24,.6);text-wrap:pretty">{{ t.en }}</p>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ t.isYou }}">
+                  <div style="display:flex;justify-content:flex-end">
+                    <p style="font:400 16px/1.45 'PT Serif',Georgia,serif;margin:0;max-width:78%;text-align:right;color:rgba(35,31,24,.52);text-wrap:pretty">{{ t.ru }}</p>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ t.showMeta }}">
+                  <div style="{{ t.metaStyle }}">{{ t.meta }}</div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <sc-if value="{{ thinking }}">
+              <div style="font:400 20px/1.5 'PT Serif',Georgia,serif;color:rgba(35,31,24,.35);animation:vp-blink 1.1s ease-in-out infinite">ну…</div>
+            </sc-if>
+          </div>
+
+          <div style="flex:none;padding:14px 22px 40px">
+            <div style="text-align:center;font:500 11px/1.3 'IBM Plex Mono',monospace;letter-spacing:.05em;color:rgba(35,31,24,.55);margin-bottom:11px">{{ t.revealHint }}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;min-height:34px">
+              <sc-for list="{{ chips }}" as="c" hint-placeholder-count="4">
+                <div onClick="{{ c.go }}" style="{{ c.style }}">{{ c.label }}</div>
+              </sc-for>
+            </div>
+            <div style="margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:12px">
+              <div onClick="{{ onMic }}" style="{{ meterWrap }}">{{ meter }}</div>
+              <div style="{{ meterLabelStyle }}">{{ meterLabel }}</div>
+            </div>
+
+            <div style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px">
+              <div style="width:62px;flex:none"></div>
+              <sc-if value="{{ showHold }}" hint-placeholder-val="{{ false }}">
+                <div onPointerDown="{{ holdOn }}" onPointerUp="{{ holdOff }}" onPointerLeave="{{ holdOff }}" onPointerCancel="{{ holdOff }}" style="{{ holdStyle }}">{{ t.holdToThink }}</div>
+              </sc-if>
+              <div onClick="{{ goDebrief }}" style="width:62px;flex:none;font:400 13px/1.3 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.5);cursor:pointer;text-align:right">{{ t.end }}</div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isDebrief }}">
+        <div style="height:100%;background:#FBF6EC;padding:66px 22px 44px;box-sizing:border-box;display:flex;flex-direction:column;overflow:auto">
+          <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(35,31,24,.42)">{{ t.afterHead }}</div>
+          <p style="font:400 27px/1.28 'PT Serif',Georgia,serif;margin:16px 0 0;text-wrap:pretty">{{ t.understoodPre }}<span style="color:#A0543A">{{ t.understoodCount }}</span>{{ t.understoodPost }}</p>
+          <p style="font:400 19px/1.35 'PT Serif',Georgia,serif;margin:10px 0 0;color:rgba(35,31,24,.62);text-wrap:pretty">{{ revealLine }}</p>
+          <div style="font:400 12px/1.5 'IBM Plex Mono',monospace;color:rgba(35,31,24,.5);margin-top:12px">{{ t.sessionMeta }}</div>
+
+          <div style="margin-top:26px;display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ patterns }}" as="p" hint-placeholder-count="3">
+              <div style="background:#fff;border:1px solid rgba(35,31,24,.1);border-radius:16px;padding:16px 17px">
+                <div style="display:flex;gap:10px;align-items:baseline">
+                  <span style="font:500 10px/1 'IBM Plex Mono',monospace;color:rgba(35,31,24,.4);flex:none">{{ p.n }}</span>
+                  <div>
+                    <p style="font:400 17px/1.4 'PT Serif',Georgia,serif;margin:0;text-wrap:pretty">{{ p.title }}</p>
+                    <p style="font:400 13px/1.5 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.55);margin:7px 0 0;text-wrap:pretty">{{ p.body }}</p>
+                    <sc-if value="{{ p.showTag }}" hint-placeholder-val="{{ false }}">
+                      <div style="font:500 10px/1 'IBM Plex Mono',monospace;color:#A0543A;margin-top:9px">{{ p.tag }}</div>
+                    </sc-if>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:20px;padding:17px;border:1px dashed rgba(160,84,58,.45);border-radius:16px;background:rgba(160,84,58,.05)">
+            <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#A0543A">{{ t.steeredHead }}</div>
+            <p style="font:400 16px/1.45 'PT Serif',Georgia,serif;margin:9px 0 0;text-wrap:pretty">{{ t.steeredBody }}</p>
+          </div>
+
+          <div onClick="{{ goTomorrow }}" style="margin-top:26px;background:#A0543A;color:#FBF6EC;border-radius:16px;padding:19px;text-align:center;font:400 18px/1 'PT Serif',Georgia,serif;cursor:pointer;box-shadow:0 2px 0 rgba(35,31,24,.14)">{{ t.tomorrowBtn }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isTomorrow }}">
+        <div style="height:100%;background:#F3ECDE;padding:66px 22px 44px;box-sizing:border-box;display:flex;flex-direction:column">
+          <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(35,31,24,.42)">{{ t.wed }}</div>
+          <p style="font:400 27px/1.3 'PT Serif',Georgia,serif;margin:16px 0 0">{{ t.tomorrowTitle }}</p>
+          <p style="font:400 16px/1.5 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.6);margin:12px 0 0;text-wrap:pretty">{{ t.tomorrowIntro }}</p>
+
+          <div style="margin-top:28px;background:#fff;border:1px solid rgba(35,31,24,.1);border-radius:18px;padding:19px">
+            <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:rgba(35,31,24,.42);margin-bottom:14px">{{ t.sameScene }}</div>
+            <sc-for list="{{ ladder }}" as="l" hint-placeholder-count="3">
+              <div style="display:flex;gap:12px;align-items:center;padding:9px 0">
+                <div style="{{ l.dot }}"></div>
+                <div style="{{ l.textStyle }}">{{ l.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:20px;font:400 12px/1.6 'IBM Plex Mono',monospace;color:rgba(35,31,24,.5);text-wrap:pretty">{{ t.homework }}<br>{{ t.homeworkSub }}</div>
+
+          <div onClick="{{ goOpen }}" style="margin-top:auto;border:1px solid rgba(35,31,24,.22);border-radius:16px;padding:18px;text-align:center;font:400 17px/1 'PT Serif',Georgia,serif;cursor:pointer;color:#231F18">{{ t.close }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCast }}">
+        <div style="height:100%;background:#FBF6EC;padding:60px 22px 44px;box-sizing:border-box;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div onClick="{{ goOpen }}" style="font:400 15px/1 -apple-system,system-ui,sans-serif;color:#A0543A;cursor:pointer">‹</div>
+            <div style="font:400 13px/1 'PT Serif',Georgia,serif;color:rgba(35,31,24,.6)">{{ t.castHead }}</div>
+            <div style="width:12px"></div>
+          </div>
+
+          <div style="margin-top:16px">
+            <div style="font:400 22px/1.2 'PT Serif',Georgia,serif">{{ t.bookHead }}</div>
+            <div style="font:500 10px/1.4 'IBM Plex Mono',monospace;color:rgba(35,31,24,.45);letter-spacing:.03em;margin-top:7px">{{ trailLabel }}</div>
+          </div>
+
+          <div style="margin-top:16px;flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;margin-right:-4px;padding-right:4px">
+            <sc-for list="{{ cast }}" as="c" hint-placeholder-count="5">
+              <div style="display:flex;gap:12px;align-items:stretch">
+                <div style="width:14px;flex:none;display:flex;flex-direction:column;align-items:center;padding-top:2px">
+                  <div style="{{ c.railTop }}"></div>
+                  <div style="{{ c.node }}"></div>
+                  <div style="{{ c.railBottom }}"></div>
+                </div>
+
+                <div onClick="{{ c.go }}" style="{{ c.card }}">
+                  <div style="display:flex;gap:13px;align-items:center">
+                    <div style="{{ c.disc }}">{{ c.initial }}</div>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+                        <div style="{{ c.nameStyle }}">{{ c.name }}</div>
+                        <div style="font:500 9px/1 'IBM Plex Mono',monospace;color:rgba(35,31,24,.4);letter-spacing:.06em;flex:none">{{ c.level }}</div>
+                      </div>
+                      <div style="{{ c.roleStyle }}">{{ c.role }}</div>
+                      <div style="{{ c.gateStyle }}">{{ c.gate }}</div>
+                    </div>
+                  </div>
+
+                  <sc-if value="{{ c.showBody }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:15px;padding-top:15px;border-top:1px solid rgba(35,31,24,.08)">
+                      <div style="display:flex;gap:14px;align-items:flex-start">
+                        <image-slot id="{{ c.slotId }}" shape="rounded" radius="12" style="width:72px;height:88px;flex:none" placeholder="portrait"></image-slot>
+                        <p style="font:400 14px/1.5 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.62);margin:0;text-wrap:pretty">{{ c.trains }}</p>
+                      </div>
+
+                      <div style="margin-top:16px;display:flex;flex-direction:column;gap:13px">
+                        <sc-for list="{{ c.meters }}" as="m" hint-placeholder-count="2">
+                          <div>
+                            <div style="position:relative;height:5px;border-radius:3px;background:rgba(35,31,24,.09)">
+                              <div style="{{ m.dot }}"></div>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;margin-top:8px;font:500 9px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:rgba(35,31,24,.4)">
+                              <span>{{ m.left }}</span>
+                              <span>{{ m.right }}</span>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+
+                      <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
+                        <sc-for list="{{ c.dials }}" as="d" hint-placeholder-count="3">
+                          <div style="display:flex;align-items:center;gap:10px">
+                            <div style="font:500 9px/1 'IBM Plex Mono',monospace;color:rgba(35,31,24,.45);width:96px;flex:none;letter-spacing:.04em">{{ d.label }}</div>
+                            <div style="flex:1;height:4px;border-radius:3px;background:rgba(35,31,24,.09);overflow:hidden">
+                              <div style="{{ d.fill }}"></div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+
+                      <sc-if value="{{ c.showRequirement }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:15px;font:500 10px/1.5 'IBM Plex Mono',monospace;color:#A0543A;letter-spacing:.03em">{{ c.requirement }}</div>
+                      </sc-if>
+
+                      <sc-if value="{{ c.showButton }}" hint-placeholder-val="{{ false }}">
+                        <div onClick="{{ c.talk }}" style="margin-top:16px;background:#A0543A;color:#FBF6EC;border-radius:13px;padding:15px;text-align:center;font:400 16px/1 'PT Serif',Georgia,serif;cursor:pointer;box-shadow:0 2px 0 rgba(35,31,24,.14)">{{ c.buttonLabel }}</div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:14px;font:400 11px/1.6 'IBM Plex Mono',monospace;color:rgba(35,31,24,.42);text-wrap:pretty;flex:none">{{ t.tapHint }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSettings }}">
+        <div style="height:100%;background:#F3ECDE;padding:60px 22px 44px;box-sizing:border-box;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div onClick="{{ goOpen }}" style="font:400 15px/1 -apple-system,system-ui,sans-serif;color:#A0543A;cursor:pointer">‹</div>
+            <div style="font:400 13px/1 'PT Serif',Georgia,serif;color:rgba(35,31,24,.6)">{{ t.settingsHead }}</div>
+            <div style="width:12px"></div>
+          </div>
+
+          <div style="margin-top:30px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(35,31,24,.42)">{{ t.langSection }}</div>
+          <div style="margin-top:12px;display:flex;gap:9px">
+            <sc-for list="{{ langChoices }}" as="o" hint-placeholder-count="2">
+              <div onClick="{{ o.go }}" style="{{ o.style }}">{{ o.label }}</div>
+            </sc-for>
+          </div>
+          <p style="font:400 13px/1.6 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.55);margin:14px 0 0;text-wrap:pretty">{{ t.langNote }}</p>
+
+          <div style="margin-top:34px;font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(35,31,24,.42)">{{ t.otherSection }}</div>
+          <div style="margin-top:12px;background:#fff;border:1px solid rgba(35,31,24,.1);border-radius:16px;overflow:hidden">
+            <sc-for list="{{ settingRows }}" as="r" hint-placeholder-count="3">
+              <div style="padding:16px 17px;border-bottom:1px solid rgba(35,31,24,.07);display:flex;justify-content:space-between;align-items:center;gap:10px">
+                <span style="font:400 16px/1.3 'PT Serif',Georgia,serif">{{ r }}</span>
+                <span style="font:400 14px/1 -apple-system,system-ui,sans-serif;color:rgba(35,31,24,.3)">›</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div onClick="{{ goOpen }}" style="margin-top:auto;border:1px solid rgba(35,31,24,.22);border-radius:16px;padding:18px;text-align:center;font:400 17px/1 'PT Serif',Georgia,serif;cursor:pointer;color:#231F18">{{ t.close }}</div>
+        </div>
+      </sc-if>
+
+    </x-import>
+  </div>
+
+  <div style="width:308px;flex:none;position:sticky;top:56px">
+    <div style="font:500 10px/1 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(35,31,24,.45)">{{ noteHead }}</div>
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px">
+      <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+        <div style="border-left:2px solid rgba(160,84,58,.35);padding-left:13px">
+          <p style="font:400 12px/1.65 'IBM Plex Mono',monospace;color:rgba(35,31,24,.68);margin:0;text-wrap:pretty">{{ n }}</p>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:26px;padding-top:20px;border-top:1px solid rgba(35,31,24,.14);font:400 12px/1.6 'IBM Plex Mono',monospace;color:rgba(35,31,24,.45);text-wrap:pretty">Not designed yet: onboarding / session zero placement, the text-input path, the monthly comprehension benchmark.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;en&quot;,&quot;ru&quot;],&quot;default&quot;:&quot;en&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Interface language&quot;},&quot;scaffold&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:0,&quot;max&quot;:4,&quot;section&quot;:&quot;Scaffolding&quot;,&quot;unit&quot;:&quot; chips&quot;},&quot;reached&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:1,&quot;max&quot;:5,&quot;section&quot;:&quot;Cast trail&quot;,&quot;unit&quot;:&quot; unlocked&quot;}}">
+const SCRIPT = [
+  { who: 'her', ru: '«Ну наконе́ц-то ты позвони́л! Сади́сь, я чай поста́вила. Так что с соба́кой-то?»',
+    en: 'Finally you called! Sit down, I\u2019ve put the kettle on. So what happened with the dog?',
+    meta: 't0→t5 781ms · understood · affect: warm · turn 1/14' },
+  { who: 'you', ru: 'Да, соба́ка… она́ до́ма. Мы иска́ем два дня.',
+    meta: 'stt 0.86 · target aspect(past) · produced present ⚠ avoidance logged' },
+  { who: 'her', ru: '«Два дня иска́ли! Ох, я представля́ю. И кто её нашёл?»',
+    en: 'Two days you were looking! Oh, I can imagine. And who found her?',
+    meta: 't0→t5 812ms · understood · affect: sympathetic · recast: иска́ем → иска́ли' },
+  { who: 'you', ru: 'Сосе́д нашёл. Он… как сказа́ть… в гара́ж.',
+    meta: 'stt 0.61 · below floor 0.70 · case error survives ASR' },
+  { who: 'her', ru: '«Что-что? Погро́мче, я пло́хо слы́шу.»',
+    en: 'What was that? Louder, I don\u2019t hear well.',
+    meta: 't0→t5 664ms · not_understood · affect: leaning-in · no correction emitted' },
+  { who: 'you', ru: 'В гараже́. Сосе́д нашёл её в гараже́.',
+    meta: 'stt 0.93 · self-repair, unprompted' },
+  { who: 'her', ru: '«Ах ты бо́же мой. У Ни́ны Петро́вны кот то́же так пря́тался — це́лую неде́лю, представля́ешь…»',
+    en: 'Oh my goodness. Nina Petrovna\u2019s cat used to hide like that too — for a whole week, imagine…',
+    meta: 't0→t5 903ms · understood · affect: amused · story installment 1/3' },
+];
+const CHIPS = ['пра́вда?', 'да ты что!', 'а пото́м?', 'а кот?'];
+const CAST = [
+  { name: 'Валентина', nameInst: 'Валенти́ной', level: 'A2', x: 64, y: 22, initial: 'ВС', dials: [2, 2, 1] },
+  { name: 'Елена Николаевна', nameInst: 'Еле́ной Никола́евной', level: 'B1', x: 71, y: 50, initial: 'ЕН', dials: [4, 3, 4] },
+  { name: 'Маша', nameInst: 'Ма́шей', level: 'B1', x: 48, y: 73, initial: 'М', dials: [4, 4, 3] },
+  { name: 'Дима', nameInst: 'Ди́мой', level: 'B2', x: 24, y: 63, initial: 'Д', dials: [4, 2, 5] },
+  { name: 'Ирина В.', nameInst: 'Ири́ной В.', level: 'B2', x: 26, y: 24, initial: 'ИВ', dials: [3, 4, 4] },
+];
+
+const NOTES = {
+  open: ['She opens, not the learner. The blank page is why speaking practice does not get done.',
+    'Callback line is read from persona_memories — never logged, never a trace attribute.',
+    'Zero decisions. Scenario is selected from learner_structures, not offered as a menu.',
+    'The open-mic line ships on the first session only — one sentence, no tutorial.',
+    'Absent by design: streak, accuracy score, percentage grade, badges.'],
+  converse: ['The mic is open for the whole session — no press-to-speak. Push-to-talk would kill backchanneling (nobody presses a button to say правда?) and stop training turn-taking.',
+    'The level meter, not the button, is the highest-leverage element here: it responds from the first second and teaches "always on" wordlessly. Its absence is why people tap repeatedly in voice apps.',
+    'Hold to think — never "pause". While held, turn detection is suspended and STT is muted, so stray room audio stays out of the transcript. Hold, not toggle: a toggle can be forgotten and leave her waiting. Auto-releases at ~45s.',
+    'Progressive disclosure: the button is absent at session start and fades in the first time the learner goes quiet mid-utterance. Learners who never hesitate never see it. No tutorial, no modal.',
+    'Валентина is the confirmation signal — hold and she waits visibly in character, release and she responds. Instrument first-use session and holds/session; high false-interruption with low hold usage means undiscoverable.',
+    'Push-to-talk ships as a setting for noisy rooms, with the tradeoff stated plainly: it disables backchanneling and interruption.',
+    'Suggestion chips decay 4 → 3 → 2 → 1 → 0 across sessions. Never announced — the fading scaffold IS the progress bar.',
+    'Turn 3 carries a recast inside a normal reaction: иска́ем → иска́ли. Not flagged, not repeated, max one per turn.',
+    'Turn 5 is driven by STT confidence (0.61 < 0.70 floor), not scripted failure. She asks again in character; nothing is scored.',
+    'Filler («ну…») fires on end-of-turn detection and masks 300–500ms of the 700–900ms budget.',
+    'Tap-to-reveal, not a toggle: tapping her line slides a translation in beneath it, dimmer and smaller. No mode state, nothing to decide mid-conversation. Sets turns.revealed.',
+    'Transcript appears only after she finishes speaking — text on screen while she talks turns a listening exercise into a reading one.',
+    'Reveal rate is the most granular comprehension-load signal available and needs no labelling. Eight reveals in fourteen turns means the load is set too high.',
+    'Turn-detection timeout is a per-level parameter. Cutting off a hesitant speaker is the worst failure in the product.',
+    'Every turn emits {understood | partial | not_understood} + affect tag from day one so the Rive face drops in without a redesign.'],
+  debrief: ['Two figures, both ability and neither a grade: she understood you N of 14, and you understood her without help N of 14 — the second is derived from turns.revealed, not self-reported.',
+    'Three ranked patterns. The analyser recorded 9 observations; six are kept as tuning data and never shown.',
+    'score = frequency × (impeded ? 2.0 : 1.0) × readiness × (told_recently ? 0.3 : 1.0)',
+    'Avoidance is the diff of session-start injected targets against actual production. "You steered around this" beats "you got this wrong".',
+    'Stress pattern only appears because it recurred across turns. Never a single low-confidence word, never a percentage.'],
+  tomorrow: ['Complication, not vocabulary: same scene, higher demand. Authored once, yields a curriculum.',
+    'The ill cat comes from persona_world_state — renewable material, and the main defence against the repetition wall.',
+    'sessions.scenario_id + sessions-since-last-use is recorded so repetition exposure can be crossed against abandonment.',
+    'One session a day. Pedagogically correct and it bounds COGS at $0.047–0.228 per 8-minute session.'],
+  cast: ['An address book, not a chart. Entries are people you have or will have; the ribbon down the left is the only progression surface — no XP, no percentages.',
+    'Register lives inside each entry as two labelled positions (на вы↔на ты, по делу↔по-доброму). Authored per persona, not computed.',
+    'Sealed entries say "sealed until B1", never "coming soon". The gate is ability, not a release date. The requirement line appears only on the next entry.',
+    'Every entry is legible before it is yours: the register and the three dials are visible while sealed, so the difficulty model teaches itself.',
+    'One persona ships in v1. The book exists so a single persona does not read as a thin product.'],
+  settings: ['Interface language is chrome only. The conversation, the suggestion chips and the debrief target forms stay Russian in both modes — translating them would remove the practice.',
+    'Default is English: the learner is an English speaker at A2. Russian chrome is an opt-in immersion setting, not the shipping default.',
+    'ui_language lives on the user row, not in device settings — it follows the account across devices and is readable by the analyser for error-explanation copy.',
+    'Debrief explanations are the one place where chrome and content mix: pattern titles keep the Russian target forms in both modes, only the explanation translates.'],
+};
+const HEADS = { open: 'Screen 1 — Open', converse: 'Screen 2 — Converse', debrief: 'Screen 3 — Debrief', tomorrow: 'Screen 4 — Tomorrow', cast: 'Outside the loop — Address book', settings: 'Settings — interface language' };
+const DIAL_LABELS = { en: ['comprehension', 'production', 'repair'], ru: ['понима́ние', 'речь', 'самокорре́кция'] };
+
+const T = {
+  en: {
+    openDay: 'Tuesday · 8 min', whoElse: 'Who else →', settingsLink: 'Settings',
+    personaMeta: '78 · Yaroslavl · retired librarian',
+    scenarioLine: 'Tea on the porch · she will ask about the dog',
+    answer: 'Pick up', end: 'End',
+    afterHead: 'After the conversation',
+    understoodPre: 'She understood you ', understoodCount: '11 times of 14', understoodPost: '.',
+    revealLine: n => 'You understood her without help ' + (14 - n) + ' of 14.',
+    sessionMeta: '8 min 12 s · 14 turns · she spoke 61%',
+    revealHint: 'Tap her line for a translation',
+    holdToThink: 'hold to think', openMicLine: 'She\u2019ll hear you the whole time. Just talk.',
+    micOpen: 'she can hear you', micHeard: 'she heard that', micHolding: 'she\u2019s waiting — take your time',
+    micHerTurn: 'she\u2019s talking', tapToTake: 'tap to take a turn',
+    steeredHead: 'Steered around',
+    steeredBody: 'The scenario asked what happened. 11 of your 12 verbs were present tense.',
+    tomorrowBtn: 'Tomorrow',
+    wed: 'Wednesday', tomorrowTitle: 'The cat is ill',
+    tomorrowIntro: 'She will want to know what the vet said — and she will ask you to tell it back to her.',
+    sameScene: 'Same scene, harder',
+    homework: 'No homework. Come back tomorrow.',
+    homeworkSub: 'One session a day. Distributed practice beats massed practice.',
+    close: 'Close',
+    castHead: 'Who to talk to', youAreHere: 'you are here',
+    axisFormal: 'formal', axisCasual: 'casual', axisTransactional: 'transactional', axisRelational: 'relational',
+    bookHead: 'Your address book', register: 'Register', talkTo: 'Talk to ', sealed: 'Sealed until ',
+    nextUp: 'next up', playingNow: 'you talk to her daily', tapHint: 'Tap an entry to see the register it trains.',
+    requirement: r => r + ' more conversations at this level',
+    castHint1: 'Tap anyone on the trail to see the register they train.',
+    castHint2: 'Position is register; order along the trail is the ability gate.',
+    settingsHead: 'Settings', langSection: 'Interface language',
+    langNote: 'Only the app\u2019s own text changes. The conversation itself is always in Russian — that is the product.',
+    otherSection: 'Practice', rows: ['Microphone · always open', 'Session length · 8 min', 'Daily reminder · 19:30'],
+    trail: (r, n, next) => r + ' of ' + n + ' · ' + (12 * r) + ' more conversations to ' + next,
+    subOpen: 'open', gateNow: 'playing now', gateNext: 'next · unlocks at ',
+    gateLocked: 'unlocks at ',
+    ladder: ['She offers you tea', 'The cat was driven to the vet last night', 'She is hurt that you did not visit'],
+    patterns: [
+      { body: 'Past narration came up four times. Twice she had to ask what you meant.', tag: 'impeded communication · 2×' },
+      { body: 'Location after в takes the prepositional. Only after motion verbs does it take the accusative.', tag: '' },
+      { body: 'Recurring across three turns. She worked it out from context each time.', tag: '' },
+    ],
+    roles: ['Grandmother-in-law · retired librarian', 'Mother-in-law · school administrator',
+      'Cousin-in-law · barista, 26', 'Taxi driver · Yaroslavl', 'Clinic receptionist'],
+    trains: [
+      'ты from her, вы from you. Storytelling, backchanneling, domestic register.',
+      'A younger relative who talks fast and does not slow down for you. Idiom, elision.',
+      'Partner\u2019s cousin, your age. Slang, teasing, texting register spoken aloud.',
+      'Taxi driver. ты both ways, transactional pressure, numbers and directions under time.',
+      'Clinic receptionist. вы both ways, forms and appointments, no patience for hesitation.',
+    ],
+  },
+  ru: {
+    openDay: 'Вторник · 8 мин', whoElse: 'Кто ещё →', settingsLink: 'Настро́йки',
+    personaMeta: '78 · Ярославль · библиотекарь на пенсии',
+    scenarioLine: 'Чай на вера́нде · она спро́сит про соба́ку',
+    answer: 'Отве́тить', end: 'Заверши́ть',
+    afterHead: 'После разгово́ра',
+    understoodPre: 'Она поняла́ тебя ', understoodCount: '11 раз из 14', understoodPost: '.',
+    revealLine: n => 'Ты по́нял её без подска́зки ' + (14 - n) + ' раз из 14.',
+    sessionMeta: '8 мин 12 с · 14 репли́к · она говори́ла 61%',
+    revealHint: 'Ко́снись её ре́плики — бу́дет перево́д',
+    holdToThink: 'да́й поду́мать', openMicLine: 'Она́ слы́шит тебя́ всё вре́мя. Про́сто говори́.',
+    micOpen: 'она́ тебя́ слы́шит', micHeard: 'она́ услы́шала', micHolding: 'она́ ждёт — не спеши́',
+    micHerTurn: 'она́ говори́т', tapToTake: 'ко́снись, что́бы отве́тить',
+    steeredHead: 'Ты обошёл стороно́й',
+    steeredBody: 'Сцена́рий спра́шивал, что случи́лось. 11 из 12 твои́х глаго́лов — в настоя́щем вре́мени.',
+    tomorrowBtn: 'За́втра',
+    wed: 'Среда́', tomorrowTitle: 'Кот заболе́л',
+    tomorrowIntro: 'Она́ спро́сит, что сказа́л врач, — и попро́сит переска́зать ей.',
+    sameScene: 'Та же сце́на, сло́жнее',
+    homework: 'Дома́шнее — ничего́. Приходи́ за́втра.',
+    homeworkSub: 'Одно́ заня́тие в день. Распределённая практика лу́чше сплошно́й.',
+    close: 'Закры́ть',
+    castHead: 'С кем говори́ть', youAreHere: 'ты здесь',
+    axisFormal: 'на вы', axisCasual: 'на ты', axisTransactional: 'по де́лу', axisRelational: 'по-до́брому',
+    bookHead: 'Твоя́ кни́жка', register: 'Реги́стр', talkTo: 'Поговори́ть с ', sealed: 'Запеча́тано до ',
+    nextUp: 'сле́дующая', playingNow: 'ты говори́шь с ней ка́ждый день', tapHint: 'Ко́снись за́писи — уви́дишь, чему́ она́ у́чит.',
+    requirement: r => 'ещё ' + r + ' разгово́ров на э́том у́ровне',
+    castHint1: 'Ко́снись любо́го — посмо́тришь, чему́ он у́чит.',
+    castHint2: 'Ме́сто — э́то регистр; поря́док на пути́ — у́ровень.',
+    settingsHead: 'Настро́йки', langSection: 'Язы́к интерфе́йса',
+    langNote: 'Меня́ется то́лько текст приложе́ния. Сам разгово́р всегда́ на ру́сском — в э́том смысл.',
+    otherSection: 'Практика', rows: ['Микрофо́н · всегда́ включён', 'Дли́тельность · 8 мин', 'Напомина́ние · 19:30'],
+    trail: (r, n, next) => r + ' из ' + n + ' · ещё ' + (12 * r) + ' разгово́ров до ' + next,
+    subOpen: 'откры́та', gateNow: 'игра́ет сейча́с', gateNext: 'сле́дующая · открыва́ется на ',
+    gateLocked: 'открыва́ется на ',
+    ladder: ['Она предлага́ет чай', 'Ко́та ве́чером ве́зли к врачу́', 'Она́ оби́делась, что ты не заходи́л'],
+    patterns: [
+      { body: 'Расска́з о про́шлом встре́тился четы́ре ра́за. Два́жды она́ переспра́шивала.', tag: 'помеша́ло понима́нию · 2×' },
+      { body: 'Ме́сто по́сле в — предло́жный паде́ж. Вини́тельный — то́лько по́сле глаго́лов движе́ния.', tag: '' },
+      { body: 'Повтори́лось в трёх репли́ках. Ка́ждый раз она́ дога́дывалась по конте́ксту.', tag: '' },
+    ],
+    roles: ['Ба́бушка жены́ · библиоте́карь на пе́нсии', 'Тёща · заву́ч в шко́ле',
+      'Двою́родная сестра́ жены́ · барри́ста, 26', 'Такси́ст · Яросла́вль', 'Регистрату́ра в кли́нике'],
+    trains: [
+      'Она́ тебе́ «ты», ты ей «вы». Расска́зы, подде́ржка разгово́ра, дома́шний регистр.',
+      'Молода́я родня́: говори́т бы́стро и не замедля́ется. Идио́мы, прогла́тывание.',
+      'Двою́родная сестра́ партнёра, твоя́ ро́весница. Сленг, подшу́чивание, речь как в перепи́ске.',
+      'Такси́ст. Обою́дное «ты», де́ловое давле́ние, чи́сла и направле́ния на вре́мя.',
+      'Регистрату́ра в кли́нике. Обою́дное «вы», формы и за́писи, без терпе́ния к па́узам.',
+    ],
+  },
+};
+
+class Component extends DCLogic {
+  state = { screen: 'open', n: 1, listening: false, thinking: false, dev: false, sel: null, trailLen: 0,
+    lang: null, holding: false, holdSeen: false };
+
+  scrollRef = React.createRef();
+  trailRef = React.createRef();
+
+  componentWillUnmount() { clearTimeout(this.t1); clearTimeout(this.t2); clearTimeout(this.hold45); }
+
+  componentDidMount() { this.measureTrail(); }
+
+  componentDidUpdate() {
+    const el = this.scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    this.measureTrail();
+  }
+
+  measureTrail() {
+    const p = this.trailRef.current;
+    if (!p || !p.getTotalLength) return;
+    const len = p.getTotalLength();
+    if (len && Math.abs((this.state.trailLen || 0) - len) > 0.5) this.setState({ trailLen: len });
+  }
+
+  go(screen) {
+    return () => { clearTimeout(this.t1); clearTimeout(this.t2);
+      this.setState({ screen, listening: false, thinking: false, sel: null, n: screen === 'converse' ? this.state.n : 1 }); };
+  }
+
+  holdOn = () => { clearTimeout(this.hold45); this.setState({ holding: true });
+    this.hold45 = setTimeout(() => this.setState({ holding: false }), 45000); };
+  holdOff = () => { clearTimeout(this.hold45); if (this.state.holding) this.setState({ holding: false }); };
+
+  speak = () => {
+    if (this.state.listening || this.state.thinking || this.state.holding) return;
+    if (!this.state.holdSeen) this.setState({ holdSeen: true });
+    if (this.state.n >= SCRIPT.length) { this.setState({ screen: 'debrief' }); return; }
+    this.setState({ listening: true });
+    this.t1 = setTimeout(() => this.setState(s => ({ listening: false, thinking: true, n: Math.min(s.n + 1, SCRIPT.length) })), 1150);
+    this.t2 = setTimeout(() => this.setState(s => ({ thinking: false, n: Math.min(s.n + 1, SCRIPT.length) })), 2250);
+  };
+
+  renderVals() {
+    const st = this.state, scaffold = this.props.scaffold ?? 4, dev = st.dev;
+    const lang = st.lang || this.props.lang || 'en';
+    const t = T[lang] || T.en;
+    const REACHED = Math.max(1, Math.min(CAST.length, this.props.reached ?? 1));
+    const step = { open: 1, converse: 2, debrief: 3, tomorrow: 4, cast: 5, settings: 6 };
+    const steps = ['open', 'converse', 'debrief', 'tomorrow', 'cast', 'settings'].map((k, i) => {
+      const on = st.screen === k;
+      return { n: i + 1, label: ['Open', 'Converse', 'Debrief', 'Tomorrow', 'Address book', 'Settings'][i], go: this.go(k),
+        style: { display: 'flex', gap: '10px', alignItems: 'baseline', padding: '7px 10px', margin: '0 -10px', borderRadius: '9px', cursor: 'pointer',
+          background: on ? 'rgba(160,84,58,0.11)' : 'transparent', color: on ? '#8E4831' : 'rgba(35,31,24,0.72)' } };
+    });
+
+    const revealed = st.revealed || {};
+    const turns = SCRIPT.slice(0, st.n).map((tn, i) => ({
+      isHer: tn.who === 'her', isYou: tn.who === 'you', ru: tn.ru, meta: tn.meta, showMeta: dev,
+      en: tn.en, showEn: tn.who === 'her' && !!revealed[i],
+      reveal: tn.who === 'her' ? () => this.setState(s => ({ revealed: { ...(s.revealed || {}), [i]: !(s.revealed || {})[i] } })) : undefined,
+      herStyle: { font: "400 20px/1.5 'PT Serif',Georgia,serif", margin: 0, color: '#231F18',
+        textWrap: 'pretty', cursor: 'pointer',
+        textDecoration: 'underline dotted rgba(160,84,58,0.4)', textDecorationThickness: '1px',
+        textUnderlineOffset: '5px' },
+      metaStyle: { font: "500 10px/1.5 'IBM Plex Mono',monospace", color: 'rgba(160,84,58,0.8)', marginTop: '7px',
+        textAlign: tn.who === 'her' ? 'left' : 'right', letterSpacing: '.02em' },
+    }));
+    const revealCount = Object.values(revealed).filter(Boolean).length;
+
+    const opacities = [1, 0.6, 0.36, 0.2];
+    const chips = (st.n >= SCRIPT.length || st.listening || st.thinking || st.holding ? [] : CHIPS.slice(0, scaffold)).map((label, i) => ({
+      label, go: this.speak,
+      style: { font: "400 15px/1 'PT Serif',Georgia,serif", padding: '9px 14px', borderRadius: '100px', cursor: 'pointer',
+        border: '1px solid rgba(35,31,24,0.18)', color: '#231F18', background: '#fff', opacity: opacities[i] ?? 0.2 },
+    }));
+
+    const ce = React.createElement;
+    const herTurn = st.thinking;
+    const live = !st.holding && !herTurn;
+    const BARS = [0.42, 0.68, 1, 0.84, 0.55, 0.9, 0.6, 0.34, 0.72, 0.46];
+    const meter = ce('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', height: '34px' } },
+      BARS.map((h, i) => ce('div', { key: i, style: {
+        width: '3px', borderRadius: '2px', flex: 'none',
+        height: Math.round(34 * (st.holding ? 0.16 : h)) + 'px',
+        background: st.holding ? 'rgba(35,31,24,0.18)' : (st.listening ? '#A0543A' : 'rgba(160,84,58,0.5)'),
+        transformOrigin: 'center',
+        animation: live ? 'vp-bar ' + (0.62 + (i % 4) * 0.16).toFixed(2) + 's ease-in-out ' + (i * 0.07).toFixed(2) + 's infinite' : 'none',
+        transition: 'height .2s ease, background .2s ease',
+      } })));
+    const meterWrap = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+      height: '46px', padding: '0 22px', borderRadius: '100px', cursor: 'pointer',
+      background: st.holding ? 'rgba(35,31,24,0.05)' : 'rgba(160,84,58,0.08)',
+      border: '1px solid ' + (st.holding ? 'rgba(35,31,24,0.12)' : 'rgba(160,84,58,0.2)'),
+      transition: 'background .2s ease' };
+    const meterLabel = st.holding ? t.micHolding : (herTurn ? t.micHerTurn : (st.listening ? t.micHeard : t.micOpen))
+      + (st.holding || herTurn || st.listening ? '' : ' · ' + t.tapToTake);
+    const meterLabelStyle = { font: "500 11px/1.3 'IBM Plex Mono',monospace", letterSpacing: '.05em',
+      color: st.holding ? '#A0543A' : 'rgba(35,31,24,0.55)' };
+    const holdStyle = { flex: 1, textAlign: 'center', padding: '15px 16px', borderRadius: '14px',
+      font: "400 16px/1 'PT Serif',Georgia,serif", cursor: 'pointer', userSelect: 'none', touchAction: 'none',
+      animation: 'vp-fadein .32s ease both',
+      background: st.holding ? '#A0543A' : '#fff', color: st.holding ? '#FBF6EC' : 'rgba(35,31,24,0.75)',
+      border: '1px solid ' + (st.holding ? '#A0543A' : 'rgba(35,31,24,0.2)'),
+      boxShadow: st.holding ? 'none' : '0 1px 2px rgba(35,31,24,0.06)' };
+
+    const notWord = lang === 'ru' ? ', а не ' : ', not ';
+    const patterns = [
+      { n: '01', title: 'Мы иска́ли' + notWord + 'мы и́щем.' },
+      { n: '02', title: 'в гараже́' + notWord + 'в гара́ж.' },
+      { n: '03', title: (lang === 'ru' ? 'Ударе́ние: ' : 'Stress: ') + 'нашла́сь' + notWord + 'на́шлась.' },
+    ].map((p, i) => ({ n: p.n, title: p.title, body: t.patterns[i].body, tag: t.patterns[i].tag, showTag: !!t.patterns[i].tag }));
+
+    const ladder = t.ladder.map((label, i) => ({ label, now: i === 1 })).map(l => ({ label: l.label,
+      textStyle: { font: "400 16px/1.35 'PT Serif',Georgia,serif", color: l.now ? '#231F18' : 'rgba(35,31,24,0.42)' },
+      dot: { width: l.now ? '11px' : '8px', height: l.now ? '11px' : '8px', borderRadius: '100px', flex: 'none',
+        background: l.now ? '#A0543A' : 'transparent', border: l.now ? 'none' : '1.5px solid rgba(35,31,24,0.28)' } }));
+
+    const gateFor = i => i < REACHED ? t.playingNow : (i === REACHED ? t.nextUp : t.sealed + CAST[i].level);
+    const cast = CAST.map((c, i) => {
+      const now = i < REACHED, next = i === REACHED, locked = i > REACHED;
+      const open = st.sel === i || (st.sel === null && now);
+      return {
+        name: c.name, level: c.level, initial: c.initial, slotId: 'cast-portrait-' + i,
+        gate: gateFor(i), trains: t.trains[i], role: t.roles[i], isNow: now, isNext: next, showBody: open,
+        roleStyle: { font: "italic 400 13px/1.35 'PT Serif',Georgia,serif", marginTop: '4px',
+          color: 'rgba(35,31,24,0.62)' },
+        showButton: now && open, buttonLabel: t.talkTo + (lang === 'ru' ? c.nameInst : c.name),
+        showRequirement: next && open, requirement: t.requirement(12 * REACHED),
+        go: () => this.setState({ sel: st.sel === i ? null : i }),
+        talk: this.go('converse'),
+        card: { flex: 1, minWidth: 0, background: '#fff',
+          border: next ? '1px dashed rgba(160,84,58,0.5)' : '1px solid rgba(35,31,24,0.11)',
+          borderRadius: '18px', padding: open ? '17px 18px 18px' : '14px 16px', cursor: 'pointer',
+          boxShadow: now ? '0 2px 8px rgba(35,31,24,0.09)' : 'none' },
+        disc: { position: 'relative', width: now ? '52px' : '42px', height: now ? '52px' : '42px', flex: 'none',
+          borderRadius: '100px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: now ? '2px solid #A0543A' : (next ? '1.5px dashed rgba(160,84,58,0.55)' : '1.5px solid rgba(35,31,24,0.16)'),
+          background: now ? 'repeating-linear-gradient(135deg,#EFE7D9 0 6px,#E4D9C4 6px 12px)'
+            : 'repeating-linear-gradient(135deg,rgba(35,31,24,0.04) 0 6px,rgba(35,31,24,0.08) 6px 12px)',
+          font: "400 " + (now ? '18px' : '15px') + "/1 'PT Serif',Georgia,serif",
+          color: now ? 'rgba(160,84,58,0.9)' : 'rgba(35,31,24,0.38)' },
+        nameStyle: { font: "400 " + (now ? '20px' : '17px') + "/1.2 'PT Serif',Georgia,serif",
+          color: locked ? 'rgba(35,31,24,0.6)' : '#231F18' },
+        gateStyle: { font: "500 9px/1.3 'IBM Plex Mono',monospace", letterSpacing: '.08em', textTransform: 'uppercase',
+          marginTop: '6px', color: locked ? 'rgba(35,31,24,0.38)' : '#A0543A' },
+        node: { width: now ? '13px' : '9px', height: now ? '13px' : '9px', borderRadius: '100px', flex: 'none',
+          background: now ? '#A0543A' : '#FBF6EC',
+          border: now ? 'none' : (next ? '2px dashed rgba(160,84,58,0.6)' : '1.5px solid rgba(35,31,24,0.2)') },
+        railTop: { width: '2px', flex: 1, minHeight: i === 0 ? '10px' : 0,
+          background: now ? '#A0543A' : 'rgba(35,31,24,0.14)' },
+        railBottom: { width: '2px', flex: 1, background: i === CAST.length - 1 ? 'transparent' : (now ? '#A0543A' : 'rgba(35,31,24,0.14)') },
+        dials: c.dials.map((v, k) => ({ label: DIAL_LABELS[lang][k],
+          fill: { width: (v / 5) * 100 + '%', height: '100%', borderRadius: '3px',
+            background: now ? '#A0543A' : 'rgba(160,84,58,0.42)' } })),
+        meters: [
+          { left: t.axisFormal, right: t.axisCasual, dot: { position: 'absolute', top: '-3px', left: c.y + '%', width: '11px', height: '11px', marginLeft: '-5px', borderRadius: '100px', background: now ? '#A0543A' : 'rgba(35,31,24,0.3)' } },
+          { left: t.axisTransactional, right: t.axisRelational, dot: { position: 'absolute', top: '-3px', left: c.x + '%', width: '11px', height: '11px', marginLeft: '-5px', borderRadius: '100px', background: now ? '#A0543A' : 'rgba(35,31,24,0.3)' } },
+        ],
+      };
+    });
+
+    return {
+      isOpen: st.screen === 'open', isConverse: st.screen === 'converse', isDebrief: st.screen === 'debrief',
+      isTomorrow: st.screen === 'tomorrow', isCast: st.screen === 'cast', isSettings: st.screen === 'settings',
+      goSettings: this.go('settings'), t,
+      langChoices: [{ id: 'en', label: 'English' }, { id: 'ru', label: 'Ру́сский' }].map(o => ({
+        label: o.label, go: () => this.setState({ lang: o.id }),
+        style: { flex: 1, textAlign: 'center', padding: '13px 10px', borderRadius: '13px', cursor: 'pointer',
+          font: "400 17px/1 'PT Serif',Georgia,serif",
+          background: lang === o.id ? '#A0543A' : '#fff', color: lang === o.id ? '#FBF6EC' : 'rgba(35,31,24,0.7)',
+          border: lang === o.id ? '1px solid #A0543A' : '1px solid rgba(35,31,24,0.16)' },
+      })),
+      settingRows: t.rows,
+      goOpen: this.go('open'), goConverse: this.go('converse'), goDebrief: this.go('debrief'),
+      goTomorrow: this.go('tomorrow'), goCast: this.go('cast'),
+      scrollRef: this.scrollRef,
+      steps, turns, chips, patterns, ladder, cast,
+      meter, meterWrap, meterLabel, meterLabelStyle, holdStyle,
+      showHold: st.holdSeen, holdOn: this.holdOn, holdOff: this.holdOff, holding: st.holding,
+      revealLine: t.revealLine(revealCount),
+      trailLabel: t.trail(REACHED, CAST.length, CAST[Math.min(REACHED, CAST.length - 1)].level),
+
+      listening: st.listening, thinking: st.thinking, onMic: this.speak,
+      clock: '0' + Math.min(8, 1 + Math.floor(st.n * 1.1)) + ':' + (st.n % 2 ? '14' : '42'),
+      notes: NOTES[st.screen], noteHead: HEADS[st.screen], step: step[st.screen],
+      toggleDev: () => this.setState(s => ({ dev: !s.dev })),
+      devToggleStyle: { font: "500 11px/1 'IBM Plex Mono',monospace", letterSpacing: '.04em', textTransform: 'uppercase',
+        padding: '10px 12px', borderRadius: '9px', cursor: 'pointer', textAlign: 'center',
+        background: st.dev ? '#231F18' : 'transparent', color: st.dev ? '#FBF6EC' : 'rgba(35,31,24,0.6)',
+        border: st.dev ? '1px solid #231F18' : '1px solid rgba(35,31,24,0.22)' },
+    };
+  }
+}
+
+</script>
+</body>
+</html>
