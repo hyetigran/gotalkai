@@ -1,0 +1,30 @@
+---
+description: Bump mobile/package.json version patch (0.1.1 → 0.1.2) when completing a ticket or feature
+alwaysApply: true
+---
+
+# Version bump on ticket / feature completion
+
+Source of truth: **`mobile/package.json`** `"version"`. Full policy: `docs/agents/versioning.md`.
+
+**Never create, update, or restore a separate `VERSION` file** (repo root or elsewhere). If one exists, delete it and keep the version only in `mobile/package.json`.
+
+## When to bump
+
+Before the auto-commit that lands a completed **ticket** or **feature** (typically right after a **valid** `/code-review`):
+
+1. If `mobile/package.json` is missing, skip the bump (and note that in the summary). Do **not** create a `VERSION` file as a substitute.
+2. Otherwise read `"version"`, increment **PATCH** by 1 (`0.1.1` → `0.1.2`). Do not change MAJOR/MINOR unless the user asks.
+3. Write the new value to `mobile/package.json` `"version"` only (no `v` prefix; keep JSON valid).
+4. Stage `mobile/package.json` with the rest of the work and commit via `/commit`.
+5. Put `Version: X.Y.Z` in the commit body and link the issue when known (`Closes #N` / `Refs #N`).
+
+## When not to bump
+
+- `mobile/package.json` does not exist yet — skip; never invent a `VERSION` file
+- Publishing tickets with `/to-tickets` (creation only)
+- Invalid code-review (no commit → no bump)
+- Work that is not a ticket/feature deliverable
+- Empty commits / clean tree after review with nothing to bump
+
+If several tickets are completed in one commit, bump PATCH once per ticket completed in that commit (N tickets → +N), or ask the user if unsure.

@@ -3,64 +3,54 @@
 ## What works
 
 - [x] Product requirements documented (`PRD.md`)
-- [x] Core ADRs accepted:
-  - [x] ADR-0001 skip Wizard-of-Oz; dogfood + in-market validation
-  - [x] ADR-0002 hold-to-think requires the floor
-  - [x] ADR-0003 persona LLM = Claude Sonnet 5 (thinking off)
+- [x] Founding ADRs 0001–0003 + many follow-ons through **0024** (vendors, pipeline, privacy, eval, Elena, dials, etc.)
 - [x] Git remote / GitLab project (`gotalkai`)
 - [x] Agent docs: issue tracker (GitLab/`glab`), triage labels, domain, versioning
 - [x] Cursor rules: review→commit; version bump on `mobile/package.json`
-- [x] Mobile scaffold (Obytes / Expo 54) under `mobile/`
-- [x] Design tokens / style foundation + splash-screen fix
-- [x] Memory Bank initialized (`memory-bank/`)
-- [x] `ARCHITECTURE.md` (system map; target vs current)
+- [x] Mobile product loop UI: Open / Converse (scripted) / Debrief / Tomorrow / cast / onboarding / settings / benchmark
+- [x] Design tokens + persona/cast assets; `expo-audio` mic metering; hold-to-think UX (45s auto-release)
+- [x] `app-service/`: schema (`schema.sql`), migrate, sessions, memories, debrief, scenario, avoidance, privacy, daily cap
+- [x] `voice-service/`: WS server, VAD/STT/LLM/stress/TTS modules, turn orchestrator, safety, eval harness under `src/eval/`
+- [x] `landing/`: Next.js marketing site (Vercel) — ticket #38
+- [x] Live Converse client hook + TTS playback helpers (unit-tested; **not** wired into shipped screen — ADR-0017)
+- [x] Memory Bank + `ARCHITECTURE.md` (refreshed 2026-07-30)
 
-## What's left to build
+## What's left / gaps
 
-### Phase 1 — the slice (lives or dies here)
+### Live Converse activation (critical path)
 
-- [ ] Backend proxy (keys never in bundle)
-- [ ] Voice pipeline stub: VAD → STT → LLM → stress → TTS
-- [ ] Hardcoded Валентина identity; mic in / audio out
-- [ ] Six timestamps logged per stage
-- [ ] STT bake-off (learner audio collected deliberately)
-- [ ] TTS bake-off (stress-error rate; learner comprehension pass)
-- [ ] Zod validation failure path (in-character filler)
-- [ ] Owner dogfooding started from first working slice
+- [ ] Per-session voice credentials from app service (no shared secret in bundle)
+- [ ] Live mic → PCM frames into JS (or WebRTC peer with AEC) — ADR-0017 disclosed stub
+- [ ] Wire `use-live-converse-session` into `converse-screen.tsx`
+- [ ] Device UAT: barge-in, echo, hold override, six timestamps, low-confidence path
 
-### Phase 2 — the loop
+### Empirics / vendors
 
-- [ ] Open / Converse / Debrief screens (product, not template feed)
-- [ ] Persistent `persona_memories` + callbacks
-- [ ] Debrief ranking + `learner_structures`
-- [ ] Scenario selection / tomorrow generation
-- [ ] Hold-to-think UX (progressive disclosure, level meter)
-- [ ] Eval harness in CI (golden set, mechanical assertions, judge)
-- [ ] Daily session cap
+- [ ] Optional retrospective STT/TTS bake-off (ticket #13 left open; ADR-0013 skipped it)
+- [ ] Calibrate ElevenLabs STT `logprob` threshold for “she doesn’t understand you”
+- [ ] Owner dogfooding once device path works
 
-### Phase 3 — production readiness
+### Phase 3-ish ops
 
-- [ ] Observability (health vs quality split); canary golden cases
-- [ ] Live cost tracking vs subscription
-- [ ] Safety / out-of-character escape hatch
-- [ ] Onboarding + privacy consent; audio sampling policy
-- [ ] Verify Postgres PITR / backups before relying on memories
+- [ ] Confirm Postgres PITR / backups before relying on `persona_memories`
+- [ ] Production observability / canary against live endpoint
+- [ ] Privacy consent + audio sampling on device
 
-### Phase 4 — v2 candidates
+### Phase 4 / polish
 
-- [ ] Rive face (visemes + affect already emitted from dialogue layer)
-- [ ] Second persona / coverage map unlocks
-- [ ] Text input accessibility path
-- [ ] Monthly comprehension benchmark surface
+- [ ] Rive face (visemes + affect already in dialogue schema)
+- [ ] Second persona (Елена) voice id + cast unlock UX polish
+- [ ] Text-input accessibility path (ADR-0021)
+- [ ] Heritage calibration dials (ADR-0024)
 
 ## Current status
 
-**Early foundation.** Docs and mobile scaffold exist; realtime voice slice and backend services are not started. App version **0.1.2**. Branch context: scaffolding / design tokens landed on `feat/scaffold-app-design-tokens`.
+**Mid-build, not early scaffold.** Backend + pipeline code and product UI exist; **realtime conversation is not live in the shipped Converse screen**. Vendor = ElevenLabs (both STT/TTS). App version **0.1.31** (`mobile/package.json`).
 
 ## Known issues
 
-- Template demo features (feed, sample auth) still present — not product surface.
-- Root `VERSION` file has reappeared after being removed; policy forbids it — delete if present; bump only `mobile/package.json`.
-- PRD companion files (`schema.sql`, `eval/`, cost model) not in repo yet.
-- STT bake-off blocked on learner audio collection (no WoZ corpus).
-- Hold-to-think auto-release timeout unspecified until Phase 2.
+- Converse uses scripted demo; live path inert without PCM source + session voice tokens (ADR-0017).
+- No WebRTC AEC on the WS+PCM transport path — echo risk if/when live.
+- Root `VERSION` file may reappear — policy forbids it; bump only `mobile/package.json`.
+- Formal bake-off never run; n-best STT requirement dropped with ElevenLabs.
+- Template feed/auth routes may still linger beside product routes.

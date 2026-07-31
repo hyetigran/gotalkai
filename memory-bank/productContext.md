@@ -31,9 +31,9 @@ Open → Converse → Debrief → Tomorrow's scenario → (return)
 - Differentiator: **avoidance detection** (intent vs production).
 - A2 unlock: **backchanneling** during her storytelling.
 
-### Persona (v1)
+### Persona (v1 front door)
 
-**Валентина Сергеевна Румянцева** — 78, Yaroslavl, retired librarian, partner's grandmother. Warm storytelling; domestic boundary (no politics with young people). Register asymmetry teaches both forms.
+**Валентина Сергеевна Румянцева** — 78, Yaroslavl, retired librarian, partner's grandmother. Warm storytelling; domestic boundary (no politics with young people). Register asymmetry teaches both forms. A second persona (Елена Николаевна) exists in code/ADR-0023 but is not the default shipping unlock.
 
 ### UX principles that matter
 

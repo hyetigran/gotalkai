@@ -5,14 +5,18 @@
 | Path | Role |
 | --- | --- |
 | `PRD.md` | Product requirements (Draft v0.1) |
-| `ARCHITECTURE.md` | System architecture map (target + current) |
-| `docs/adr/` | Architecture decision records |
+| `ARCHITECTURE.md` | System architecture map (target + current) — refreshed 2026-07-30 |
+| `CHARACTER.md` | Persona / expression asset notes |
+| `docs/adr/` | Architecture decision records (0001–0024) |
 | `docs/agents/` | Issue tracker, triage, domain, versioning for agents |
-| `mobile/` | Expo / React Native app (primary codebase today) |
+| `mobile/` | Expo / React Native app |
+| `app-service/` | Node/TS HTTP API + Postgres |
+| `voice-service/` | Node/TS realtime WS + voice pipeline + eval |
+| `landing/` | Next.js marketing site (Vercel) |
 | `memory-bank/` | Session continuity for agents |
 | `.cursor/rules/` | Always-on project agent rules (incl. code-review → commit) |
 
-Companion artefacts named in PRD but not all present yet: `schema.sql`, `voice_cost_model.xlsx`, `eval/`.
+Schema: `app-service/schema.sql` (not a root `schema.sql`). Eval: `voice-service/src/eval/`.
 
 ## Mobile stack (`mobile/`)
 
@@ -22,45 +26,50 @@ Companion artefacts named in PRD but not all present yet: `schema.sql`, `voice_c
 - Styling: Tailwind via **Uniwind / NativeWind**
 - State: **Zustand** + **MMKV**; server: **React Query** + axios
 - Forms: **TanStack Form** + Zod
-- Animation: Moti / Reanimated (template)
+- Audio: **expo-audio** (+ react-native-webrtc groundwork)
+- Animation: Moti / Reanimated
 - Tests: Jest + RTL; Maestro e2e scripts present
 - Builds: **EAS** profiles (development / preview / production)
 - Quality: ESLint, commitlint, husky, lint-staged
 
-**App version:** `mobile/package.json` → `"version"` (currently `0.1.2`). Do not use a separate `VERSION` file.
+**App version:** `mobile/package.json` → `"version"` (currently **0.1.31**). Do not use a separate `VERSION` file.
 
-## Planned / not built yet
+## Backend / voice (*current*)
 
 | Layer | Choice |
 | --- | --- |
-| Voice pipeline | Cascaded: VAD → streaming STT → LLM → stress annotation → sentence-chunked TTS |
-| STT (provisional) | Deepgram — word confidence + n-best; bill by audio duration |
-| TTS (provisional) | Azure Neural vs ElevenLabs Turbo bake-off — needs stress markers + phoneme timings; Unicode-codepoint billing |
+| Voice pipeline | Cascaded: VAD → STT → LLM → stress → sentence-chunked TTS |
+| STT + TTS | **ElevenLabs** (ADR-0013; bake-off skipped) |
 | Persona LLM | Claude Sonnet 5 (ADR-0003) |
-| Backend | Node/TypeScript app service + voice service |
-| Hosting | Railway (long-lived); Postgres on Railway (or Neon/Supabase if backup story fails) |
-| Client audio | `expo-audio` + `react-native-webrtc` (AEC); EAS dev builds (not Expo Go) |
+| Transport | WebSocket + base64 PCM chunks (ADR-0017) — not WebRTC peer |
+| Backend | Node/TypeScript `app-service` + `voice-service` |
+| Hosting target | Railway (long-lived); Postgres adjacent |
+| Client ↔ app | HTTP + React Query |
+| Client ↔ voice | WS (live path built, Converse UI still scripted) |
 
-## Dev setup (mobile)
+## Dev setup
 
 ```bash
-cd mobile
-pnpm install
-pnpm start              # or pnpm ios / pnpm android
-pnpm lint && pnpm type-check && pnpm test
-pnpm check-all
+# Mobile
+cd mobile && pnpm install && pnpm start
+
+# App service (needs local Postgres)
+cd app-service && cp .env.example .env && pnpm install && pnpm db:migrate && pnpm dev
+
+# Voice service
+cd voice-service && cp .env.example .env && pnpm install && pnpm dev
 ```
 
-Env: `EXPO_PUBLIC_*` via `env.ts` / `.env`. Multi-env scripts: `start:preview`, `*:production`, EAS `build:*`.
+Env: mobile `EXPO_PUBLIC_*`; services see each package’s `.env.example` (Anthropic, ElevenLabs, auth tokens, DB URL).
 
 ## Constraints
 
-- API keys never in the mobile bundle — backend proxy first (Phase 1).
-- Test iOS audio session (`playAndRecord`) on **hardware**; simulator lies about routing.
+- API keys / voice auth never in the mobile bundle — mint per-session credentials from app service.
+- Test iOS audio session on **hardware**; simulator lies about routing.
 - Cyrillic font coverage (including ё) at scaffold-chip sizes.
-- STT/TTS bake-off needs deliberate learner audio collection (no WoZ recordings — ADR-0001).
+- Live mic→PCM into JS is an open blocker for end-to-end Converse (ADR-0017).
+- Formal STT/TTS bake-off skipped; empirical learner-accent accuracy unverified.
 
 ## Remote
 
 - GitLab: `https://labs.gauntletai.com/tigranasriyan/gotalkai.git`
-- Current work branch recently: `feat/scaffold-app-design-tokens`

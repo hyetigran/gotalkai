@@ -1,0 +1,32 @@
+---
+description: After a valid /code-review, automatically run /commit (git-commit skill)
+alwaysApply: true
+---
+
+# Code review → commit
+
+When you finish a `/code-review` (or the `code-review` skill) in this repo, decide whether to auto-commit.
+
+## Validity (pass gate)
+
+The review is **valid** only if all of these hold:
+
+1. **Standards** — zero hard documented-standard violations. Baseline smell judgement calls alone do **not** fail the gate.
+2. **Spec** — zero findings for missing/partial requirements, wrong implementation, or scope creep.
+3. **Spec skipped** — if Spec was skipped because no spec exists, the user must already have confirmed there is no spec during the review. Otherwise do not auto-commit.
+
+## On valid
+
+1. Present the review summary as usual (`## Standards`, `## Spec`, one-line totals).
+2. If this work completes a **ticket** or **feature**, bump `mobile/package.json` `"version"` per `.cursor/rules/version-bump.mdc` / `docs/agents/versioning.md` (PATCH +1 per ticket completed in this landing). Skip if `mobile/package.json` is missing — never create a `VERSION` file.
+3. Immediately run the `git-commit` skill (`/commit`) for any remaining uncommitted changes (including `mobile/package.json` when bumped).
+4. If the working tree is clean and no bump was required, say so and skip commit. Never create an empty commit.
+5. If the tree was clean but a ticket/feature completion still requires a bump (and `mobile/package.json` exists), write the bump, then `/commit` that alone.
+
+## On invalid
+
+Do **not** commit. List the blocking findings and stop.
+
+## Pre-commit scope
+
+If the working tree is dirty when `/code-review` starts, include **staged + unstaged** diffs in the review (in addition to any `fixed-point...HEAD` range) so auto-commit cannot land unreviewed changes.
