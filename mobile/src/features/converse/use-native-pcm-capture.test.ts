@@ -44,6 +44,12 @@ function createMockNativeModule() {
 
 const mockNativeModule = createMockNativeModule();
 
+/** No native-module mock infrastructure exists for expo-audio in this repo (see use-tts-playback.test.ts's own comment) — this hook only needs requestRecordingPermissionsAsync, so a minimal standalone mock is enough rather than reaching for that shared gap. */
+const mockRequestRecordingPermissionsAsync = jest.fn(() => Promise.resolve({ granted: true }));
+jest.mock('expo-audio', () => ({
+  requestRecordingPermissionsAsync: () => mockRequestRecordingPermissionsAsync(),
+}));
+
 // Relative path, not the (nonexistent) `@modules` alias — see
 // use-native-pcm-capture.ts's import comment for why (an earlier alias
 // attempt didn't survive contact with Jest's moduleNameMapper).
@@ -72,6 +78,7 @@ beforeEach(() => {
   mockNativeModule.startCapture.mockImplementation(() => Promise.resolve());
   mockNativeModule.stopCapture.mockImplementation(() => Promise.resolve());
   mockNativeModule.hasRecordAudioPermission.mockImplementation(() => true);
+  mockRequestRecordingPermissionsAsync.mockImplementation(() => Promise.resolve({ granted: true }));
 });
 
 afterEach(() => {
@@ -190,6 +197,35 @@ describe('useNativePcmCapture', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useNativePcmCapture RECORD_AUDIO permission', () => {
+  it(
+    'requests RECORD_AUDIO before starting capture — the native module documents that it does not request this itself (ExpoLivePcmCaptureModule.kt\'s MicPermissionDeniedException)',
+    async () => {
+      Platform.OS = 'android';
+      const { result } = renderHook(() => useNativePcmCapture({ enabled: true, onChunk: jest.fn() }));
+
+      await waitFor(() => expect(result.current.isCapturing).toBe(true));
+
+      expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.startCapture).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('surfaces an error and never calls startCapture when RECORD_AUDIO is denied — UAT: "my voice doesn\'t get registered"', async () => {
+    Platform.OS = 'android';
+    mockRequestRecordingPermissionsAsync.mockImplementation(() => Promise.resolve({ granted: false }));
+    const onError = jest.fn();
+
+    const { result } = renderHook(() => useNativePcmCapture({ enabled: true, onChunk: jest.fn(), onError }));
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+
+    expect(mockNativeModule.startCapture).not.toHaveBeenCalled();
+    expect(result.current.isCapturing).toBe(false);
+    expect(result.current.error).toContain('RECORD_AUDIO permission');
+  });
+});
+
 describe('useNativePcmCapture amplitude (docs/adr/0023)', () => {
   it('derives amplitude from each emitted frame via derivePcmAmplitude, and resets it to zero on stop', async () => {
     Platform.OS = 'android';

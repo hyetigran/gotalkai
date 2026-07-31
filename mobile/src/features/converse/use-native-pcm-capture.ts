@@ -8,6 +8,7 @@
 // the identical relative path works, mocking the alias to the same
 // directory does not) — not worth the fragility for one module.
 import type { LivePcmAudioFrame, LivePcmCaptureError } from '../../../modules/expo-live-pcm-capture';
+import { requestRecordingPermissionsAsync } from 'expo-audio';
 import * as React from 'react';
 
 import { AppState, Platform } from 'react-native';
@@ -92,45 +93,14 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
     onErrorRef.current?.(message);
   }, []);
 
-  const stopCapture = React.useCallback(async () => {
-    if (!isSupported || !ExpoLivePcmCaptureModule)
-      return;
-    setIsCapturing(false);
-    setAmplitude(0);
-    try {
-      await ExpoLivePcmCaptureModule.stopCapture();
-    }
-    catch {
-      // Documented idempotent on the native side (ExpoLivePcmCaptureModule.kt's
-      // stopCaptureInternal) — a rejection here would be unexpected, but
-      // there's nothing actionable to do with it: capture is being torn
-      // down regardless.
-    }
-  }, [isSupported]);
-
-  const startCaptureIfWanted = React.useCallback(async () => {
-    if (!isSupported || !ExpoLivePcmCaptureModule || !wantsCaptureRef.current)
-      return;
-    try {
-      await ExpoLivePcmCaptureModule.startCapture();
-      setError(null);
-      setIsCapturing(true);
-    }
-    catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      // "already running" is the native module's AlreadyCapturingException
-      // message — a benign race (e.g. this effect and the AppState
-      // listener both firing before the first startCapture() promise
-      // settles), not a real failure: whatever called this wanted capture
-      // running, and it already is. Surfacing it as a user-facing error
-      // would be misleading.
-      if (message.includes('already running'))
-        return;
-      setIsCapturing(false);
-      setAmplitude(0);
-      reportError(message);
-    }
-  }, [isSupported, reportError]);
+  const { startCaptureIfWanted, stopCapture } = useCaptureLifecycleActions({
+    isSupported,
+    wantsCaptureRef,
+    setIsCapturing,
+    setAmplitude,
+    setError,
+    reportError,
+  });
 
   // Handlers below are wrapped in `useCallback` with genuinely stable
   // deps (refs, or already-stable `reportError`/`setIsCapturing`) so the
@@ -172,6 +142,79 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
   }, [stopCapture]);
 
   return { isSupported, isCapturing, error, amplitude };
+}
+
+/**
+ * start/stop, pulled out of the main hook body purely to stay under this
+ * repo's max-lines-per-function budget — same reasoning as
+ * useCaptureEventSubscriptions/useAppStateCaptureSync below, not a
+ * meaningfully separate concern on its own.
+ */
+function useCaptureLifecycleActions(options: {
+  isSupported: boolean;
+  wantsCaptureRef: { current: boolean };
+  setIsCapturing: (value: boolean) => void;
+  setAmplitude: (value: number) => void;
+  setError: (value: string | null) => void;
+  reportError: (message: string) => void;
+}) {
+  const { isSupported, wantsCaptureRef, setIsCapturing, setAmplitude, setError, reportError } = options;
+
+  const stopCapture = React.useCallback(async () => {
+    if (!isSupported || !ExpoLivePcmCaptureModule)
+      return;
+    setIsCapturing(false);
+    setAmplitude(0);
+    try {
+      await ExpoLivePcmCaptureModule.stopCapture();
+    }
+    catch {
+      // Documented idempotent on the native side (ExpoLivePcmCaptureModule.kt's
+      // stopCaptureInternal) — a rejection here would be unexpected, but
+      // there's nothing actionable to do with it: capture is being torn
+      // down regardless.
+    }
+  }, [isSupported, setIsCapturing, setAmplitude]);
+
+  const startCaptureIfWanted = React.useCallback(async () => {
+    if (!isSupported || !ExpoLivePcmCaptureModule || !wantsCaptureRef.current)
+      return;
+    try {
+      // The native module deliberately does not request this itself
+      // (ExpoLivePcmCaptureModule.kt's MicPermissionDeniedException spells
+      // out the contract) — without this, startCapture() below always
+      // rejects on a device that's never separately run the scripted
+      // demo's useMicCapture (the only other place this permission used to
+      // get requested), which is every real learner going straight into a
+      // live session (UAT: "my voice doesn't get registered").
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!wantsCaptureRef.current)
+        return; // capture was disabled again while the permission prompt was up
+      if (!granted) {
+        reportError('RECORD_AUDIO permission was not granted.');
+        return;
+      }
+      await ExpoLivePcmCaptureModule.startCapture();
+      setError(null);
+      setIsCapturing(true);
+    }
+    catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      // "already running" is the native module's AlreadyCapturingException
+      // message — a benign race (e.g. this effect and the AppState
+      // listener both firing before the first startCapture() promise
+      // settles), not a real failure: whatever called this wanted capture
+      // running, and it already is. Surfacing it as a user-facing error
+      // would be misleading.
+      if (message.includes('already running'))
+        return;
+      setIsCapturing(false);
+      setAmplitude(0);
+      reportError(message);
+    }
+  }, [isSupported, wantsCaptureRef, setIsCapturing, setAmplitude, setError, reportError]);
+
+  return { startCaptureIfWanted, stopCapture };
 }
 
 /**
