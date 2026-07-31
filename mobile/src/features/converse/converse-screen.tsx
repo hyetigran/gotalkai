@@ -17,6 +17,7 @@ import { SuggestionChips } from './components/suggestion-chips';
 import { TextInputBar } from './components/text-input-bar';
 import { Transcript } from './components/transcript';
 import { useConverseSession } from './use-converse-session';
+import { useHardwareBackToOpen } from './use-hardware-back-to-open';
 import { useLiveConverseSession } from './use-live-converse-session';
 import { useMicCapture } from './use-mic-capture';
 import { useNativePcmCapture } from './use-native-pcm-capture';
@@ -342,6 +343,8 @@ export function ConverseScreen() {
     sessionId?: string;
     voiceServiceToken?: string;
   }>();
+
+  useHardwareBackToOpen(learnerId);
 
   if (learnerId && sessionId && voiceServiceToken) {
     return (
