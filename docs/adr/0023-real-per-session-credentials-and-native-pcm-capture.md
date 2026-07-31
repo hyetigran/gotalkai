@@ -2,7 +2,9 @@
 
 **Status:** accepted
 
-docs/adr/0017 disclosed two structural gaps blocking a live Converse session from ever activating: (1) no real per-session voice-service credential issuance existed (app-service's `POST /sessions` returned only `{status, id}`), and (2) no live raw-PCM microphone source existed anywhere in the mobile dependency stack on Android. This ADR records closing both, built in parallel as two independent workstreams. **Neither change wires the live pipeline into `converse-screen.tsx`** — that integration, plus on-device verification of everything below, remains separate, unscheduled follow-up work. This is the same disclosure posture as 0014/0017: build the real, testable core; say plainly what still needs a physical device.
+docs/adr/0017 disclosed two structural gaps blocking a live Converse session from ever activating: (1) no real per-session voice-service credential issuance existed (app-service's `POST /sessions` returned only `{status, id}`), and (2) no live raw-PCM microphone source existed anywhere in the mobile dependency stack on Android. This ADR records closing both, built in parallel as two independent workstreams. **Neither change wires the live pipeline into `converse-screen.tsx`** — that integration remains separate, unscheduled follow-up work. This is the same disclosure posture as 0014/0017: build the real, testable core; say plainly what still needs a physical device.
+
+**Update (docs/adr/0024):** the wiring described as not-yet-done below has since been built — `converse-screen.tsx` now renders a real live session when a real learner/session/token are present. On-device verification is still entirely outstanding; see 0024 for what specifically changed and what's still unverified.
 
 ## Part 1: real per-session credentials (closes ADR-0017's credential gap)
 
@@ -34,9 +36,9 @@ Not verified, and cannot be in this environment (no physical Android device or e
 
 ## What's still not done to reach a live, on-device demo
 
-Even with both gaps above closed, none of this activates the Converse screen yet:
+Even with both gaps above closed, none of this activated the Converse screen yet as of this ADR:
 
-1. `converse-screen.tsx` still renders `use-converse-session.ts`'s scripted demo, not `use-live-converse-session.ts`.
-2. Nothing yet threads `POST /sessions`'s `voiceServiceToken` from the mobile client's session-creation call into `useLiveConverseSession`'s `token` option, or `useNativePcmCapture`'s frames into `VoiceConnection.sendAudioChunk`.
-3. Every item ADR-0017 already flagged as unverifiable without a device — `data:` URI TTS playback, barge-in responsiveness, hold-to-think real-device timing, the 700–900ms latency target — remains exactly as unverified as before; nothing here touched that.
-4. No physical Android device has run any of this. All of the above is, as of this ADR, real and independently tested in isolation — not proven end to end.
+1. ~~`converse-screen.tsx` still renders `use-converse-session.ts`'s scripted demo, not `use-live-converse-session.ts`.~~ **Done, see docs/adr/0024.**
+2. ~~Nothing yet threads `POST /sessions`'s `voiceServiceToken` from the mobile client's session-creation call into `useLiveConverseSession`'s `token` option, or `useNativePcmCapture`'s frames into `VoiceConnection.sendAudioChunk`.~~ **Done, see docs/adr/0024.**
+3. Every item ADR-0017 already flagged as unverifiable without a device — `data:` URI TTS playback, barge-in responsiveness, hold-to-think real-device timing, the 700–900ms latency target — remains exactly as unverified as before; nothing here touched that. **Still true as of 0024.**
+4. No physical Android device has run any of this. All of the above is, as of this ADR, real and independently tested in isolation — not proven end to end. **Still true as of 0024 — this is the one item that can't be closed without a physical device.**

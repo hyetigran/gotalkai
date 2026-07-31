@@ -188,3 +188,25 @@ describe('useNativePcmCapture', () => {
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('AudioRecord.read()'));
   });
 });
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useNativePcmCapture amplitude (docs/adr/0023)', () => {
+  it('derives amplitude from each emitted frame via derivePcmAmplitude, and resets it to zero on stop', async () => {
+    Platform.OS = 'android';
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useNativePcmCapture({ enabled, onChunk: jest.fn() }),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(result.current.isCapturing).toBe(true));
+    expect(result.current.amplitude).toBe(0);
+
+    act(() => {
+      mockNativeModule.emit('onAudioFrame', { samples: [1, -1, 1, -1], sampleRateHz: 16000 });
+    });
+    expect(result.current.amplitude).toBeGreaterThan(0);
+
+    rerender({ enabled: false });
+    await waitFor(() => expect(result.current.isCapturing).toBe(false));
+    expect(result.current.amplitude).toBe(0);
+  });
+});

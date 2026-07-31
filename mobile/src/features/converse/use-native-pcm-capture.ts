@@ -12,6 +12,7 @@ import * as React from 'react';
 
 import { AppState, Platform } from 'react-native';
 import { ExpoLivePcmCaptureModule } from '../../../modules/expo-live-pcm-capture';
+import { derivePcmAmplitude } from './derive-pcm-amplitude';
 import { encodeAudioChunk } from './pcm-encode';
 
 /**
@@ -67,6 +68,17 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
 
   const [isCapturing, setIsCapturing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  /**
+   * Mirrors `use-mic-capture.ts`'s own `{ amplitude, ... }` shape
+   * deliberately — callers driving the level meter off this hook instead
+   * (docs/adr/0023: live mode, so as not to run two concurrent Android
+   * audio-capture sessions competing for the mic) shouldn't need a
+   * different contract to do it. Derived from each frame's real samples
+   * via `derivePcmAmplitude`, not a separate polled metering reading —
+   * this module has no equivalent to `expo-audio`'s `metering`, only the
+   * frames themselves.
+   */
+  const [amplitude, setAmplitude] = React.useState(0);
 
   /** What the caller currently wants, independent of what the native side is actually doing right now — same pattern as `use-mic-capture.ts`'s `wantsRecordingRef`. */
   const wantsCaptureRef = React.useRef(false);
@@ -84,6 +96,7 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
     if (!isSupported || !ExpoLivePcmCaptureModule)
       return;
     setIsCapturing(false);
+    setAmplitude(0);
     try {
       await ExpoLivePcmCaptureModule.stopCapture();
     }
@@ -114,6 +127,7 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
       if (message.includes('already running'))
         return;
       setIsCapturing(false);
+      setAmplitude(0);
       reportError(message);
     }
   }, [isSupported, reportError]);
@@ -123,12 +137,14 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
   // two extracted hooks can list them as real effect dependencies rather
   // than needing an exhaustive-deps suppression.
   const handleFrame = React.useCallback((frame: LivePcmAudioFrame) => {
+    setAmplitude(derivePcmAmplitude(frame.samples));
     const pcmBase64 = encodeAudioChunk([frame.samples]);
     onChunkRef.current(pcmBase64, frame.sampleRateHz);
   }, []);
 
   const handleCaptureError = React.useCallback((captureError: LivePcmCaptureError) => {
     setIsCapturing(false);
+    setAmplitude(0);
     reportError(captureError.message);
   }, [reportError]);
 
@@ -155,7 +171,7 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
     };
   }, [stopCapture]);
 
-  return { isSupported, isCapturing, error };
+  return { isSupported, isCapturing, error, amplitude };
 }
 
 /**

@@ -174,6 +174,18 @@ describe('useLiveConverseSession', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession audio send (docs/adr/0023)', () => {
+  it('sends audio_chunk over the wire — the send-side counterpart to real mic capture', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+
+    act(() => result.current.sendAudioChunk('cGNt', 16000));
+    const sent = latestSocket().sent.map(raw => JSON.parse(raw));
+    expect(sent).toContainEqual({ type: 'audio_chunk', pcmBase64: 'cGNt', sampleRateHz: 16000 });
+  });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
 describe('useLiveConverseSession hold-to-think and lifecycle', () => {
   it('does not have the floor until the first persona activity, per docs/adr/0002', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
