@@ -1,14 +1,32 @@
 import type { Env } from './env';
+import { createHmac } from 'node:crypto';
 import WebSocket from 'ws';
 import { startServer } from './server';
 
-const AUTH_TOKEN = 'test-token-0123456789abcdef';
+const SESSION_TOKEN_SECRET = 'test-session-token-secret-0123456789abcdef';
+/** Matches the sessionId already used by the pre-existing `session_start` fixtures below — chosen so the default `AUTH_TOKEN` and a well-formed `session_start` message agree, as a real client/token pair would. */
+const AUTHENTICATED_SESSION_ID = '57d4a515-fe86-450e-82c9-8dd710824c3f';
+
+/**
+ * Test-only mirror of app-service's `issueSessionToken` (session-token.ts
+ * there has no counterpart here — this service only ever verifies
+ * tokens, never mints them in production code) — just enough to produce
+ * a token `verifySessionToken` accepts, standing in for "app-service
+ * already ran `POST /sessions`."
+ */
+function issueTestToken(secret: string, sessionId: string, exp = Date.now() + 60_000): string {
+  const payloadPart = Buffer.from(JSON.stringify({ sessionId, exp }), 'utf8').toString('base64url');
+  const signaturePart = createHmac('sha256', secret).update(payloadPart).digest('base64url');
+  return `${payloadPart}.${signaturePart}`;
+}
+
+const AUTH_TOKEN = issueTestToken(SESSION_TOKEN_SECRET, AUTHENTICATED_SESSION_ID);
 
 function testEnv(overrides: Partial<Env> = {}): Env {
   return {
     PORT: 0, // ask the OS for a free port
     NODE_ENV: 'test',
-    VOICE_SERVICE_AUTH_TOKEN: AUTH_TOKEN,
+    SESSION_TOKEN_SECRET,
     ANTHROPIC_API_KEY: 'sk-ant-test-key',
     ELEVENLABS_API_KEY: 'el-test-key',
     ELEVENLABS_VALENTINA_VOICE_ID: 'voice-test-id',
@@ -45,9 +63,27 @@ describe('voice service server', () => {
     await handle.close();
   });
 
-  it('rejects an upgrade with the wrong token', async () => {
+  it('rejects an upgrade with a malformed token', async () => {
     const handle = await startServer(testEnv());
     const ws = connect(handle.port, 'wrong-token');
+    const statusCode = await expectHandshakeRejection(ws);
+    expect(statusCode).toBe(401);
+    await handle.close();
+  });
+
+  it('rejects an upgrade with a well-formed token signed by the wrong secret', async () => {
+    const handle = await startServer(testEnv());
+    const forgedToken = issueTestToken('a-completely-different-secret-abcdef0123', AUTHENTICATED_SESSION_ID);
+    const ws = connect(handle.port, forgedToken);
+    const statusCode = await expectHandshakeRejection(ws);
+    expect(statusCode).toBe(401);
+    await handle.close();
+  });
+
+  it('rejects an upgrade with an expired token', async () => {
+    const handle = await startServer(testEnv());
+    const expiredToken = issueTestToken(SESSION_TOKEN_SECRET, AUTHENTICATED_SESSION_ID, Date.now() - 1000);
+    const ws = connect(handle.port, expiredToken);
     const statusCode = await expectHandshakeRejection(ws);
     expect(statusCode).toBe(401);
     await handle.close();
@@ -191,6 +227,22 @@ describe('voice service server', () => {
       ws.send(JSON.stringify({ type: 'session_start', learnerId: 'not-a-uuid', sessionId: '57d4a515-fe86-450e-82c9-8dd710824c3f' }));
       const raw = await once<Buffer>(ws, 'message');
       expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
+
+      ws.close();
+      await handle.close();
+    });
+
+    it('rejects a session_start whose sessionId does not match the authenticated token — a client cannot claim a different session than the one it was issued a credential for', async () => {
+      const handle = await startServer(testEnv());
+      const ws = connect(handle.port, AUTH_TOKEN);
+      await once(ws, 'open');
+
+      const impersonatedSessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; // well-formed UUID (zod's `.uuid()` is strict about version/variant nibbles), just not AUTHENTICATED_SESSION_ID
+      ws.send(JSON.stringify({ type: 'session_start', learnerId: '5c86bf64-d8fa-4b35-8f17-8f797a5cad38', sessionId: impersonatedSessionId }));
+      const raw = await once<Buffer>(ws, 'message');
+      const response = JSON.parse(raw.toString());
+      expect(response.type).toBe('error');
+      expect(response.message).toMatch(/does not match/);
 
       ws.close();
       await handle.close();

@@ -5,6 +5,7 @@ import { applySchema } from './schema';
 import { seedBenchmark } from './seed-benchmark';
 import { seedScenarios } from './seed-scenarios';
 import { startServer } from './server';
+import { verifySessionToken } from './session-token';
 
 /**
  * Runs against a REAL local Postgres instance — no mocking the DB layer,
@@ -26,6 +27,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     AUDIO_SAMPLE_RETENTION_DAYS: 30,
     SUBSCRIPTION_PRICE_USD: 12,
     P95_LATENCY_BUDGET_MS: 900,
+    SESSION_TOKEN_SECRET: 'test-session-token-secret-0123456789abcdef',
     ...overrides,
   };
 }
@@ -158,6 +160,12 @@ describe('app service server', () => {
       expect(sessionResponse.statusCode).toBe(201);
       const sessionId = sessionResponse.body?.id as string;
       expect(typeof sessionId).toBe('string');
+      // docs/adr/0017's disclosed credential-issuance gap, closed: every
+      // POST /sessions response carries a real, verifiable voice-service
+      // token scoped to this exact session id.
+      expect(typeof sessionResponse.body?.voiceServiceToken).toBe('string');
+      const verified = verifySessionToken('test-session-token-secret-0123456789abcdef', sessionResponse.body?.voiceServiceToken as string);
+      expect(verified?.sessionId).toBe(sessionId);
 
       const observationsResponse = await post(handle.port, `/sessions/${sessionId}/observations`, {
         learnerId,

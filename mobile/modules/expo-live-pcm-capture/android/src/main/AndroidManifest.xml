@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Declared here too (not just relied on via expo-audio's own manifest)
+    so this module is self-contained and correct on its own — manifest
+    merging means a duplicate declaration is harmless. This module does
+    NOT request the permission (see ExpoLivePcmCaptureModule.kt's
+    `hasRecordAudioPermission`/`startCapture` — it only checks and fails
+    loudly if it's missing); the app already requests it elsewhere via
+    expo-audio's `requestRecordingPermissionsAsync`.
+  -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+</manifest>
