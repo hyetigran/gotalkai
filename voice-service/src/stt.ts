@@ -170,6 +170,29 @@ export function createSttSession(
 ): { sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit?: boolean) => void; close: () => void } {
   const ws = connect(buildSttUrl(), { headers: { 'xi-api-key': apiKey } });
 
+  /**
+   * `new WebSocket(...)` returns immediately with the handshake still in
+   * flight (readyState CONNECTING) — real network latency to ElevenLabs,
+   * not instant. turn-orchestrator.ts calls `createSttSession` and then
+   * `sendAudioChunk` with the *same* frame in the same synchronous tick
+   * (pushAudioFrame), so the very first chunk of every utterance was
+   * guaranteed to hit `ws.send()` before the socket opened — `ws` throws
+   * synchronously in that state ("WebSocket is not open: readyState 0
+   * (CONNECTING)"), uncaught, crashing the whole process. Buffering here
+   * (rather than dropping) keeps the fix zero-loss: nothing captured
+   * before the mic-audio "naturally lossy" boundary this pipeline already
+   * accepts elsewhere gets thrown away for a reason as mundane as normal
+   * connection latency.
+   */
+  let isOpen = false;
+  const pendingChunks: string[] = [];
+
+  ws.on('open', () => {
+    isOpen = true;
+    for (const chunk of pendingChunks) ws.send(chunk);
+    pendingChunks.length = 0;
+  });
+
   ws.on('message', (raw: unknown) => {
     let json: unknown;
     try {
@@ -193,7 +216,11 @@ export function createSttSession(
 
   return {
     sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit = false) => {
-      ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: pcmBase64, sample_rate: sampleRateHz, commit }));
+      const payload = JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: pcmBase64, sample_rate: sampleRateHz, commit });
+      if (isOpen)
+        ws.send(payload);
+      else
+        pendingChunks.push(payload);
     },
     close: () => ws.close(),
   };

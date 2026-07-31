@@ -37,9 +37,10 @@ describe('createSttSession', () => {
     expect(url.searchParams.get('model_id')).toBeTruthy();
   });
 
-  it('sends a well-formed input_audio_chunk message', () => {
-    const { connect, sent } = fakeConnect();
+  it('sends a well-formed input_audio_chunk message once the socket is open', () => {
+    const { connect, emit, sent } = fakeConnect();
     const session = createSttSession('test-key', {}, connect);
+    emit('open');
     session.sendAudioChunk('BASE64AUDIO==', 16000, true);
     expect(JSON.parse(sent[0] as string)).toEqual({
       message_type: 'input_audio_chunk',
@@ -50,10 +51,36 @@ describe('createSttSession', () => {
   });
 
   it('defaults commit to false when not specified', () => {
-    const { connect, sent } = fakeConnect();
+    const { connect, emit, sent } = fakeConnect();
     const session = createSttSession('test-key', {}, connect);
+    emit('open');
     session.sendAudioChunk('BASE64AUDIO==', 16000);
     expect(JSON.parse(sent[0] as string).commit).toBe(false);
+  });
+
+  it('does not throw when sendAudioChunk is called before the socket has opened — the real-world race turn-orchestrator.ts hits on every utterance (createSttSession and the first sendAudioChunk happen in the same synchronous tick, before ws\'s handshake to ElevenLabs can possibly have completed)', () => {
+    const { connect, sent } = fakeConnect();
+    const session = createSttSession('test-key', {}, connect);
+    expect(() => session.sendAudioChunk('BASE64AUDIO==', 16000)).not.toThrow();
+    expect(sent).toHaveLength(0); // buffered, not sent yet — the socket isn't open
+  });
+
+  it('flushes chunks buffered before open, in order, once the socket opens', () => {
+    const { connect, emit, sent } = fakeConnect();
+    const session = createSttSession('test-key', {}, connect);
+    session.sendAudioChunk('FIRST==', 16000);
+    session.sendAudioChunk('SECOND==', 16000, true);
+    expect(sent).toHaveLength(0);
+
+    emit('open');
+
+    expect(sent).toHaveLength(2);
+    expect(JSON.parse(sent[0] as string).audio_base_64).toBe('FIRST==');
+    expect(JSON.parse(sent[1] as string).audio_base_64).toBe('SECOND==');
+
+    // Chunks sent after open still go straight through, not re-buffered.
+    session.sendAudioChunk('THIRD==', 16000);
+    expect(sent).toHaveLength(3);
   });
 
   it('calls onPartialTranscript for a partial_transcript message', () => {
