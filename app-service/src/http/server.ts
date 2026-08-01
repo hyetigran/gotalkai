@@ -15,6 +15,7 @@ import { recordPersonaMemory, selectAndMarkCallbackMemory } from '../memories/pe
 import { PERSONA_IDS } from '../memories/personas';
 import { deleteLearner, recordAudioSamplingConsent } from '../learners/privacy';
 import { getScenarioViewForSession } from '../scenarios/scenario-view';
+import { getSessionHistoryForLearner } from '../learners/session-history';
 import { DailySessionCapReachedError } from '../learners/session-cap';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from '../learners/sessions';
 import { issueSessionToken } from '../learners/session-token';
@@ -56,6 +57,7 @@ const TURN_INTERRUPTION_PATH = /^\/turns\/([^/]+)\/interruption$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
 const LEARNER_CALLBACK_PATH = /^\/learners\/([^/]+)\/callback$/;
 const LEARNER_ADDRESS_BOOK_PATH = /^\/learners\/([^/]+)\/address-book$/;
+const LEARNER_SESSIONS_PATH = /^\/learners\/([^/]+)\/sessions$/;
 const LEARNER_AUDIO_SAMPLING_CONSENT_PATH = /^\/learners\/([^/]+)\/audio-sampling-consent$/;
 const LEARNER_CALIBRATION_VARIANT_PATH = /^\/learners\/([^/]+)\/calibration-variant$/;
 const LEARNER_BENCHMARK_ATTEMPTS_PATH = /^\/learners\/([^/]+)\/benchmark-attempts$/;
@@ -381,6 +383,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     return;
   }
 
+  const sessionsMatch = LEARNER_SESSIONS_PATH.exec(url);
+  if (req.method === 'GET' && sessionsMatch) {
+    const learnerId = parseUuidParam(sessionsMatch[1] as string);
+    if (!learnerId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
+      return;
+    }
+    try {
+      const sessions = await getSessionHistoryForLearner(pool, learnerId);
+      sendJson(res, 200, { status: 'ok', sessions });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
   const audioSamplingConsentMatch = LEARNER_AUDIO_SAMPLING_CONSENT_PATH.exec(url);
   if (req.method === 'POST' && audioSamplingConsentMatch) {
     const learnerId = parseUuidParam(audioSamplingConsentMatch[1] as string);
@@ -597,6 +616,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   per persona (ticket #34 AC #3), computed from real
  *   `learner_structures` B1-readiness data — see address-book.ts /
  *   docs/adr/0023 for what "B1-ready" is proxied from.
+ * - `GET /learners/:id/sessions` — the History tab's real session list
+ *   (tab restructuring, mobile `debrief-history-screen.tsx`): most
+ *   recent `SESSION_HISTORY_LIMIT` sessions, newest first, each with a
+ *   real turn count and its #1-ranked debrief pattern (null when the
+ *   session has none yet) — see session-history.ts.
  * - `POST /learners/:id/audio-sampling-consent` — records
  *   `audio_sampling_consent_at`, separate from any ToS-acceptance flow
  *   (ticket #31 AC #2).

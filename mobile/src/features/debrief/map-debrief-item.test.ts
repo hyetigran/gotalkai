@@ -1,4 +1,15 @@
-import { mapDebriefItemToPattern } from './map-debrief-item';
+import { derivePatternTitle, mapDebriefItemToPattern } from './map-debrief-item';
+
+describe('derivePatternTitle', () => {
+  it('prefers detail.title when present', () => {
+    expect(derivePatternTitle('grammar_error', { title: 'Мы иска́ли, not мы и́щем.' })).toBe('Мы иска́ли, not мы и́щем.');
+  });
+
+  it('falls back to structureKey, then kind', () => {
+    expect(derivePatternTitle('grammar_error', { structureKey: 'genitive_plural' })).toBe('genitive_plural');
+    expect(derivePatternTitle('stress_error', {})).toBe('stress_error');
+  });
+});
 
 describe('mapDebriefItemToPattern', () => {
   it('uses title/body/tag from detail when present', () => {

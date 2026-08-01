@@ -892,6 +892,68 @@ describe('app service server', () => {
     });
   });
 
+  describe('session history endpoint (History tab)', () => {
+    it('GET /learners/:id/sessions returns real sessions, newest first, with turn counts', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      const olderSession = await pool.query<{ id: string }>(
+        'INSERT INTO sessions (learner_id, started_at) VALUES ($1, $2) RETURNING id',
+        [learnerId, new Date('2026-07-01T10:00:00Z')],
+      );
+      const olderSessionId = olderSession.rows[0]?.id;
+      await pool.query('INSERT INTO turns (session_id, speaker, content) VALUES ($1, $2, $3)', [olderSessionId, 'learner', 'привет']);
+      const newerSession = await pool.query<{ id: string }>(
+        'INSERT INTO sessions (learner_id, started_at) VALUES ($1, $2) RETURNING id',
+        [learnerId, new Date('2026-07-15T10:00:00Z')],
+      );
+      const newerSessionId = newerSession.rows[0]?.id;
+
+      const response = await get(handle.port, `/learners/${learnerId}/sessions`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body?.sessions).toEqual([
+        { id: newerSessionId, startedAt: expect.any(String), endedAt: null, turnCount: 0, topPattern: null },
+        { id: olderSessionId, startedAt: expect.any(String), endedAt: null, turnCount: 1, topPattern: null },
+      ]);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/sessions with a malformed learner id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/learners/not-a-uuid/sessions');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/sessions for a learner with no sessions returns an empty array', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const response = await get(handle.port, `/learners/${learnerId}/sessions`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body?.sessions).toEqual([]);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
+
   describe('privacy endpoints (ticket #31)', () => {
     it('POST /learners/:id/audio-sampling-consent records consent, and DELETE /learners/:id clears the learner and its memories', async () => {
       const pool = new Pool({ connectionString: DATABASE_URL });

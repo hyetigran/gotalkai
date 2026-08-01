@@ -21,3 +21,23 @@ export const useSessionDebrief = createQuery<DebriefItem[], SessionDebriefVariab
       .get<SessionDebriefResponse>(`sessions/${variables.sessionId}/debrief`)
       .then(response => response.data.debriefItems),
 });
+
+export type SessionHistoryEntry = {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  turnCount: number;
+  topPattern: { kind: string; detail: Record<string, unknown> } | null;
+};
+
+type SessionHistoryResponse = { sessions: SessionHistoryEntry[] };
+type SessionHistoryVariables = { learnerId: string };
+
+/** `GET /learners/:id/sessions` (app-service) — the History tab's real, most-recent-first session list. */
+export const useSessionHistory = createQuery<SessionHistoryEntry[], SessionHistoryVariables, AxiosError>({
+  queryKey: ['session-history'],
+  fetcher: variables =>
+    appServiceClient
+      .get<SessionHistoryResponse>(`learners/${variables.learnerId}/sessions`)
+      .then(response => response.data.sessions),
+});
