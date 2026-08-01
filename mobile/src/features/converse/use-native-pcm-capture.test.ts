@@ -210,7 +210,6 @@ describe('useNativePcmCapture', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
-// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
 describe('useNativePcmCapture RECORD_AUDIO permission', () => {
   it(
     'requests RECORD_AUDIO before starting capture — the native module documents that it does not request this itself (ExpoLivePcmCaptureModule.kt\'s MicPermissionDeniedException)',
@@ -237,6 +236,39 @@ describe('useNativePcmCapture RECORD_AUDIO permission', () => {
     expect(result.current.isCapturing).toBe(false);
     expect(result.current.error).toContain('RECORD_AUDIO permission');
   });
+
+  it(
+    'does not call requestRecordingPermissionsAsync again for an overlapping start while the first is still awaiting the permission prompt',
+    async () => {
+      // Reproduces a real crash (adb logcat): the system permission prompt itself steals
+      // foreground focus, which triggered useAppStateCaptureSync's 'active' handler to call
+      // startCaptureIfWanted() again *while the first call was still awaiting that same
+      // prompt* — ~9 overlapping rounds in under 2 seconds, each firing its own
+      // requestRecordingPermissionsAsync()/startCapture(), which crashed the app outright.
+      // Toggling `enabled` off/on here is a convenient stand-in for that same "another
+      // caller invokes startCaptureIfWanted() before the first call has settled" shape,
+      // without needing to mock AppState directly.
+      Platform.OS = 'android';
+      let resolvePermission: ((value: { granted: boolean }) => void) | undefined;
+      mockRequestRecordingPermissionsAsync.mockImplementation(() => new Promise((resolve) => {
+        resolvePermission = resolve;
+      }));
+
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useNativePcmCapture({ enabled, onChunk: jest.fn() }),
+        { initialProps: { enabled: true } },
+      );
+      await waitFor(() => expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1));
+
+      rerender({ enabled: false });
+      rerender({ enabled: true });
+      expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1); // the overlapping call was a no-op, not a second prompt
+
+      resolvePermission?.({ granted: true });
+      await waitFor(() => expect(result.current.isCapturing).toBe(true));
+      expect(mockNativeModule.startCapture).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe('useNativePcmCapture amplitude (docs/adr/0023)', () => {

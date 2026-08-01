@@ -39,7 +39,8 @@ export type ServerMessage
     | { type: 'transcript_partial'; text: string }
     | { type: 'transcript_final'; text: string }
     | { type: 'persona_filler'; text: string }
-    | { type: 'persona_turn'; text: string; comprehension: string; affect: string }
+    /** `translation`: PRD §6.2 tap-to-reveal — real-pipeline counterpart to scripted-demo-script.ts's hand-authored `en` field. */
+    | { type: 'persona_turn'; text: string; comprehension: string; affect: string; translation: string }
     | { type: 'tts_chunk'; sentenceIndex: number; audioBase64: string }
     | { type: 'turn_complete'; timestamps: TurnTimestamps }
     | { type: 'barge_in' }

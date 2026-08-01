@@ -109,17 +109,16 @@ describe('useLiveConverseSession', () => {
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
     expect(result.current.phase).toBe('thinking');
     expect(result.current.holdSeen).toBe(true);
-    expect(result.current.turns).toEqual([{ speaker: 'persona', text: 'Ну…' }]);
+    // UAT: "get rid of [the filler] completely" — no placeholder turn renders for it.
+    expect(result.current.turns).toEqual([]);
 
     act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет' },
     ]);
 
     act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет' },
       { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' },
     ]);
@@ -133,7 +132,7 @@ describe('useLiveConverseSession', () => {
     expect(result.current.lastTimestamps).toEqual(timestamps);
   });
 
-  it('replaces the filler turn with the real reply rather than appending a second persona turn', () => {
+  it('renders no placeholder for the filler — the real reply is the only turn', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
@@ -153,7 +152,7 @@ describe('useLiveConverseSession', () => {
     expect(result.current.phase).toBe('listening');
   });
 
-  it('replaces the filler with a "system" turn (not "persona") on safety_response — ticket #27\'s escape hatch', () => {
+  it('renders a "system" turn (not "persona"), not a filler placeholder, on safety_response — ticket #27\'s escape hatch', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
@@ -177,11 +176,9 @@ describe('useLiveConverseSession', () => {
     act(() => latestSocket().simulateMessage({ type: 'tts_chunk', sentenceIndex: 0, audioBase64: 'abc' }));
 
     expect(result.current.phase).toBe('speaking');
-    // Matches the voice path's own established behavior (see "runs the full cascade" above): once
-    // transcript_final has landed between the filler and the real reply, the filler turn is kept
-    // (not replaced) and both the transcript and the real reply append as their own entries.
+    // Matches the voice path's own established behavior (see "runs the full cascade" above):
+    // no placeholder for the filler — just the learner's transcript and the real reply.
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет!' },
       { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' },
     ]);
@@ -303,4 +300,20 @@ describe('useLiveConverseSession hold-to-think and lifecycle', () => {
     unmount();
     expect(socket.closeCallCount).toBe(1);
   });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession translation (PRD §6.2 tap-to-reveal)', () => {
+  it(
+    'carries translation through onto the persona turn (UAT: "the text is no longer clickable to show translation. add it back")',
+    () => {
+      const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm', translation: 'Hello!' }));
+
+      expect(result.current.turns).toEqual([
+        { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm', translation: 'Hello!' },
+      ]);
+    },
+  );
 });

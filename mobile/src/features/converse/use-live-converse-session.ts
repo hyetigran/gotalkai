@@ -14,6 +14,8 @@ export type ConverseTurn = {
   text: string;
   comprehension?: string;
   affect?: string;
+  /** PRD §6.2 tap-to-reveal — only ever present on 'persona' turns (the server only sends it on persona_turn); undefined for 'learner'/'system'. */
+  translation?: string;
 };
 
 /**
@@ -48,24 +50,33 @@ function converseReducer(state: ConverseState, action: ConverseAction): Converse
   const { message } = action;
   switch (message.type) {
     case 'persona_filler':
-      return { ...state, phase: 'thinking', holdSeen: true, turns: [...state.turns, { speaker: 'persona', text: message.text }] };
+      // UAT: "get rid of [the filler] completely" — text and (the mobile
+      // side never actually spoke it; only the server-side FILLER_LINES
+      // text existed) audio both gone. Still updates phase/holdSeen: the
+      // server still sends this message to mark "she's now generating a
+      // reply," and hold-to-think (docs/adr/0002) still needs that
+      // signal — just no turn gets pushed for it anymore, so nothing
+      // renders and nothing needs replacing once the real reply arrives.
+      return { ...state, phase: 'thinking', holdSeen: true };
     case 'transcript_final':
       return { ...state, turns: [...state.turns, { speaker: 'learner', text: message.text }] };
     case 'persona_turn': {
-      // Replaces the filler placeholder pushed above, not a new entry — the filler and the real
-      // reply are the same conversational turn from the transcript's point of view.
-      const last = state.turns[state.turns.length - 1];
-      const replyTurn: ConverseTurn = { speaker: 'persona', text: message.text, comprehension: message.comprehension, affect: message.affect };
-      const turns = last?.speaker === 'persona' ? [...state.turns.slice(0, -1), replyTurn] : [...state.turns, replyTurn];
-      return { ...state, turns };
+      // UAT: "char's initial dialogue disappeared and 'sorry I didn't
+      // understand' displayed" — this case used to replace the last turn
+      // whenever it was also 'persona', "defensively," for an unspecified
+      // "some other reason." That silently clobbered a real turn (e.g.
+      // her opening line) whenever the *next* server message was also a
+      // persona_turn with no learner turn in between — not just the
+      // acoustic-feedback bug (see turn-orchestrator.ts's pushAudioFrame),
+      // but any genuinely low-confidence first utterance too (the
+      // "didn't catch that" fallback sends no transcript_final at all).
+      // Always appends now — every persona_turn is its own real turn.
+      const replyTurn: ConverseTurn = { speaker: 'persona', text: message.text, comprehension: message.comprehension, affect: message.affect, translation: message.translation };
+      return { ...state, turns: [...state.turns, replyTurn] };
     }
     case 'safety_response': {
-      // Same "replaces the filler placeholder" logic as persona_turn above — filler was already
-      // sent before the server knew this turn would trigger the escape hatch.
-      const last = state.turns[state.turns.length - 1];
       const systemTurn: ConverseTurn = { speaker: 'system', text: message.text };
-      const turns = last?.speaker === 'persona' ? [...state.turns.slice(0, -1), systemTurn] : [...state.turns, systemTurn];
-      return { ...state, turns };
+      return { ...state, turns: [...state.turns, systemTurn] };
     }
     case 'tts_chunk':
       return { ...state, phase: 'speaking' };

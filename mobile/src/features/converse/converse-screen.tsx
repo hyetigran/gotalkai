@@ -11,12 +11,10 @@ import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useLearner } from './api';
 import { FrequencyBackground } from './components/frequency-background';
 import { HoldToThinkButton } from './components/hold-to-think-button';
-import { InputModeToggle } from './components/input-mode-toggle';
 import { LevelMeter } from './components/level-meter';
 import { LiveTranscript } from './components/live-transcript';
 import { PersonaPortrait3D } from './components/persona-portrait-3d';
 import { SuggestionChips } from './components/suggestion-chips';
-import { TextInputBar } from './components/text-input-bar';
 import { Transcript } from './components/transcript';
 import { useConverseSession } from './use-converse-session';
 import { useHardwareBackToOpen } from './use-hardware-back-to-open';
@@ -119,7 +117,17 @@ type ConverseHeaderProps = {
 function ConverseHeader({ clock, onBack }: ConverseHeaderProps) {
   return (
     <View className="flex-row items-center justify-between px-[22px] pt-[60px] pb-[12px]">
-      <Pressable onPress={onBack} accessibilityRole="button" accessibilityLabel="back">
+      {/* Visually just the "‹" glyph (~15px) — same "raise the hit area, keep the visual
+          size" treatment the mockup README's Accessibility section calls for on the
+          suggestion chips (34px, still below the 44px guideline). modal.tsx's CloseButton
+          uses 20px of hitSlop on a 24px icon; this glyph is smaller still, and 20px wasn't
+          enough in practice — tripled. */}
+      <Pressable
+        onPress={onBack}
+        hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
+        accessibilityRole="button"
+        accessibilityLabel="back"
+      >
         <Text className="text-[15px] text-accent">‹</Text>
       </Pressable>
       <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
@@ -272,13 +280,30 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
   // no press-to-speak), same as `use-mic-capture.ts`'s own `paused:
   // holding` convention — paused during a hold (nothing to send while the
   // server's been told to ignore audio anyway) and while typing in text
-  // mode (ticket #32: text mode "bypasses audio entirely"). Deliberately
-  // NOT also paused during her own turn ('thinking'/'speaking') — no
-  // half-duplex gating is implemented here. Echo cancellation remains the
-  // structural gap docs/adr/0017 already disclosed; this doesn't change
-  // that either way.
+  // mode. UAT: "remove voice and text options. there should be no text
+  // input. only voice" — this screen no longer offers a mode switch at
+  // all (see the render below), so mode is permanently 'voice'; the
+  // underlying text-input capability (ticket #32) stays real and tested
+  // in use-live-converse-session.ts, just unreachable from this UI now.
+  //
+  // UAT: "the character doesn't have sound anymore" — on a real device,
+  // with no echo cancellation, this screen's own mic picks up her TTS
+  // audio coming out of the phone speaker as soon as it starts playing.
+  // That reads as a barge-in server-side (turn-orchestrator.ts's
+  // `pushAudioFrame`: any speech onset while `state === 'speaking'`
+  // cancels the in-flight synthesis), so her very first line's audio got
+  // cancelled before its first chunk ever arrived, and every turn after
+  // that fell into the silent (by design, no LLM/TTS) "didn't understand"
+  // fallback forever — a self-sustaining loop with no real user speech
+  // involved at all. `phase === 'listening'` (not just `!live.holding`)
+  // now also excludes 'thinking'/'speaking': nothing is sent to the
+  // server while she's generating or talking, so there's nothing for the
+  // server to mishear as an interruption. Trade-off, not a full fix: real
+  // barge-in (interrupting her mid-sentence) no longer works until actual
+  // echo cancellation exists — docs/adr/0017's disclosed gap, now with a
+  // concrete failure mode behind it instead of just a caveat.
   const capture = useNativePcmCapture({
-    enabled: !live.holding && live.mode === 'voice',
+    enabled: !live.holding && live.phase === 'listening',
     onChunk: live.sendAudioChunk,
   });
 
@@ -303,26 +328,16 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
       <LiveTranscript turns={live.turns} thinking={live.phase === 'thinking'} />
 
       <View className="px-[22px] pt-[14px] pb-[40px]">
-        <View className="mb-[11px] items-center">
-          <InputModeToggle mode={live.mode} onChange={live.setMode} />
-        </View>
-
         {capture.error && (
           <Text className="font-mono-medium mb-[8px] text-center text-[10px] tracking-[0.03em] text-red-700/70">
             {`mic: ${capture.error}`}
           </Text>
         )}
 
-        {live.mode === 'voice'
-          ? (
-              <LevelMeter phase={meterPhase} holding={live.holding} amplitude={capture.amplitude} />
-            )
-          : (
-              <TextInputBar onSubmit={live.submitText} disabled={live.phase === 'thinking' || live.phase === 'speaking'} />
-            )}
+        <LevelMeter phase={meterPhase} holding={live.holding} amplitude={capture.amplitude} />
 
         <ConverseFooterRow
-          showHoldButton={live.mode === 'voice' && live.holdSeen}
+          showHoldButton={live.holdSeen}
           holding={live.holding}
           onHoldOn={live.holdOn}
           onHoldOff={live.holdOff}

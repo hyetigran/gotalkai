@@ -147,7 +147,7 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
       startCaptureIfWanted();
     else
       stopCapture();
-  }, [enabled, startCaptureIfWanted, stopCapture]);
+  }, [enabled, startCaptureIfWanted, stopCapture, isSupported]);
 
   useAppStateCaptureSync({ isSupported, wantsCaptureRef, startCaptureIfWanted, stopCapture });
 
@@ -177,6 +177,29 @@ function useCaptureLifecycleActions(options: {
 }) {
   const { isSupported, wantsCaptureRef, setIsCapturing, setAmplitude, setError, reportError } = options;
 
+  /**
+   * Guards `startCaptureIfWanted` against overlapping calls — a real,
+   * observed crash, not a theoretical one. `useAppStateCaptureSync` calls
+   * this on every transition to `'active'`, and the RECORD_AUDIO
+   * permission prompt (`requestRecordingPermissionsAsync` below) is
+   * itself a system UI that steals foreground focus, which on at least
+   * one real device produced a rapid `active` <-> `background` bounce —
+   * observed via `adb logcat` as ~9 round-trips through
+   * `com.google.android.permissioncontroller` in under 2 seconds, each
+   * one re-entering this function *while the previous call was still
+   * awaiting its own permission prompt*, each independently calling
+   * `requestRecordingPermissionsAsync()` and `ExpoLivePcmCaptureModule.
+   * startCapture()` again. The native side's own `AlreadyCapturingException`
+   * (see its catch block below) only guards the *native* startCapture()
+   * call — it never got a chance to, because every overlapping call was
+   * still stuck earlier, awaiting its own redundant permission prompt.
+   * Ten-plus AudioRecord create/start/stop/destroy cycles in ~1 second
+   * (also confirmed via logcat) crashed the app outright. This ref caps
+   * concurrency at one in-flight attempt; every overlapping call becomes
+   * a no-op instead of piling on another prompt.
+   */
+  const startInFlightRef = React.useRef(false);
+
   const stopCapture = React.useCallback(async () => {
     if (!isSupported || !ExpoLivePcmCaptureModule)
       return;
@@ -196,6 +219,9 @@ function useCaptureLifecycleActions(options: {
   const startCaptureIfWanted = React.useCallback(async () => {
     if (!isSupported || !ExpoLivePcmCaptureModule || !wantsCaptureRef.current)
       return;
+    if (startInFlightRef.current)
+      return; // an overlapping call is already awaiting its own permission prompt/startCapture() — see startInFlightRef's own comment
+    startInFlightRef.current = true;
     try {
       // The native module deliberately does not request this itself
       // (ExpoLivePcmCaptureModule.kt's MicPermissionDeniedException spells
@@ -218,16 +244,19 @@ function useCaptureLifecycleActions(options: {
     catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       // "already running" is the native module's AlreadyCapturingException
-      // message — a benign race (e.g. this effect and the AppState
-      // listener both firing before the first startCapture() promise
-      // settles), not a real failure: whatever called this wanted capture
-      // running, and it already is. Surfacing it as a user-facing error
-      // would be misleading.
+      // message. startInFlightRef above closes the main window this could
+      // fire through (this function re-entering itself); this remains as
+      // a narrower backup — e.g. a real native-side capture session this
+      // hook doesn't know about yet — so it stays a benign no-op rather
+      // than a user-facing error, which would be misleading either way.
       if (message.includes('already running'))
         return;
       setIsCapturing(false);
       setAmplitude(0);
       reportError(message);
+    }
+    finally {
+      startInFlightRef.current = false;
     }
   }, [isSupported, wantsCaptureRef, setIsCapturing, setAmplitude, setError, reportError]);
 
