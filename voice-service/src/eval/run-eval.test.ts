@@ -33,7 +33,7 @@ function fakeClient(options: {
   });
 }
 
-const PERFECT_TURN: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, как приятно — заходи скорее.' };
+const PERFECT_TURN: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, как приятно — заходи скорее.', translation: 'Ah, how nice — come in quickly.' };
 
 describe('runEval', () => {
   it('runs every golden-set entry exactly once and returns one result per entry', async () => {
@@ -68,7 +68,7 @@ describe('runEval', () => {
     'a deliberately broken persona response (explicit correction marker — a false recast) fails zero_false_recasts loudly, '
     + 'not silently (ticket #28 UAT #2)',
     async () => {
-      const brokenTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Нет, нужно сказать по-другому.' };
+      const brokenTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Нет, нужно сказать по-другому.', translation: 'No, you need to say it differently.' };
       const client = fakeClient({ turnFor: () => brokenTurn });
       const report = await runEval(client);
       const falseRecastGate = report.gates.find(gate => gate.key === 'zero_false_recasts');

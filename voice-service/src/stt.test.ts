@@ -98,7 +98,7 @@ describe('createSttSession', () => {
       const onFinalTranscript = jest.fn();
       createSttSession('test-key', { onFinalTranscript }, connect);
       emit('message', JSON.stringify({
-        message_type: 'final_transcript_with_timestamps',
+        message_type: 'committed_transcript_with_timestamps',
         text: 'она забыла купить билеты',
         language_code: 'ru',
         words: [
@@ -116,6 +116,57 @@ describe('createSttSession', () => {
       });
     },
   );
+
+  it(
+    'calls onFinalTranscript for the real vendor payload shape — message_type "committed_transcript_with_timestamps" (not "final_transcript_with_timestamps", which this file assumed and the vendor has never actually sent), language_code/words sent as explicit null rather than omitted, and extra per-word fields (speaker_id, characters, channel_index) this codebase doesn\'t use — a real regression this exact shape caused: the old case label meant every real transcript fell through to the unhandled default case, and even after fixing the label, `.optional()` doesn\'t accept explicit null, so it still failed to parse (UAT: "app seems to be in a stuck state")',
+    () => {
+      const { connect, emit } = fakeConnect();
+      const onFinalTranscript = jest.fn();
+      const onError = jest.fn();
+      createSttSession('test-key', { onFinalTranscript, onError }, connect);
+      emit('message', JSON.stringify({
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'Нет.',
+        language_code: null,
+        words: [
+          {
+            text: 'Нет.',
+            start: 8.64,
+            end: 9.059,
+            type: 'word',
+            speaker_id: null,
+            logprob: -3.599609375,
+            characters: [{ text: 'Н', start: 8.64, end: 8.719 }],
+            channel_index: null,
+          },
+        ],
+      }));
+      expect(onError).not.toHaveBeenCalled();
+      expect(onFinalTranscript).toHaveBeenCalledWith({
+        text: 'Нет.',
+        languageCode: undefined,
+        words: [
+          expect.objectContaining({ text: 'Нет.', start: 8.64, end: 9.059, type: 'word', logprob: -3.599609375 }),
+        ],
+      });
+    },
+  );
+
+  it('calls onFinalTranscript with an empty words array for the real vendor payload shape where words is explicit null, not merely omitted', () => {
+    const { connect, emit } = fakeConnect();
+    const onFinalTranscript = jest.fn();
+    createSttSession('test-key', { onFinalTranscript }, connect);
+    emit('message', JSON.stringify({ message_type: 'committed_transcript_with_timestamps', text: '', language_code: null, words: null }));
+    expect(onFinalTranscript).toHaveBeenCalledWith({ text: '', languageCode: undefined, words: [] });
+  });
+
+  it('calls onFinalTranscript for the real vendor payload shape — message_type "committed_transcript" (not "final_transcript"), no timestamps configured', () => {
+    const { connect, emit } = fakeConnect();
+    const onFinalTranscript = jest.fn();
+    createSttSession('test-key', { onFinalTranscript }, connect);
+    emit('message', JSON.stringify({ message_type: 'committed_transcript', text: 'Алло!' }));
+    expect(onFinalTranscript).toHaveBeenCalledWith({ text: 'Алло!', words: [] });
+  });
 
   it('does not call any handler for a session_started message', () => {
     const { connect, emit } = fakeConnect();
@@ -135,6 +186,25 @@ describe('createSttSession', () => {
     expect(onError).toHaveBeenCalledWith(new Error('invalid API key'));
   });
 
+  it(
+    'calls onError for a real vendor rejection whose message_type doesn\'t contain the word "error" — a real ElevenLabs response this hook silently swallowed until fixed (an invalid model_id, sent as message_type "invalid_request")',
+    () => {
+      const { connect, emit } = fakeConnect();
+      const onError = jest.fn();
+      createSttSession('test-key', { onError }, connect);
+      emit('message', JSON.stringify({ message_type: 'invalid_request', error: 'The model_id \'scribe_v2\' is invalid.' }));
+      expect(onError).toHaveBeenCalledWith(new Error('The model_id \'scribe_v2\' is invalid.'));
+    },
+  );
+
+  it('does not call onError for an unrecognized message_type that carries no error field — a genuinely benign, unhandled message type', () => {
+    const { connect, emit } = fakeConnect();
+    const onError = jest.fn();
+    createSttSession('test-key', { onError }, connect);
+    emit('message', JSON.stringify({ message_type: 'committed_transcript_something' }));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('calls onError (does not crash) on malformed JSON', () => {
     const { connect, emit } = fakeConnect();
     const onError = jest.fn();
@@ -151,13 +221,13 @@ describe('createSttSession', () => {
     expect(onError).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  it('calls onError (does not crash, does not fabricate defaults) when a final_transcript_with_timestamps word is missing required fields', () => {
+  it('calls onError (does not crash, does not fabricate defaults) when a committed_transcript_with_timestamps word is missing required fields', () => {
     const { connect, emit } = fakeConnect();
     const onFinalTranscript = jest.fn();
     const onError = jest.fn();
     createSttSession('test-key', { onFinalTranscript, onError }, connect);
     expect(() => emit('message', JSON.stringify({
-      message_type: 'final_transcript_with_timestamps',
+      message_type: 'committed_transcript_with_timestamps',
       text: 'она забыла',
       words: [{ text: 'она' }], // missing required `type`/`logprob`
     }))).not.toThrow();

@@ -107,8 +107,17 @@ export type ServerMessage
     | { type: 'transcript_final'; text: string }
     /** In-character filler (PRD §7.3: "ну…", "сейчас…") sent immediately on turn-detect, before the real persona turn is ready — masks generation latency. */
     | { type: 'persona_filler'; text: string }
-    /** The real persona turn, once generated (or the "didn't catch that" line — see turn-orchestrator.ts's low-confidence handling, which reuses this same message type rather than inventing a separate one). */
-    | { type: 'persona_turn'; text: string; comprehension: string; affect: string }
+    /**
+     * The real persona turn, once generated (or the "didn't catch that"
+     * line — see turn-orchestrator.ts's low-confidence handling, which
+     * reuses this same message type rather than inventing a separate
+     * one). `translation`: PRD §6.2's tap-to-reveal, same UI slot the
+     * scripted demo's hand-authored script already has — every call site
+     * that sends this message provides one, including the two fixed
+     * lines (opening line, "didn't catch that"), not just real
+     * LLM-generated replies.
+     */
+    | { type: 'persona_turn'; text: string; comprehension: string; affect: string; translation: string }
     /** One sentence's synthesized audio — sent as each becomes ready (tts.ts's onChunk), not batched until the whole turn finishes. */
     | { type: 'tts_chunk'; sentenceIndex: number; audioBase64: string }
     /** All of this turn's audio has been sent; also carries the six-timestamp log for this turn. */

@@ -89,7 +89,24 @@ export type TurnOrchestratorDeps = {
 const PERSONA_REGISTER = 'ty';
 const LEARNER_REGISTER = 'vy';
 
-const DEFAULT_VAD_CONFIG = { speechThresholdRms: 5000, silenceHangoverMs: 500 };
+/**
+ * `speechThresholdRms` was an "unvalidated placeholder... real tuning
+ * needs real accented-learner STT data" (this file's own prior
+ * disclosure, matching docs/adr/0013's broader unverified-without-
+ * hardware posture). It was 5000 — calibrated for nothing in particular,
+ * since no real device existed to calibrate against. UAT: "my voice
+ * doesn't get registered" — a physical device finally surfaced real
+ * numbers (temporary [DEBUG-vs2] logging in pushAudioFrame, over ~900
+ * frames of a real capture session): background noise floor averaged
+ * ~7.65 RMS (mostly <50), genuine speech peaked at 100-175 RMS. 5000 was
+ * roughly 30-70x higher than anything real speech on this device's
+ * `MediaRecorder.AudioSource.VOICE_COMMUNICATION` (see
+ * ExpoLivePcmCaptureModule.kt) ever produced — VAD never transitioned
+ * out of 'silence' once in that entire session. Still a single-device
+ * empirical measurement, not a validated cross-device constant — the
+ * next round of real-hardware UAT may well need to move this again.
+ */
+const DEFAULT_VAD_CONFIG = { speechThresholdRms: 70, silenceHangoverMs: 500 };
 
 /** PRD §7.3: "In-character filler (ну…, сейчас…) on end-of-turn detection, masking 300-500ms." Rotated, not randomized — deterministic and testable; real variety is a smaller concern than genuinely masking the gap. */
 const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
@@ -108,6 +125,8 @@ const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
  * characterization of the persona, which was never the intent here.
  */
 const DIDNT_UNDERSTAND_LINE = 'Прости, я не поняла — повтори, пожалуйста?';
+/** PRD §6.2 tap-to-reveal translation for DIDNT_UNDERSTAND_LINE — a fixed line, same reasoning as OPENING_LINE_TRANSLATION below for why this isn't LLM-generated. */
+const DIDNT_UNDERSTAND_LINE_TRANSLATION = 'Sorry, I didn\'t understand — could you say that again?';
 
 /**
  * PRD §6.2 / docs/adr/0002: "she opens, not the learner" — the scripted
@@ -130,6 +149,8 @@ const DIDNT_UNDERSTAND_LINE = 'Прости, я не поняла — повто
  * real model call.
  */
 const OPENING_LINE = 'Ну наконец-то ты позвонил! Садись, я чай поставила. Как выходные?';
+/** PRD §6.2 tap-to-reveal translation for OPENING_LINE — same English already established in scripted-demo-script.ts's turn 0 (this is the same line), reused verbatim rather than re-translated independently. */
+const OPENING_LINE_TRANSLATION = 'Finally you called! Sit down, I’ve put the kettle on. How was your weekend?';
 
 /** OPENING_LINE is fixed copy, not a real `generatePersonaTurn` call — no LLM tokens spent, so `recordPersonaTurn`'s cost accounting has nothing to attribute beyond the real TTS characters. */
 const ZERO_USAGE: GeneratePersonaTurnResult['usage'] = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
@@ -137,11 +158,19 @@ const ZERO_USAGE: GeneratePersonaTurnResult['usage'] = { inputTokens: 0, outputT
 /**
  * PRD §5.7 doesn't specify a numeric threshold — ElevenLabs' `logprob` is
  * a log-probability (range (-∞, 0]), not the 0-100% score PRD's own
- * framing implicitly assumes. This value is an unvalidated placeholder:
- * real tuning needs real accented-learner STT data, which docs/adr/0013
- * already discloses as unavailable in this environment.
+ * framing implicitly assumes. Was an "unvalidated placeholder... real
+ * tuning needs real accented-learner STT data" (this constant's own
+ * prior disclosure) — a physical device's real committed_transcript_
+ * with_timestamps payloads (temporary [DEBUG-stt2] logging) finally
+ * supplied that data: clean, correctly-heard short utterances
+ * ("Здравствуйте!", "Алло!", "Нет.") scored -3.0 to -4.5; the one
+ * outlier that looked like a genuine stutter/disfluency ("...с-с-с-с-")
+ * scored -6.5. -1.5 rejected every one of them — real speech never got
+ * remotely close. Still a single-device empirical measurement, not a
+ * validated cross-device/cross-accent constant, same caveat as the VAD
+ * threshold's own recalibration.
  */
-const LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD = -1.5;
+const LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD = -6;
 
 function averageLogprob(words: SttWord[]): number {
   const scored = words.filter(word => word.type === 'word');
@@ -170,6 +199,26 @@ export class TurnOrchestrator {
   private generationToken = 0;
   private sttSession: ReturnType<TurnOrchestratorDeps['createSttSession']> | null = null;
   private pendingTranscript: { resolve: (transcript: SttTranscript) => void; reject: (error: Error) => void } | null = null;
+  /**
+   * A real, observed deadlock (UAT: "the 'nu' filler text still renders,
+   * my voice isn't captured"): the STT session is created on the first
+   * `pushAudioFrame` that crosses into 'speech' — well before
+   * `speech_end`/commit, which is the only thing that calls
+   * `handleTurnDetected` (and only *there* does `pendingTranscript` get
+   * set). If the vendor rejects the connection (or it errors/closes for
+   * any other reason) *during* that window — confirmed via logcat: an
+   * ElevenLabs `auth_error` arrived mid-utterance, well before
+   * `speech_end` — `onError` below found `pendingTranscript` still null
+   * and `?.reject(...)` silently did nothing. By the time `speech_end`
+   * finally arrived and `handleTurnDetected` created a *fresh*
+   * `pendingTranscript` to await, the session was already dead — no
+   * further callback would ever fire on it, so that promise could never
+   * settle. The filler ("Ну…") had already been sent by then and never
+   * got replaced. This field lets a `handleTurnDetected` that starts
+   * *after* the error already happened reject immediately instead of
+   * hanging forever; reset whenever a fresh STT session is created.
+   */
+  private sttSessionError: Error | null = null;
   private holdAutoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Ticket #29: the real session id, set once `session_start` arrives (server.ts). Turn recording/tracing is a no-op until this is set — there's no session to attribute a turn to yet. */
   private sessionId: string | null = null;
@@ -235,7 +284,7 @@ export class TurnOrchestrator {
     const t2PersonaStart = t0TurnDetected;
     const t3PersonaComplete = t0TurnDetected;
 
-    this.deps.sendMessage({ type: 'persona_turn', text: OPENING_LINE, comprehension: 'understood', affect: 'warm' });
+    this.deps.sendMessage({ type: 'persona_turn', text: OPENING_LINE, comprehension: 'understood', affect: 'warm', translation: OPENING_LINE_TRANSLATION });
 
     const annotated = this.deps.annotateText(OPENING_LINE);
     const t4StressAnnotated = now();
@@ -289,17 +338,30 @@ export class TurnOrchestrator {
    * happens here, not re-encoding.
    */
   pushAudioFrame(samples: Int16Array, pcmBase64: string, sampleRateHz: number): void {
-    if (this.held)
+    // UAT: "the character doesn't have sound anymore" — root cause was
+    // acoustic, not a code defect in the narrow sense: with no echo
+    // cancellation, this mobile's own mic picks up her TTS audio coming
+    // back out of the phone speaker. That used to read as a genuine
+    // barge-in right here (`state === 'speaking'` + a fresh speech
+    // onset), cancelling her opening line before its first chunk ever
+    // reached the client, and every following turn fell into the silent
+    // (no LLM/TTS by design) "didn't understand" fallback forever — a
+    // loop with no real learner speech in it at all. The client
+    // (converse-screen.tsx) now only sends frames while its own phase is
+    // 'listening', matching this guard — this is the server-side half of
+    // that same guarantee, same "in case a stray frame arrives anyway"
+    // reasoning as the `held` check it's now merged with. Consequence:
+    // real barge-in no longer works (a learner can't interrupt her
+    // mid-sentence) until real echo cancellation exists — the
+    // `state === 'speaking'` branch this replaced is gone, not just
+    // disabled, since nothing can reach it now that frames outside
+    // 'listening' never get this far.
+    if (this.held || this.state !== 'listening')
       return;
 
     const frameDurationMs = (samples.length / sampleRateHz) * 1000;
     const rms = computeRmsEnergy(samples);
     const transition = this.vadGate.pushFrame(rms, frameDurationMs);
-
-    if (this.state === 'speaking' && transition === 'speech_start') {
-      this.handleBargeIn();
-      // Fall through: this frame is also the start of the learner's new utterance.
-    }
 
     // The frame that triggers `speech_end` must still be forwarded (it's
     // the commit signal) even though VadGate's own state has already
@@ -311,6 +373,7 @@ export class TurnOrchestrator {
 
     if (!this.sttSession) {
       this.state = 'listening';
+      this.sttSessionError = null;
       this.sttSession = this.deps.createSttSession(this.deps.elevenLabsApiKey, {
         // PRD §6.2's live "what did I just say" feedback — see messages.ts's
         // transcript_partial doc comment. Not authoritative; transcript_final
@@ -323,6 +386,12 @@ export class TurnOrchestrator {
           this.pendingTranscript = null;
         },
         onError: (error) => {
+          // No pendingTranscript yet (error arrived before speech_end) is
+          // the exact deadlock sttSessionError's own comment describes —
+          // stash it so handleTurnDetected can reject immediately once it
+          // does start awaiting, instead of hanging on a session that's
+          // already dead.
+          this.sttSessionError = error;
           this.pendingTranscript?.reject(error);
           this.pendingTranscript = null;
         },
@@ -437,6 +506,13 @@ export class TurnOrchestrator {
     let transcript: SttTranscript;
     try {
       transcript = await new Promise<SttTranscript>((resolve, reject) => {
+        // See sttSessionError's own comment: the STT session can die
+        // before speech_end ever arrives here — reject on what already
+        // happened instead of awaiting a session that's already gone.
+        if (this.sttSessionError) {
+          reject(this.sttSessionError);
+          return;
+        }
         this.pendingTranscript = { resolve, reject };
       });
     }
@@ -466,7 +542,24 @@ export class TurnOrchestrator {
     if (await this.checkSafetyAndRespond(myToken, transcript.text, t0TurnDetected, t1SttFinal))
       return;
 
-    if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
+    // UAT: real speech, correctly transcribed and shown on screen, still
+    // got "I didn't understand you" every time. Root cause: `words.length
+    // === 0` was meant to catch a genuinely empty transcript (STT heard
+    // nothing), but ElevenLabs' real committed_transcript message (no
+    // "_with_timestamps" suffix — stt.ts's own header comment on that case
+    // assumed it was unreachable since include_timestamps is always
+    // requested; wrong in practice, confirmed via logcat) carries real,
+    // non-empty `text` with *no* per-word breakdown at all — `words` is
+    // always `[]` for it. That's "no confidence data available," not "no
+    // confidence" — checking `words.length === 0` treated real, correctly-
+    // heard speech as automatically unconfident on every single turn,
+    // unconditionally, regardless of LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD's
+    // own value. Checking `transcript.text` for real emptiness is what
+    // "STT heard nothing" actually means; the confidence *score* only
+    // applies, and only ever did apply, when there's a score to check.
+    const heardNothing = transcript.text.trim().length === 0;
+    const isLowConfidence = transcript.words.length > 0 && averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD;
+    if (heardNothing || isLowConfidence) {
       this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal, sttAudioMs, transcript.text);
       return;
     }
@@ -518,7 +611,7 @@ export class TurnOrchestrator {
       return;
     const t3PersonaComplete = now();
     this.history.push({ speaker: 'persona', text: generated.turn.text });
-    this.deps.sendMessage({ type: 'persona_turn', text: generated.turn.text, comprehension: generated.turn.comprehension, affect: generated.turn.affect });
+    this.deps.sendMessage({ type: 'persona_turn', text: generated.turn.text, comprehension: generated.turn.comprehension, affect: generated.turn.affect, translation: generated.turn.translation });
 
     const annotated = this.deps.annotateText(generated.turn.text);
     const t4StressAnnotated = now();
@@ -609,7 +702,7 @@ export class TurnOrchestrator {
       return;
     const now = this.deps.now ?? Date.now;
     const timestamp = t1SttFinal ?? now();
-    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_UNDERSTAND_LINE, comprehension: 'not_understood', affect: 'concerned' });
+    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_UNDERSTAND_LINE, comprehension: 'not_understood', affect: 'concerned', translation: DIDNT_UNDERSTAND_LINE_TRANSLATION });
     // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
     const timestamps: TurnTimestamps = { t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp };
     this.sendTurnComplete(timestamps);

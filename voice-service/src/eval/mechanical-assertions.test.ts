@@ -25,6 +25,7 @@ const baseTurn: PersonaTurn = {
   comprehension: 'understood',
   affect: 'warm',
   text: 'Ну конечно, заходи, чайник уже кипит.',
+  translation: 'Of course, come in, the kettle\'s already boiling.',
 };
 
 describe('checkSchemaValidity', () => {

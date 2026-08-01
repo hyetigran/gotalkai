@@ -13,7 +13,7 @@ const entry: GoldenEntry = {
   structureKey: 'aspect_perfective',
 };
 
-const turn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, ты приготовила борщ — как приятно!' };
+const turn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, ты приготовила борщ — как приятно!', translation: 'Ah, you made borscht — how nice!' };
 
 function fakeClient(parseImpl: (params: { messages: { content: unknown }[] }) => Promise<{ parsed_output: unknown }>) {
   return fakeAnthropicClient({ parse: parseImpl });

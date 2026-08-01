@@ -13,6 +13,7 @@ describe('personaTurnSchema', () => {
       comprehension: 'understood',
       affect: 'warm',
       text: 'Ну конечно, заходи, чайник уже кипит.',
+      translation: 'Of course, come in, the kettle\'s already boiling.',
     });
     expect(result.success).toBe(true);
   });
@@ -57,7 +58,7 @@ describe('FILLER_LINE', () => {
   });
 
   it('is itself a valid persona turn text', () => {
-    const result = personaTurnSchema.safeParse({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE });
+    const result = personaTurnSchema.safeParse({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' });
     expect(result.success).toBe(true);
   });
 });

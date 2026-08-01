@@ -82,7 +82,7 @@ export function buildPersonaTurnRequest(transcript: TranscriptTurn[]): Parseable
  * demeanor (PRD §6.4), the safest default when no real affect was produced.
  */
 function buildFallbackTurn(): PersonaTurn {
-  return { comprehension: 'partial', affect: 'warm', text: FILLER_LINE };
+  return { comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' };
 }
 
 export type GeneratePersonaTurnResult = {

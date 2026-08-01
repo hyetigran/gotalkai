@@ -78,7 +78,7 @@ function fakeClient(deltas: string[], outcome: { parsedOutput: PersonaTurn | nul
 
 describe('generatePersonaTurn', () => {
   const transcript: TranscriptTurn[] = [{ speaker: 'learner', text: 'Здравствуйте!' }];
-  const validTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ну конечно, заходи!' };
+  const validTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ну конечно, заходи!', translation: 'Of course, come in!' };
 
   it('returns the validated turn on success, with fellBackToFiller false', async () => {
     const client = fakeClient([JSON.stringify(validTurn)], { parsedOutput: validTurn });
@@ -115,7 +115,7 @@ describe('generatePersonaTurn', () => {
       'algic","text":"Ой, слушай',
       ', расскажу тебе историю."}',
     ];
-    const client = fakeClient(deltas, { parsedOutput: { comprehension: 'understood', affect: 'nostalgic', text: 'Ой, слушай, расскажу тебе историю.' } });
+    const client = fakeClient(deltas, { parsedOutput: { comprehension: 'understood', affect: 'nostalgic', text: 'Ой, слушай, расскажу тебе историю.', translation: 'Oh, listen, let me tell you a story.' } });
     const onPartial = jest.fn();
 
     await generatePersonaTurn(client, transcript, { onPartial });
@@ -132,7 +132,7 @@ describe('generatePersonaTurn', () => {
     const result = await generatePersonaTurn(client, transcript);
 
     expect(result.fellBackToFiller).toBe(true);
-    expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE });
+    expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' });
     expect(result.rawOutput).toBe(malformedSnapshot);
   });
 
@@ -143,7 +143,7 @@ describe('generatePersonaTurn', () => {
     const result = await generatePersonaTurn(client, transcript);
 
     expect(result.fellBackToFiller).toBe(true);
-    expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE });
+    expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' });
     // PRD §7.8: "log the raw output" applies to every path that produces a
     // filler turn — not just the one the SDK's own contract is documented
     // to take (the catch block below).
