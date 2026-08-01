@@ -4,7 +4,7 @@
 
 **Scope:** Primary-source conventions for (1) database-backed Node/TypeScript + Postgres apps with SQL schema/migrations, (2) Node.js TypeScript HTTP and long-lived services, and (3) React Native / Expo apps using Expo Router and feature-based structure. Claims are tied to official docs, first-party scaffolding, RFCs/specs, or first-party templates (especially Obytes, which LingoAI’s `mobile/` app is based on). Where a source does **not** prescribe layout, that is stated explicitly. De facto community habits are labeled as such and not treated as official standards.
 
-**Repo grounding:** LingoAI currently has `app-service/` (Node/TS + `pg` + Zod; root `schema.sql`; flat `src/*.ts`; `dist/`; Jest), `voice-service/` (Node/TS realtime; flat-ish `src/` with `eval/`, `stress/`, `test-support/`), and `mobile/` (Expo Router under `src/app/`, features under `src/features/`, Obytes-derived layout).
+**Repo grounding:** LingoAI currently has `app-service/` (Node/TS + `pg` + Zod; `migrations/` + Nest-inspired `src/` modules; `dist/`; Jest), `voice-service/` (Node/TS realtime; Nest-inspired modules under `src/`), and `mobile/` (Expo Router under `src/app/`, features under `src/features/`, Obytes-derived layout).
 
 ---
 
@@ -91,7 +91,7 @@ Relevant as a widely cited migration-tool mental model:
 
 ### 1.2 De facto conventions (not official)
 
-- **Single `schema.sql` at service root** used as idempotent “apply full DDL” (LingoAI `app-service` today) is a common early-stage / ops-friendly pattern for small schemas, but it is **not** what Prisma, Drizzle Kit, node-pg-migrate, or Flyway document as the primary evolution model. Those tools center on **ordered migration history**.
+- **Single `schema.sql` at service root** used as idempotent “apply full DDL” is a common early-stage / ops-friendly pattern for small schemas, but it is **not** what Prisma, Drizzle Kit, node-pg-migrate, or Flyway document as the primary evolution model. Those tools center on **ordered migration history**. LingoAI `app-service` now uses `migrations/` + a journal; root `schema.sql` is only a pointer.
 - Colocating SQL under `src/db/` or `db/` is common in Node services; migration tools generally allow any path via config.
 - Keeping **raw SQL as source of truth** (no ORM schema language) is a valid stack choice; official migration tools still expect **incremental files + a journal table**, not only a rewritable full dump.
 
@@ -242,16 +242,21 @@ app-service/
 ├── package.json            # "main" / scripts point at dist or tsx entry
 ├── tsconfig.json           # rootDir: src, outDir: dist
 ├── migrations/             # see §1
-├── schema.sql              # optional baseline
+├── schema.sql              # pointer to migrations baseline
 ├── dist/
 └── src/
-    ├── index.ts            # process entry
-    ├── server.ts           # HTTP wiring
-    ├── env.ts
-    ├── db.ts
-    ├── migrate.ts
-    ├── <domain>.ts
-    └── <domain>.test.ts
+    ├── main.ts
+    ├── config/
+    ├── db/
+    ├── http/
+    ├── learners/
+    ├── turns/
+    ├── memories/
+    ├── debrief/
+    ├── scenarios/
+    ├── address-book/
+    ├── benchmark/
+    └── observability/
 ```
 
 #### `voice-service` (long-lived realtime)
@@ -264,17 +269,17 @@ voice-service/
 ├── tsconfig.json
 ├── dist/
 └── src/
-    ├── index.ts
-    ├── server.ts
-    ├── messages.ts
-    ├── turn-orchestrator.ts
-    ├── …                   # STT/TTS/persona modules
+    ├── main.ts
+    ├── config/             # env
+    ├── realtime/           # server, messages, session-token
+    ├── pipeline/           # turn, stt, tts, stress/, persona*, safety
+    ├── integrations/       # app-service-client
+    ├── observability/      # tracing, alerting, cost
     ├── eval/               # offline / CI evaluation (not request path)
-    ├── stress/
     └── test-support/
 ```
 
-If adopting Fastify later, map **ecosystem plugins → app plugins → decorators/hooks → services** in registration order ([Fastify Getting Started](https://fastify.io/docs/latest/Guides/Getting-Started/)), with folders named to match that mental model only if helpful.
+Nest-inspired module folders without adopting NestJS. If adopting Fastify later, map **ecosystem plugins → app plugins → decorators/hooks → services** in registration order ([Fastify Getting Started](https://fastify.io/docs/latest/Guides/Getting-Started/)), with folders named to match that mental model only if helpful.
 
 ### 2.4 Gaps / conflicts between sources
 
@@ -393,15 +398,13 @@ High-level comparison only (not a full audit):
 
 ### `app-service/`
 
-- **Aligned:** `src/` + `dist/` via `rootDir`/`outDir`; colocated `*.test.ts` (Jest-official); explicit migrate CLI (good operational practice vs migrate-on-boot).
-- **Gap vs migration-tool standards:** root **`schema.sql` as the primary apply path** matches an idempotent full-DDL style, not the incremental `migrations/` (or `prisma/migrations` / `drizzle/`) model documented by node-pg-migrate, Prisma, Drizzle, and Flyway. Introducing ordered migrations would align with those primary sources when schema evolution and multi-environment history matter more.
-- **Nest/Express folder taxonomies:** not applicable as mandates; flat domain files are acceptable for current size.
+- **Aligned:** Nest-inspired domain folders under `src/` (`config/`, `db/`, `http/`, `learners/`, `turns/`, `memories/`, `debrief/`, `scenarios/`, `address-book/`, `benchmark/`, `observability/`); `src/` + `dist/` via `rootDir`/`outDir`; colocated `*.test.ts` (Jest-official); explicit migrate CLI; ordered `migrations/` with `schema_migrations` journal. Root `schema.sql` is a pointer to the baseline migration.
 
 ### `voice-service/`
 
-- **Aligned:** same TS package layout as `app-service`; specialized subdirs (`eval/`, `stress/`, `test-support/`) are fine under Jest’s discovery rules.
+- **Aligned:** Nest-inspired domain folders under `src/` (`config/`, `realtime/`, `pipeline/`, `integrations/`, `observability/`) plus `eval/` and `test-support/`; same TS package layout as `app-service`; entry `main.ts`.
 - **No DB mid-turn:** §1 migration layout mostly N/A unless persistence is added later.
-- Fastify/Nest structures are optional references if the HTTP/WS framework choice changes.
+- Fastify/Nest **framework** structures remain optional; this layout copies Nest’s *module folders* without Nest DI.
 
 ### `mobile/`
 

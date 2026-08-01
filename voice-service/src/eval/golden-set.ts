@@ -1,4 +1,4 @@
-import type { TranscriptTurn } from '../persona';
+import type { TranscriptTurn } from '../pipeline/persona';
 import type { GoldenEntry } from './golden-set-types';
 
 const OPENING: TranscriptTurn[] = [

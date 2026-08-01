@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
-import type { PersonaTurn } from '../persona';
+import type { PersonaTurn } from '../pipeline/persona';
 import type { GoldenEntry } from './golden-set-types';
 
 /**

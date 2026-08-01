@@ -86,7 +86,7 @@ Node/TypeScript under `app-service/`. Owns:
 - Learner profile, onboarding flags (`cyrillic_literate`, translit derivation — ADR-0008)
 - Persistence: sessions, turns, `learner_structures`, `persona_memories`, observations / debrief items, scenario selection, avoidance, benchmark, privacy/retention hooks
 - Session start (daily cap — ADR-0006); HTTP APIs consumed by React Query
-- Schema: `app-service/schema.sql`, applied via `pnpm db:migrate` / `applySchema`
+- Schema: `app-service/migrations/` (ordered SQL; baseline `001_init.sql`), applied via `pnpm db:migrate` / `applySchema`
 
 **Still thin / missing for live Converse:** per-session voice-service credential minting (ADR-0017 blocker). `POST /sessions` returns session id without voice auth material.
 
@@ -117,7 +117,7 @@ Next.js app under `landing/` for marketing (waitlist / explain product) — **no
 
 ### 3.5 Data store (*current* + target ops)
 
-Postgres (local + Railway target). DDL in `app-service/schema.sql`.
+Postgres (local + Railway target). DDL in `app-service/migrations/` (ordered SQL; see `001_init.sql`). Root `schema.sql` is a pointer only.
 
 **Irreplaceable:** `persona_memories`. Losing it resets every relationship. PITR required before relying on memories in production. Connection pooler + retention on high-volume `sessions` / `turns` still operational requirements.
 

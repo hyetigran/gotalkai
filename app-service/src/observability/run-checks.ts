@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 
-import { loadEnv } from '../env';
+import { loadEnv } from '../config/env';
 import { sendHealthAlert, sendQualityReport } from './alerting';
 import { findCostAlerts, getLearnerCostRollup30Day } from './cost';
 import { computeQualityMetricsReport } from './metrics';

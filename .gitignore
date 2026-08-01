@@ -2,5 +2,7 @@
 .DS_Store
 
 # Design mockup references — kept locally, not tracked
-/Initial mockup request/
-/Initial mockup request 2/
+Initial mockup request*
+
+# Character pipeline intermediates
+character-assets/**

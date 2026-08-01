@@ -2,19 +2,19 @@
   "name": "app-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Long-lived service owning auth, persistence, memory, and debrief analysis. See /ARCHITECTURE.md §3.2 and §3.4 (schema.sql).",
+  "description": "Long-lived service owning auth, persistence, memory, and debrief analysis. See /ARCHITECTURE.md §3.2 and §3.5 (migrations/).",
   "packageManager": "pnpm@10.12.3",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node --env-file=.env dist/index.js",
-    "dev": "node --env-file=.env --import tsx --watch src/index.ts",
+    "start": "node --env-file=.env dist/main.js",
+    "dev": "node --env-file=.env --import tsx --watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint .",
-    "db:migrate": "node --env-file=.env --import tsx src/migrate.ts",
+    "db:migrate": "node --env-file=.env --import tsx src/db/migrate.ts",
     "observability:run-checks": "node --env-file=.env --import tsx src/observability/run-checks.ts"
   },
   "dependencies": {

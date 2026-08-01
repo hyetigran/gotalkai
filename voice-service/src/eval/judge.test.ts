@@ -1,4 +1,4 @@
-import type { PersonaTurn } from '../persona';
+import type { PersonaTurn } from '../pipeline/persona';
 import { fakeAnthropicClient } from '../test-support/fake-anthropic';
 import type { GoldenEntry } from './golden-set-types';
 import { judgeTurn } from './judge';

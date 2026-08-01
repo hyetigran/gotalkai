@@ -1,4 +1,4 @@
-import type { TranscriptTurn } from '../persona';
+import type { TranscriptTurn } from '../pipeline/persona';
 
 /**
  * Ticket #28 (PRD §10): a single frozen golden-set entry. Append-only

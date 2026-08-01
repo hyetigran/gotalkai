@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { generatePersonaTurn } from '../persona-turn';
-import { PERSONA_DEFINITIONS } from '../personas';
+import { generatePersonaTurn } from '../pipeline/persona-turn';
+import { PERSONA_DEFINITIONS } from '../pipeline/personas';
 import type { EvalEntryResult, GateResult } from './gates';
 import { allGatesPassed, computeGates } from './gates';
 import { GOLDEN_SET } from './golden-set';

@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
-import { applySchema } from '../schema';
-import { recordTurn } from '../turns';
+import { applySchema } from '../db/schema';
+import { recordTurn } from '../turns/turns';
 import { abandonmentByLevel, computeQualityMetricsReport, falseInterruptionRate, repeatRequestRate, revealRate } from './metrics';
 
 /** Runs against a REAL local Postgres instance, matching turns.test.ts's own precedent. */
