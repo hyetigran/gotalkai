@@ -13,6 +13,7 @@ Secondary: keep docs (`ARCHITECTURE.md`, Memory Bank) honest about current vs ta
 
 ## Recent changes
 
+- `app-service/` Nest-inspired modules under `src/` (`config/`, `db/`, `http/`, `learners/`, …); ordered `migrations/`; entry `main.ts`.
 - `voice-service/` Nest-inspired module layout: `config/`, `realtime/`, `pipeline/`, `integrations/`, `observability/` (entry `main.ts`).
 - **Ticket #40 (PRD §7.9):** turn-taking redesigned from server-side VAD to client hold-to-talk
   (press/release, `commit` flag is the turn boundary) — real-device echo/false-interruption failure

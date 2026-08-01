@@ -50,7 +50,7 @@ While held and learner has the floor → suspend turn detection + mute STT. Hold
 - `persona_memories` — callbacks; never log or put in traces.
 - `observations` vs `debrief_items` — keep all; show three.
 - Zod only at: persona LLM output, client/server API, env at boot — **not** ORM↔Postgres (ADR-0007).
-- Schema file: `app-service/schema.sql`.
+- Schema file: `app-service/migrations/` (ordered SQL; `schema.sql` is a pointer).
 
 ## Agent / delivery patterns (this repo)
 

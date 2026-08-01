@@ -17,7 +17,7 @@
 | `memory-bank/` | Session continuity for agents |
 | `.cursor/rules/` | Always-on project agent rules (incl. code-review → commit) |
 
-Schema: `app-service/schema.sql` (not a root `schema.sql`). Eval: `voice-service/src/eval/`.
+Schema: `app-service/migrations/` (not a root full dump — `schema.sql` points there). Eval: `voice-service/src/eval/`.
 
 ## Mobile stack (`mobile/`)
 

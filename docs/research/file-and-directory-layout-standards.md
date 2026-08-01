@@ -4,7 +4,7 @@
 
 **Scope:** Primary-source conventions for (1) database-backed Node/TypeScript + Postgres apps with SQL schema/migrations, (2) Node.js TypeScript HTTP and long-lived services, and (3) React Native / Expo apps using Expo Router and feature-based structure. Claims are tied to official docs, first-party scaffolding, RFCs/specs, or first-party templates (especially Obytes, which LingoAI’s `mobile/` app is based on). Where a source does **not** prescribe layout, that is stated explicitly. De facto community habits are labeled as such and not treated as official standards.
 
-**Repo grounding:** LingoAI currently has `app-service/` (Node/TS + `pg` + Zod; root `schema.sql`; flat `src/*.ts`; `dist/`; Jest), `voice-service/` (Node/TS realtime; flat-ish `src/` with `eval/`, `stress/`, `test-support/`), and `mobile/` (Expo Router under `src/app/`, features under `src/features/`, Obytes-derived layout).
+**Repo grounding:** LingoAI currently has `app-service/` (Node/TS + `pg` + Zod; `migrations/` + Nest-inspired `src/` modules; `dist/`; Jest), `voice-service/` (Node/TS realtime; Nest-inspired modules under `src/`), and `mobile/` (Expo Router under `src/app/`, features under `src/features/`, Obytes-derived layout).
 
 ---
 
@@ -91,7 +91,7 @@ Relevant as a widely cited migration-tool mental model:
 
 ### 1.2 De facto conventions (not official)
 
-- **Single `schema.sql` at service root** used as idempotent “apply full DDL” (LingoAI `app-service` today) is a common early-stage / ops-friendly pattern for small schemas, but it is **not** what Prisma, Drizzle Kit, node-pg-migrate, or Flyway document as the primary evolution model. Those tools center on **ordered migration history**.
+- **Single `schema.sql` at service root** used as idempotent “apply full DDL” is a common early-stage / ops-friendly pattern for small schemas, but it is **not** what Prisma, Drizzle Kit, node-pg-migrate, or Flyway document as the primary evolution model. Those tools center on **ordered migration history**. LingoAI `app-service` now uses `migrations/` + a journal; root `schema.sql` is only a pointer.
 - Colocating SQL under `src/db/` or `db/` is common in Node services; migration tools generally allow any path via config.
 - Keeping **raw SQL as source of truth** (no ORM schema language) is a valid stack choice; official migration tools still expect **incremental files + a journal table**, not only a rewritable full dump.
 
@@ -242,16 +242,21 @@ app-service/
 ├── package.json            # "main" / scripts point at dist or tsx entry
 ├── tsconfig.json           # rootDir: src, outDir: dist
 ├── migrations/             # see §1
-├── schema.sql              # optional baseline
+├── schema.sql              # pointer to migrations baseline
 ├── dist/
 └── src/
-    ├── index.ts            # process entry
-    ├── server.ts           # HTTP wiring
-    ├── env.ts
-    ├── db.ts
-    ├── migrate.ts
-    ├── <domain>.ts
-    └── <domain>.test.ts
+    ├── main.ts
+    ├── config/
+    ├── db/
+    ├── http/
+    ├── learners/
+    ├── turns/
+    ├── memories/
+    ├── debrief/
+    ├── scenarios/
+    ├── address-book/
+    ├── benchmark/
+    └── observability/
 ```
 
 #### `voice-service` (long-lived realtime)
@@ -393,9 +398,7 @@ High-level comparison only (not a full audit):
 
 ### `app-service/`
 
-- **Aligned:** `src/` + `dist/` via `rootDir`/`outDir`; colocated `*.test.ts` (Jest-official); explicit migrate CLI (good operational practice vs migrate-on-boot).
-- **Gap vs migration-tool standards:** root **`schema.sql` as the primary apply path** matches an idempotent full-DDL style, not the incremental `migrations/` (or `prisma/migrations` / `drizzle/`) model documented by node-pg-migrate, Prisma, Drizzle, and Flyway. Introducing ordered migrations would align with those primary sources when schema evolution and multi-environment history matter more.
-- **Nest/Express folder taxonomies:** not applicable as mandates; flat domain files are acceptable for current size.
+- **Aligned:** Nest-inspired domain folders under `src/` (`config/`, `db/`, `http/`, `learners/`, `turns/`, `memories/`, `debrief/`, `scenarios/`, `address-book/`, `benchmark/`, `observability/`); `src/` + `dist/` via `rootDir`/`outDir`; colocated `*.test.ts` (Jest-official); explicit migrate CLI; ordered `migrations/` with `schema_migrations` journal. Root `schema.sql` is a pointer to the baseline migration.
 
 ### `voice-service/`
 
