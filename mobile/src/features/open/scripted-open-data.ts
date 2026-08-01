@@ -10,7 +10,6 @@
  */
 export const SCRIPTED_OPEN_DATA = {
   openDay: 'Tuesday · 8 min',
-  whoElse: 'Who else →',
   settingsLink: 'Settings',
   personaName: 'Валентина Сергеевна',
   personaMeta: '78 · Yaroslavl · retired librarian',

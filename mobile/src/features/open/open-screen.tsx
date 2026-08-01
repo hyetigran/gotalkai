@@ -33,18 +33,14 @@ export function OpenScreen() {
 
   return (
     <View className="flex-1 bg-paper px-[22px] pt-[66px] pb-[44px]">
+      {/* UAT: tabs restructuring — "who else" used to push to Address book from here; now that it's the Home tab (src/app/(tabs)/_layout.tsx), the tab bar already provides that navigation, so the in-header link was just a redundant second path to the same place. */}
       <View className="flex-row items-baseline justify-between gap-[12px]">
         <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
           {openData.openDay}
         </Text>
-        <View className="flex-row items-baseline gap-[14px]">
-          <Pressable onPress={() => router.push('/address-book')} accessibilityRole="button" accessibilityLabel={openData.whoElse}>
-            <Text className="text-[13px] text-accent">{openData.whoElse}</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel={openData.settingsLink}>
-            <Text className="text-[13px] text-ink/42">{openData.settingsLink}</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel={openData.settingsLink}>
+          <Text className="text-[13px] text-ink/42">{openData.settingsLink}</Text>
+        </Pressable>
       </View>
 
       {/* Shadow on this outer wrapper, clipping on the inner one — RN/iOS
