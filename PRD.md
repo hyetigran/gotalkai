@@ -2,7 +2,9 @@
 
 **Status:** Draft v0.1
 **Owner:** _(you)_
-**Last updated:** 27 July 2026
+**Last updated:** 31 July 2026 — §5.6, §6.2, §7.9, §7.10 revised: hold-to-talk
+replaces open-mic + VAD after a real-device echo/false-interruption failure
+(risk 10, §14)
 
 ---
 
@@ -143,6 +145,16 @@ makes a learner *feel* fluent long before they are. It is also the mechanism
 that delivers large volumes of comprehensible input without demanding output
 the learner cannot yet produce.
 
+**Traded away by the §6.2 hold-to-talk redesign.** Backchanneling requires an
+open mic — nobody presses a button fast enough to interject *правда?*
+mid-story without breaking her flow, which defeats the point. §6.2's original
+design chose open-mic specifically to preserve this; the redesign accepts its
+loss as the cost of eliminating the open-mic echo/noise-sensitivity problem
+without needing real acoustic echo cancellation first (see §7.10). Revisit if
+`react-native-webrtc`'s AEC path (already built for the scripted demo, not yet
+wired to the live pipeline) turns out to handle background noise well enough
+to bring the open mic back — see risk 10 (§14).
+
 ### 5.7 Pronunciation
 
 **Intelligibility, not native-likeness.** No percentage scores. Two mechanisms:
@@ -223,50 +235,43 @@ Transliteration also actively teaches error: Latin letters carry English
 phonetic expectations, and vowel reduction and palatalization — the two largest
 intelligibility factors in Russian — cannot be represented in it at all.
 
-**Mic is open for the whole session. There is no press-to-speak.**
-Push-to-talk would break backchanneling (§5.6) — nobody will press a button to
-say *правда?* mid-story — and would remove barge-in and stop training
-turn-taking, which is part of the skill. It also would not save the VAD work,
-since users forget to press stop and silence-based auto-stop is needed anyway.
+**Hold to talk. There is no open mic.** *(Revised — originally "mic is open
+for the whole session," rejected specifically to preserve backchanneling and
+barge-in. Reversed after real-device testing: with no acoustic echo
+cancellation, an always-open mic picked up Валентина's own TTS audio coming
+back out of the phone speaker, misread it as the learner interrupting, and
+fell into a self-sustaining loop of cancelled turns and silent fallback
+replies. See §7.10 and risk 10, §14.)*
 
-**Hold to think.** A button whose meaning is *wait, I'm still going*. While
-held: turn detection is suspended and **STT is muted**. Release resumes normal
-behaviour. It does not gate the learner's audio in the push-to-talk sense — it
-buys them time, so it costs nothing when unused and exists precisely when
-hesitation would otherwise get them cut off.
+Press and hold to talk; release to send. Release is the turn boundary — no
+silence-detection, no VAD, no threshold to mistune. The button is disabled
+while she's speaking or generating a reply; the learner can only press once
+it's genuinely their turn. This also directly fixes what used to be "the
+hardest UX problem in the product" (a B1 learner hunting for a word
+mid-sentence, cut off by silence-threshold VAD): there is no threshold to cut
+them off. They keep holding for as long as they need.
 
-Muting STT while held gives a second use for free: someone speaks to the
-learner in the room and they hold to keep it out of the transcript. Stray room
-audio transcribed as learner speech is a worse failure than losing a few
-muttered fragments.
+**Cost, stated plainly:** backchanneling (§5.6) no longer works — you can't
+press a button fast enough to interject *правда?* without breaking her
+flow — and barge-in (interrupting her mid-sentence) is gone; the learner
+waits for her to finish. Both were deliberately traded for structurally
+eliminating the echo/false-interruption failure mode without first needing
+real AEC.
 
-**Teaching it: no tutorial, no modal.** Three mechanisms, in order of
-importance:
+**Teaching it: no tutorial, no modal.**
 
-1. **A live level meter responding to their voice from the first second.**
-   This teaches "always on" wordlessly and faster than any copy. Its absence is
-   why people tap buttons repeatedly in voice apps — they cannot tell whether
-   they are being heard. Highest-leverage element on the screen, and it is not
-   the button.
-2. **Progressive disclosure.** The button is not visible at session start. It
-   fades in the first time the learner goes quiet mid-utterance — discovered at
-   the moment it solves a problem they are having. Learners who never hesitate
-   never see it.
-3. **One line on the Open screen, first session only:** *She'll hear you the
-   whole time. Just talk.*
+1. **The button is the only way to talk, so its meaning is discovered on
+   first use, not taught in advance.** A live level meter responds to their
+   voice while the button is held — the same immediate "am I being heard"
+   feedback the old open-mic design used, just scoped to the hold window
+   instead of the whole session.
+2. **One line on the Open screen, first session only:** *Hold the button to
+   talk to her. Let go when you're done.*
 
-**Copy: "hold to think", never "pause".** Pause implies the session stops and
-Валентина freezes. Holding the floor is what is actually happening. Hold rather
-than tap-to-toggle, because a toggle can be forgotten and leave her waiting
-indefinitely.
-
-Валентина is the confirmation signal — hold and she waits visibly, in
-character; release and she responds. That teaches the mechanic more
-convincingly than a label, and it is free.
-
-**Push-to-talk ships as a setting**, for noisy environments and for learners
-who find an open mic stressful, with the tradeoff stated plainly: it disables
-backchanneling and interruption.
+**Copy: "hold to talk."** Валентина is still the confirmation signal —
+pressing shows her actively listening, in character; releasing shows her
+responding. That teaches the mechanic more convincingly than a label, and it
+is free.
 
 **Debrief** — session length, `she understood you 11 times of 14`,
 `you understood her without help 12 of 14`, three ranked patterns, one button
@@ -338,8 +343,9 @@ custom dev client, TypeScript, Expo Router, Zustand + MMKV, Reanimated/Moti,
 multi-environment config, and 10+ CI workflows. We use roughly 40% of it — the
 value is tooling and CI, not the component library.
 
-Added on top: `expo-audio`, `react-native-webrtc` (echo cancellation is
-non-negotiable), and later the Rive runtime.
+Added on top: `expo-audio`, `react-native-webrtc` (used by the scripted demo;
+carries real acoustic echo cancellation, not currently required by the live
+pipeline's hold-to-talk model — see §6.2, §7.10), and later the Rive runtime.
 
 **The conversation screen sits outside the starter's data-fetching
 conventions.** React Query and axios are a request/response idiom; our core
@@ -358,7 +364,8 @@ Two things the starter does not solve:
 
 ### 7.2 Pipeline: cascaded, not speech-to-speech
 
-`VAD → streaming STT → LLM → stress annotation → sentence-chunked TTS`
+`hold-to-talk (press/release) → streaming STT → LLM → stress annotation →
+sentence-chunked TTS`
 
 Speech-to-speech APIs are faster and rejected anyway, because three product
 features depend on data they hide:
@@ -406,9 +413,10 @@ STT must provide:
   this: the "she doesn't understand you" mechanic (§5.7) and detecting Russian
   case errors before ASR normalisation repairs them (§7.10). A top-1 transcript
   string is disqualifying.
-- **Billing by audio duration, not connection time.** VAD gating (§9) saves
-  ~3x on this line and saves nothing against connection-time billing. This rules
-  out providers that meter the open session.
+- **Billing by audio duration, not connection time.** Hold-to-talk (§9) bounds
+  STT audio to exactly the held duration — tighter than the VAD gating this
+  used to rely on — and saves nothing against connection-time billing. This
+  rules out providers that meter the open session.
 
 TTS must provide:
 
@@ -549,43 +557,64 @@ filler («простите, что-то я задумалась»), log the raw 
 
 ### 7.9 Turn detection
 
-**The hold-to-think button (§6.2) is a hard override.** While held, turn
-detection is suspended entirely and no audio is sent to STT. This is a
-deterministic escape hatch from the model's judgement, and it extends the VAD
-gating saving in §9 slightly.
+**Revised: press/release replaces VAD.** The hold-to-talk button (§6.2) *is*
+turn detection now — pressing opens the mic and starts forwarding audio to
+STT; releasing is the commit signal. There is no silence-threshold VAD, no
+speech/silence classifier, and no per-device RMS threshold to calibrate. This
+is what eliminates the failure mode that motivated the redesign in the first
+place: a threshold tuned for one device's mic/speaker/room combination has no
+way to also be correct for the next learner's phone.
+
+A near-instant press-release (an accidental tap) is not special-cased —
+whatever audio was captured, however short, goes to STT exactly like any
+other turn, and an empty or unintelligible result already falls through to
+the existing "she doesn't understand you" / low-confidence handling (§5.7).
 
 Edge cases to specify before Phase 2:
 
-- **Auto-release timeout.** A learner who holds and puts the phone down must
-  not hang the session. Release after ~45s and resume normal behaviour.
-- **Held during her turn.** The button means "hold the floor", which only
-  applies when the learner has it. Holding while Валентина speaks should not
-  interrupt her — decide whether it queues an intent to speak or does nothing.
-- **Held at session start**, before the learner has spoken at all.
+- **Button disabled while she's speaking or generating a reply.** The learner
+  can only press once it's genuinely their turn — this replaces the old
+  hold-to-think "held during her turn" edge case outright, since there's no
+  window where pressing would need a special rule.
+- **Maximum hold duration.** Unlike hold-to-think (which only suspended
+  *sending*, cheap to hold indefinitely), hold-to-talk actively streams to a
+  paid STT vendor for as long as it's held. Needs an upper bound (e.g. cut off
+  and commit at ~60s) so a phone left pressed in a pocket doesn't run an
+  unbounded bill.
+- **Held at session start**, before she's finished her opening line.
+
+**This also resolves what used to be "the hardest UX problem in the
+product."** A B1 learner pausing mid-sentence hunting for a word used to be
+constantly interrupted by silence-threshold VAD, regardless of tuning —
+per-level timeouts and Pipecat's SmartTurnDetection were both being
+considered specifically to soften that. Under hold-to-talk, the learner
+*is* the turn-detector: they keep holding for exactly as long as they need,
+and there is no threshold to get wrong. Risk 4 (§14) is resolved by this
+redesign, not mitigated.
 
 **Instrument the teaching, not just the feature.** Track first-use session and
-holds per session. If almost nobody holds it, the button is either
-undiscoverable or unnecessary — false interruption rate distinguishes them.
-High interruptions with low hold usage means they never found it.
-
-The hardest UX problem in the product. A B1 learner pauses mid-sentence
-hunting for a word, repeatedly. Silence-threshold VAD will interrupt them
-constantly, and being cut off is the most demoralising thing that can happen
-to a nervous speaker.
-
-**Timeout is a per-level parameter**, not a constant. Patience is the repair
-dial expressed in milliseconds.
-
-Pipecat's LLM-based SmartTurnDetection is materially better here than
-threshold VAD and is the main reason the Python option stays open.
+hold durations. An unusually high rate of near-instant press-releases (people
+tapping instead of holding) means the interaction isn't landing and the
+teaching copy (§6.2) needs to work harder.
 
 ### 7.10 Known traps
 
-- **Echo cancellation** — her voice re-entering the mic and being transcribed
-  as the learner. WebRTC gives AEC free; raw PCM capture does not.
-- **Barge-in** — interruption must stop playback, cancel in-flight TTS, cancel
-  LLM generation, and reset stream state. Missing any step means she talks
-  over the user or finishes an abandoned thought.
+- **Echo cancellation — no longer applicable under hold-to-talk.** The
+  original trap: her voice re-entering the mic and being transcribed as the
+  learner (WebRTC gives AEC free; raw PCM capture does not). This is what
+  actually happened on first real-device test of the live pipeline — the mic
+  was open while she spoke, no AEC existed on that capture path, and the
+  resulting false "interruptions" locked the session into a silent fallback
+  loop with no real learner speech in it at all. Hold-to-talk fixes this
+  structurally (mic is never open while she's speaking) rather than by adding
+  AEC — see risk 10 (§14) for revisiting AEC later to bring backchanneling
+  back.
+- **Barge-in — removed, not a trap to mitigate.** Interrupting her
+  mid-sentence is no longer a supported interaction (§6.2); the button is
+  disabled while she's speaking. The old requirement (stop playback, cancel
+  in-flight TTS, cancel LLM generation, reset stream state) only applies now
+  to the text-input path's own interruption case, which is unaffected by this
+  redesign.
 - **ASR normalisation hides case errors.** Recognition language models repair
   learner inflection errors before the analyser sees them. Mitigate with
   word-level confidence and n-best alternatives; prefer targets that survive
@@ -644,8 +673,10 @@ turn detection, and stress annotation are together under a cent.
 1. **TTS provider** — roughly $15/1M chars to $66/1M chars across vendors.
 2. **Prompt caching** — 14x on the persona LLM line. Highest-return hour of
    work in the build.
-3. **VAD gating on STT** — bills 2.4 minutes instead of 8. Requires a provider
-   billing *audio duration*, not connection time.
+3. **Hold-to-talk bounding STT audio** — bills only the held duration instead
+   of the full 8-minute connection (originally VAD gating did this job;
+   press/release does it more tightly — see §7.9). Requires a provider billing
+   *audio duration*, not connection time.
 4. **Turn length** — the "one or two sentences" rule is a margin control.
 
 **Requirement: a daily session cap.** A power user at two sessions a day on
@@ -776,12 +807,17 @@ failures then cost something personally, which is what makes the signal honest.
 
 **What this covers well:**
 
-- Latency feel, turn detection, barge-in, echo, audio routing. Only a human in
-  the loop can judge whether 800ms feels alive.
+- Latency feel and audio routing. Only a human in the loop can judge whether
+  800ms feels alive. Turn detection, barge-in, and echo are no longer live
+  concerns under hold-to-talk (§7.9, §7.10) — replaced by whether hold-to-talk
+  itself feels natural or tedious over real daily use, which dogfooding is
+  exactly positioned to catch.
 - **Grammaticality**, more than expected. Recognition and production are
   different skills — a fluent speaker hears that a Russian would not say
   something well before they can explain why. English calques are catchable.
-- Whether the hold-to-think button and tap-to-reveal are fiddly in practice.
+- Whether the hold-to-talk button and tap-to-reveal are fiddly in practice,
+  and whether losing backchanneling (§5.6) is felt as a real loss in daily
+  use or turns out not to matter much outside storytelling scenarios.
 - **The repetition wall (risk 3).** Thirty consecutive days answers whether it
   arrives at week three. Nothing else surfaces this before launch.
 - **Partial signal on the premise (risk 1).** Opening it because you want to
@@ -810,12 +846,13 @@ insurance — see §10. It does not drop to zero.
 | 1 | Premise unvalidated — will adults voice-chat with an AI grandmother? | **Accepted, unvalidated.** Pre-build validation skipped by decision. Partial signal from owner dogfooding (§13). Otherwise validated in-market: instrument abandonment turn and session-2 return rate from first release, and treat weak session-2 return as the premise failing rather than a retention problem to optimise. | Accepted risk |
 | 2 | Session one has no memory, and it is the highest-stakes session in the funnel | Seed 1–2 memories during onboarding | Open |
 | 3 | Repetition wall — 20 scenarios repeat inside 3 weeks at daily use | Memory-driven population; persona world-state; complication permutation. Repetition is perceived in the *opening*, so invest there first. **Owner dogfooding surfaces this pre-launch** — 30 consecutive days is the test. | Deferred, instrumented |
-| 4 | Turn detection cuts off hesitant learners | Per-level timeout; false-interruption metric; Pipecat option held open | Open |
+| 4 | ~~Turn detection cuts off hesitant learners~~ | Resolved by the §7.9 hold-to-talk redesign — the learner controls the turn boundary directly, no silence threshold exists to get wrong | **Resolved** |
 | 5 | Russian TTS mis-stresses generated text | Stress annotation stage | Designed |
 | 6 | Onboarding/placement undesigned | Make session zero itself the placement; never announce assessment | Open |
 | 7 | Scope realism — voice pipeline, RN app, Rive, content, evals, observability | Honest timeline before committing | Open |
 | 8 | Smaller market than Spanish | Accepted trade for sharper positioning and weaker competition | Accepted |
 | 9 | Owner's own gaps become the product's priorities — structures taxonomy drifts toward what the owner needs rather than what a typical lapsed speaker needs | Audit §5.8 priority order against external reference (CEFR descriptors, ТРКИ syllabus, a teacher's view) rather than felt difficulty | Open |
+| 10 | Hold-to-talk (§6.2, §7.9) trades away backchanneling (§5.6) and barge-in — both named, deliberate design choices in the original PRD, reversed after real-device echo/false-interruption failures with no AEC. Unknown whether the loss is felt as significant in daily use, and whether `react-native-webrtc`'s AEC (already built for the scripted demo, not wired to the live pipeline) would resolve the original problem well enough to bring the open mic back | Owner dogfooding tracks whether it's missed (§13). If AEC alone (no VAD retuning) resolves the echo-specific failure cleanly, revisit reverting to open-mic + AEC, keeping hold-to-talk as the opt-in setting the original §6.2 design intended | Open |
 
 ---
 
