@@ -11,6 +11,7 @@ Bootstrap the product codebase and agent workflow after PRD + ADRs:
 
 ## Recent changes
 
+- Research note: `docs/research/file-and-directory-layout-standards.md` (DB migrations, Node/TS services, Expo/Obytes mobile). Main gap called out: `app-service` full `schema.sql` vs incremental `migrations/`.
 - `ARCHITECTURE.md` written from PRD §7 + ADRs + current `mobile/` scaffold state.
 - PRD drafted (`PRD.md`); ADRs 0001–0003 accepted (skip WoZ; hold-to-think floor rule; Sonnet 5 persona LLM).
 - `mobile/` scaffold + design tokens; splash no longer hangs on first launch.

@@ -8,6 +8,7 @@
 | `ARCHITECTURE.md` | System architecture map (target + current) |
 | `docs/adr/` | Architecture decision records |
 | `docs/agents/` | Issue tracker, triage, domain, versioning for agents |
+| `docs/research/` | Primary-source research notes (e.g. layout standards) |
 | `mobile/` | Expo / React Native app (primary codebase today) |
 | `memory-bank/` | Session continuity for agents |
 | `.cursor/rules/` | Always-on project agent rules (incl. code-review → commit) |
