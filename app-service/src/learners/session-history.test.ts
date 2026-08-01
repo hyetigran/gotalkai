@@ -76,20 +76,20 @@ describe('getSessionHistoryForLearner', () => {
     const newerSessionId = await makeSession(learnerId, new Date('2026-07-15T10:00:00Z'));
     await makeTurn(newerSessionId, 'learner');
 
-    const history = await getSessionHistoryForLearner(pool, learnerId);
+    const page = await getSessionHistoryForLearner(pool, learnerId);
 
-    expect(history).toHaveLength(2);
-    expect(history[0]).toMatchObject({ id: newerSessionId, turnCount: 1, topPattern: null });
-    expect(history[1]).toMatchObject({ id: olderSessionId, turnCount: 2, topPattern: { kind: 'aspect_error', detail: {} } });
+    expect(page.sessions).toHaveLength(2);
+    expect(page.sessions[0]).toMatchObject({ id: newerSessionId, turnCount: 1, topPattern: null });
+    expect(page.sessions[1]).toMatchObject({ id: olderSessionId, turnCount: 2, topPattern: { kind: 'aspect_error', detail: {} } });
   });
 
   it('includes a session with zero turns and zero debrief items rather than omitting it', async () => {
     const learnerId = await makeLearner();
     const sessionId = await makeSession(learnerId, new Date());
 
-    const history = await getSessionHistoryForLearner(pool, learnerId);
+    const page = await getSessionHistoryForLearner(pool, learnerId);
 
-    expect(history).toEqual([{ id: sessionId, startedAt: expect.any(String), endedAt: null, turnCount: 0, topPattern: null }]);
+    expect(page.sessions).toEqual([{ id: sessionId, startedAt: expect.any(String), endedAt: null, turnCount: 0, topPattern: null }]);
   });
 
   it('never returns another learner\'s sessions', async () => {
@@ -97,8 +97,63 @@ describe('getSessionHistoryForLearner', () => {
     const otherLearnerId = await makeLearner();
     await makeSession(otherLearnerId, new Date());
 
-    const history = await getSessionHistoryForLearner(pool, learnerId);
+    const page = await getSessionHistoryForLearner(pool, learnerId);
 
-    expect(history).toEqual([]);
+    expect(page.sessions).toEqual([]);
+  });
+
+  describe('pagination (learner feedback: "loading more on scroll")', () => {
+    it('nextCursor is null when every session fits on one page', async () => {
+      const learnerId = await makeLearner();
+      await makeSession(learnerId, new Date());
+
+      const page = await getSessionHistoryForLearner(pool, learnerId, { limit: 5 });
+
+      expect(page.sessions).toHaveLength(1);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it('a limit smaller than the real session count returns exactly `limit` rows and a real nextCursor', async () => {
+      const learnerId = await makeLearner();
+      const sessionIds = [];
+      for (let i = 0; i < 3; i++)
+        sessionIds.push(await makeSession(learnerId, new Date(2026, 6, 1 + i, 10)));
+
+      const page = await getSessionHistoryForLearner(pool, learnerId, { limit: 2 });
+
+      expect(page.sessions.map(session => session.id)).toEqual([sessionIds[2], sessionIds[1]]);
+      expect(page.nextCursor).toEqual({ startedAt: page.sessions[1]?.startedAt, id: sessionIds[1] });
+    });
+
+    it('passing the previous page\'s nextCursor back returns the next older page, with no overlap or gap', async () => {
+      const learnerId = await makeLearner();
+      const sessionIds = [];
+      for (let i = 0; i < 3; i++)
+        sessionIds.push(await makeSession(learnerId, new Date(2026, 6, 1 + i, 10)));
+
+      const firstPage = await getSessionHistoryForLearner(pool, learnerId, { limit: 2 });
+      expect(firstPage.nextCursor).not.toBeNull();
+      const secondPage = await getSessionHistoryForLearner(pool, learnerId, { limit: 2, cursor: firstPage.nextCursor! });
+
+      expect(secondPage.sessions.map(session => session.id)).toEqual([sessionIds[0]]);
+      expect(secondPage.nextCursor).toBeNull();
+    });
+
+    it('tie-breaks on id when two sessions share the exact same started_at, still with no duplicate or skipped row across pages', async () => {
+      const learnerId = await makeLearner();
+      const sharedTimestamp = new Date('2026-07-10T10:00:00.000Z');
+      const firstId = await makeSession(learnerId, sharedTimestamp);
+      const secondId = await makeSession(learnerId, sharedTimestamp);
+      // ORDER BY id DESC on a tie: the lexicographically larger id comes first (page 1's "newer" slot).
+      const [newerTiedId, olderTiedId] = [firstId, secondId].sort().reverse();
+
+      const firstPage = await getSessionHistoryForLearner(pool, learnerId, { limit: 1 });
+      expect(firstPage.sessions[0]?.id).toBe(newerTiedId);
+      expect(firstPage.nextCursor).toEqual({ startedAt: sharedTimestamp.toISOString(), id: newerTiedId });
+
+      const secondPage = await getSessionHistoryForLearner(pool, learnerId, { limit: 1, cursor: firstPage.nextCursor! });
+      expect(secondPage.sessions[0]?.id).toBe(olderTiedId);
+      expect(secondPage.nextCursor).toBeNull();
+    });
   });
 });

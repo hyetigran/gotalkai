@@ -918,6 +918,60 @@ describe('app service server', () => {
         { id: newerSessionId, startedAt: expect.any(String), endedAt: null, turnCount: 0, topPattern: null },
         { id: olderSessionId, startedAt: expect.any(String), endedAt: null, turnCount: 1, topPattern: null },
       ]);
+      expect(response.body?.nextCursor).toBeNull();
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/sessions?limit= paginates: a real nextCursor comes back, and passing it forward returns the next page with no overlap', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+      const sessionIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const session = await pool.query<{ id: string }>(
+          'INSERT INTO sessions (learner_id, started_at) VALUES ($1, $2) RETURNING id',
+          [learnerId, new Date(2026, 6, 1 + i, 10)],
+        );
+        sessionIds.push(session.rows[0]?.id as string);
+      }
+
+      const firstPage = await get(handle.port, `/learners/${learnerId}/sessions?limit=2`);
+      expect(firstPage.statusCode).toBe(200);
+      const firstIds = (firstPage.body?.sessions as { id: string }[]).map(session => session.id);
+      expect(firstIds).toEqual([sessionIds[2], sessionIds[1]]);
+      const nextCursor = firstPage.body?.nextCursor as { startedAt: string; id: string };
+      expect(nextCursor).not.toBeNull();
+
+      const secondPage = await get(
+        handle.port,
+        `/learners/${learnerId}/sessions?limit=2&cursorStartedAt=${encodeURIComponent(nextCursor.startedAt)}&cursorId=${nextCursor.id}`,
+      );
+      expect(secondPage.statusCode).toBe(200);
+      const secondIds = (secondPage.body?.sessions as { id: string }[]).map(session => session.id);
+      expect(secondIds).toEqual([sessionIds[0]]);
+      expect(secondPage.body?.nextCursor).toBeNull();
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /learners/:id/sessions rejects a cursorStartedAt without a matching cursorId with 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const learnerResponse = await post(handle.port, '/learners', {});
+      const learnerId = learnerResponse.body?.id as string;
+
+      const response = await get(handle.port, `/learners/${learnerId}/sessions?cursorStartedAt=${encodeURIComponent(new Date().toISOString())}`);
+      expect(response.statusCode).toBe(400);
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
       await handle.close();

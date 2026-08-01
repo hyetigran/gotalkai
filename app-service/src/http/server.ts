@@ -15,7 +15,7 @@ import { recordPersonaMemory, selectAndMarkCallbackMemory } from '../memories/pe
 import { PERSONA_IDS } from '../memories/personas';
 import { deleteLearner, recordAudioSamplingConsent } from '../learners/privacy';
 import { getScenarioViewForSession } from '../scenarios/scenario-view';
-import { getSessionHistoryForLearner } from '../learners/session-history';
+import { getSessionHistoryForLearner, sessionHistoryQuerySchema } from '../learners/session-history';
 import { DailySessionCapReachedError } from '../learners/session-cap';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from '../learners/sessions';
 import { issueSessionToken } from '../learners/session-token';
@@ -390,9 +390,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
       sendJson(res, 400, { status: 'error', message: 'invalid learner id' });
       return;
     }
+    const sessionsQueryParsed = sessionHistoryQuerySchema.safeParse({
+      limit: new URLSearchParams(queryString ?? '').get('limit') ?? undefined,
+      cursorStartedAt: new URLSearchParams(queryString ?? '').get('cursorStartedAt') ?? undefined,
+      cursorId: new URLSearchParams(queryString ?? '').get('cursorId') ?? undefined,
+    });
+    if (!sessionsQueryParsed.success) {
+      sendJson(res, 400, { status: 'error', message: 'invalid pagination params' });
+      return;
+    }
     try {
-      const sessions = await getSessionHistoryForLearner(pool, learnerId);
-      sendJson(res, 200, { status: 'ok', sessions });
+      const { limit, cursorStartedAt, cursorId } = sessionsQueryParsed.data;
+      const page = await getSessionHistoryForLearner(pool, learnerId, {
+        limit,
+        cursor: cursorStartedAt && cursorId ? { startedAt: cursorStartedAt, id: cursorId } : undefined,
+      });
+      sendJson(res, 200, { status: 'ok', sessions: page.sessions, nextCursor: page.nextCursor });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -617,9 +630,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   `learner_structures` B1-readiness data — see address-book.ts /
  *   docs/adr/0023 for what "B1-ready" is proxied from.
  * - `GET /learners/:id/sessions` — the History tab's real session list
- *   (tab restructuring, mobile `debrief-history-screen.tsx`): most
- *   recent `SESSION_HISTORY_LIMIT` sessions, newest first, each with a
- *   real turn count and its #1-ranked debrief pattern (null when the
+ *   (tab restructuring, mobile `debrief-history-screen.tsx`),
+ *   keyset-paginated newest-first: `?limit=` (default
+ *   `SESSION_HISTORY_PAGE_SIZE`, capped at `SESSION_HISTORY_MAX_LIMIT`)
+ *   and `?cursorStartedAt=&cursorId=` (both-or-neither — the previous
+ *   page's own `nextCursor`, echoed back verbatim). Each session carries
+ *   a real turn count and its #1-ranked debrief pattern (null when the
  *   session has none yet) — see session-history.ts.
  * - `POST /learners/:id/audio-sampling-consent` — records
  *   `audio_sampling_consent_at`, separate from any ToS-acceptance flow
