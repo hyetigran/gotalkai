@@ -179,3 +179,61 @@ describe('useTtsPlayback', () => {
     expect(MockPlayer.instances[0]?.removed).toBe(true);
   });
 });
+
+// Sibling describe, not nested — keeps each describe callback under this repo's max-lines-per-function limit.
+describe('useTtsPlayback playback watchdog (UAT: "after a 3 minute session, the persona\'s voice disappeared")', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('advances to the next chunk if didJustFinish never arrives — a real device confirmed AudioTrack init can fail natively with no JS-visible error at all', () => {
+    const { result } = renderHook(() => useTtsPlayback());
+    act(() => result.current.enqueue('chunk-0'));
+    act(() => result.current.enqueue('chunk-1'));
+    // MockPlayer.instances[0] never calls .finish() — simulates the silent native failure.
+
+    act(() => jest.advanceTimersByTime(15_000));
+
+    expect(MockPlayer.instances[0]?.removed).toBe(true);
+    expect(MockPlayer.instances).toHaveLength(2);
+    expect(MockPlayer.instances[1]?.played).toBe(true);
+  });
+
+  it('a late didJustFinish arriving after the watchdog already advanced is a no-op — does not double-advance the queue', () => {
+    const { result } = renderHook(() => useTtsPlayback());
+    act(() => result.current.enqueue('chunk-0'));
+    act(() => result.current.enqueue('chunk-1'));
+
+    act(() => jest.advanceTimersByTime(15_000)); // watchdog advances past chunk-0
+    // The now-stale chunk-0 player's listener fires anyway (a real race the native side could produce).
+    act(() => MockPlayer.instances[0]?.finish());
+
+    // Still exactly two players — the late finish didn't summon a third.
+    expect(MockPlayer.instances).toHaveLength(2);
+  });
+
+  it('stopAndClear cancels the pending watchdog — a barge-in mid-chunk must not let it fire later and tear down whatever new chunk is playing by then', () => {
+    const { result } = renderHook(() => useTtsPlayback());
+    act(() => result.current.enqueue('chunk-0')); // t=0, chunk-0's own watchdog deadline would be t=15000
+    act(() => jest.advanceTimersByTime(5_000)); // t=5000, well before that deadline
+
+    act(() => result.current.stopAndClear()); // must cancel chunk-0's watchdog
+    // A new turn starts right after the barge-in, same as a real interruption would produce.
+    act(() => result.current.enqueue('chunk-1')); // t=5000, chunk-1's own watchdog deadline is t=20000
+    const newFile = MockFile.instances[1];
+
+    // t=15000 — exactly chunk-0's original (should-be-cancelled) deadline,
+    // still 5s before chunk-1's own legitimate one. If stopAndClear didn't
+    // cancel chunk-0's timer, this is where it would wrongly fire and
+    // tear down chunk-1's still-in-flight player/file instead.
+    act(() => jest.advanceTimersByTime(10_000));
+
+    expect(MockPlayer.instances).toHaveLength(2); // no premature third player
+    expect(MockPlayer.instances[1]?.removed).toBe(false);
+    expect(newFile?.exists).toBe(true);
+  });
+});
