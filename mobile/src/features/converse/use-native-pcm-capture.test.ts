@@ -271,7 +271,7 @@ describe('useNativePcmCapture RECORD_AUDIO permission', () => {
   );
 });
 
-describe('useNativePcmCapture amplitude (docs/adr/0023)', () => {
+describe('useNativePcmCapture amplitude (docs/adr/0026)', () => {
   it('derives amplitude from each emitted frame via derivePcmAmplitude, and resets it to zero on stop', async () => {
     Platform.OS = 'android';
     const { result, rerender } = renderHook(

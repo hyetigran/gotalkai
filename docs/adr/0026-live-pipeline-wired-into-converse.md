@@ -2,7 +2,7 @@
 
 **Status:** accepted
 
-docs/adr/0023's own "What's still not done" section listed four items once its two structural gaps (credentials, native mic capture) closed. This ADR covers the first three of those: `converse-screen.tsx` now renders a real `LiveConverseScreen` when a real session exists, `POST /sessions`'s token flows through from Open to the live hook, and native capture feeds `VoiceConnection.sendAudioChunk`. The fourth item — on-device verification — is **not** addressed here and can't be: no physical Android device exists in this environment. Every design decision below is real, working code; none of it has run on hardware.
+docs/adr/0025's own "What's still not done" section listed four items once its two structural gaps (credentials, native mic capture) closed. This ADR covers the first three of those: `converse-screen.tsx` now renders a real `LiveConverseScreen` when a real session exists, `POST /sessions`'s token flows through from Open to the live hook, and native capture feeds `VoiceConnection.sendAudioChunk`. The fourth item — on-device verification — is **not** addressed here and can't be: no physical Android device exists in this environment. Every design decision below is real, working code; none of it has run on hardware.
 
 ## Routing: two full components, not one conditional hook call
 

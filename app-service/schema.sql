@@ -49,6 +49,25 @@ BEGIN
   END IF;
 END $$;
 
+-- Ticket #36 / docs/adr/0024: which calibration profile this learner's
+-- sessions draw their dial defaults from — distinct from *persona*
+-- (docs/adr/0023) and from *complication level* (ADR-0005); a learner
+-- can be on the heritage-speaker variant talking to either persona.
+-- `DEFAULT 'partner_learner'` correctly classifies every pre-#36 learner
+-- (the only calibration that has ever existed). Same idempotent
+-- information_schema-guarded pattern as `audio_sampling_consent_at`
+-- above, for the same deadlock-avoidance reason.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'learners' AND column_name = 'calibration_variant'
+  ) THEN
+    ALTER TABLE learners ADD COLUMN calibration_variant TEXT NOT NULL DEFAULT 'partner_learner'
+      CHECK (calibration_variant IN ('partner_learner', 'heritage_speaker'));
+  END IF;
+END $$;
+
 -- === sessions =================================================================
 -- "Stores the calibration actually used, so difficulty settings can be
 -- correlated against completion and abandonment" (PRD §8).
@@ -173,6 +192,31 @@ CREATE TABLE IF NOT EXISTS persona_memories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_persona_memories_learner_id ON persona_memories (learner_id);
+
+-- Ticket #34 AC #4 / docs/adr/0023: "Елена does not inherit or leak
+-- Валентина's memories" — this table had no persona concept at all
+-- before this ticket, since Валентина was the only one that existed.
+-- `DEFAULT 'valentina'` correctly classifies every pre-#34 row without a
+-- backfill: there is no other persona those rows could have belonged to.
+-- Same idempotent information_schema-guarded pattern as
+-- `learners.audio_sampling_consent_at` above, for the same
+-- deadlock-avoidance reason.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'persona_memories' AND column_name = 'persona_id'
+  ) THEN
+    ALTER TABLE persona_memories ADD COLUMN persona_id TEXT NOT NULL DEFAULT 'valentina';
+  END IF;
+END $$;
+
+-- Composite, not a bare persona_id index: every real query filters by
+-- (learner_id, persona_id) together (persona-memories.ts) — a single
+-- learner_id index (already present above) already makes the common
+-- "all of this learner's memories, any persona" path cheap, so this one
+-- exists specifically for the persona-scoped read/write path.
+CREATE INDEX IF NOT EXISTS idx_persona_memories_learner_persona ON persona_memories (learner_id, persona_id);
 
 -- === observations / debrief_items ==============================================
 -- Kept separate (PRD §8): "we keep everything the analyser noticed even

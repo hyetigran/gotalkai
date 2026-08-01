@@ -72,7 +72,7 @@ export function useNativePcmCapture({ enabled, onChunk, onError }: UseNativePcmC
   /**
    * Mirrors `use-mic-capture.ts`'s own `{ amplitude, ... }` shape
    * deliberately — callers driving the level meter off this hook instead
-   * (docs/adr/0023: live mode, so as not to run two concurrent Android
+   * (docs/adr/0026: live mode, so as not to run two concurrent Android
    * audio-capture sessions competing for the mic) shouldn't need a
    * different contract to do it. Derived from each frame's real samples
    * via `derivePcmAmplitude`, not a separate polled metering reading —

@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { sendHealthAlert } from '../alerting';
 import { loadEnv } from '../env';
 import { generatePersonaTurn } from '../persona-turn';
+import { PERSONA_DEFINITIONS } from '../personas';
 import { getCanarySet } from './canary';
 import { computeGates } from './gates';
 import { judgeTurn } from './judge';
@@ -31,7 +32,8 @@ export async function runCanary(client: Anthropic): Promise<EvalReport> {
   const results: EvalReport['results'] = [];
   for (const entry of getCanarySet()) {
     const transcript = [...entry.history, { speaker: 'learner' as const, text: entry.learnerTurn }];
-    const { turn, fellBackToFiller } = await generatePersonaTurn(client, transcript, {});
+    // Ticket #34: the canary set is drawn from golden-set.ts, authored specifically against Валентина — same reasoning as run-eval.ts.
+    const { turn, fellBackToFiller } = await generatePersonaTurn(client, transcript, PERSONA_DEFINITIONS.valentina, {});
     const mechanicalResults = runMechanicalAssertions({ entry, turn, fellBackToFiller });
 
     let judgeScore = null;

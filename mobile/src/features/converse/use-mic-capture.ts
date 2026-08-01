@@ -22,7 +22,7 @@ type UseMicCaptureOptions = {
 
 /**
  * `record()`'s TS signature is `void` (synchronous), but confirmed on a
- * physical device (docs/adr/0024's on-device testing pass) that it can
+ * physical device (docs/adr/0026's on-device testing pass) that it can
  * genuinely throw a native `IllegalStateException` — this file's own
  * header comment already flagged real hardware as unverified, and this
  * is exactly the gap that disclosure predicted. Uncaught, that throw

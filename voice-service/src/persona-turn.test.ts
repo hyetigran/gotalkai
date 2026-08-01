@@ -1,7 +1,10 @@
 import type { PersonaTurn, TranscriptTurn } from './persona';
 import { FILLER_LINE } from './persona';
 import { buildPersonaTurnRequest, extractPartialFields, generatePersonaTurn } from './persona-turn';
+import { PERSONA_DEFINITIONS } from './personas';
 import { fakeAnthropicClient, fakeMessageStream } from './test-support/fake-anthropic';
+
+const valentina = PERSONA_DEFINITIONS.valentina;
 
 describe('extractPartialFields', () => {
   it('finds nothing in an empty or unrelated snapshot', () => {
@@ -38,19 +41,19 @@ describe('buildPersonaTurnRequest', () => {
   ];
 
   it('pins the model and disables thinking, per ADR-0003', () => {
-    const request = buildPersonaTurnRequest(transcript);
+    const request = buildPersonaTurnRequest(transcript, valentina);
     expect(request.model).toBe('claude-sonnet-5');
     expect(request.thinking).toEqual({ type: 'disabled' });
   });
 
   it('sets low effort and a JSON-schema structured-output format, per ADR-0003 / AC #1', () => {
-    const request = buildPersonaTurnRequest(transcript);
+    const request = buildPersonaTurnRequest(transcript, valentina);
     expect(request.output_config?.effort).toBe('low');
     expect(request.output_config?.format?.type).toBe('json_schema');
   });
 
   it('maps the transcript onto messages and includes the cached identity system prompt', () => {
-    const request = buildPersonaTurnRequest(transcript);
+    const request = buildPersonaTurnRequest(transcript, valentina);
     expect(request.messages).toEqual([
       { role: 'assistant', content: 'Привет!' },
       { role: 'user', content: 'Здравствуйте!' },
@@ -60,8 +63,15 @@ describe('buildPersonaTurnRequest', () => {
   });
 
   it('handles an empty transcript (session start)', () => {
-    const request = buildPersonaTurnRequest([]);
+    const request = buildPersonaTurnRequest([], valentina);
     expect(request.messages).toEqual([]);
+  });
+
+  it('ticket #34 AC #1: uses whichever persona is passed, not Валентина hardcoded — Елена\'s system prompt for Елена\'s session', () => {
+    const elena = PERSONA_DEFINITIONS.elena;
+    const request = buildPersonaTurnRequest(transcript, elena);
+    expect(request.system).toEqual(elena.systemPromptBlocks);
+    expect(request.system).not.toEqual(valentina.systemPromptBlocks);
   });
 });
 
@@ -82,7 +92,7 @@ describe('generatePersonaTurn', () => {
 
   it('returns the validated turn on success, with fellBackToFiller false', async () => {
     const client = fakeClient([JSON.stringify(validTurn)], { parsedOutput: validTurn });
-    const result = await generatePersonaTurn(client, transcript);
+    const result = await generatePersonaTurn(client, transcript, valentina);
     expect(result).toEqual({
       turn: validTurn,
       fellBackToFiller: false,
@@ -98,13 +108,13 @@ describe('generatePersonaTurn', () => {
         usage: { input_tokens: 120, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 1000 },
       }),
     });
-    const result = await generatePersonaTurn(client, transcript);
+    const result = await generatePersonaTurn(client, transcript, valentina);
     expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 40, cacheCreationInputTokens: 0, cacheReadInputTokens: 1000 });
   });
 
   it('zeroes usage when the stream itself throws — no message ever resolved to read usage from', async () => {
     const client = fakeClient([], { error: new Error('network error') });
-    const result = await generatePersonaTurn(client, transcript);
+    const result = await generatePersonaTurn(client, transcript, valentina);
     expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 });
   });
 
@@ -118,7 +128,7 @@ describe('generatePersonaTurn', () => {
     const client = fakeClient(deltas, { parsedOutput: { comprehension: 'understood', affect: 'nostalgic', text: 'Ой, слушай, расскажу тебе историю.', translation: 'Oh, listen, let me tell you a story.' } });
     const onPartial = jest.fn();
 
-    await generatePersonaTurn(client, transcript, { onPartial });
+    await generatePersonaTurn(client, transcript, valentina, { onPartial });
 
     expect(onPartial).toHaveBeenCalledTimes(2);
     expect(onPartial).toHaveBeenNthCalledWith(1, { comprehension: 'understood' });
@@ -129,7 +139,7 @@ describe('generatePersonaTurn', () => {
     const malformedSnapshot = '{"comprehension":"understood","affect":"warm","text":"тут что-то слома';
     const client = fakeClient([malformedSnapshot], { error: new Error('Failed to parse structured output: invalid JSON') });
 
-    const result = await generatePersonaTurn(client, transcript);
+    const result = await generatePersonaTurn(client, transcript, valentina);
 
     expect(result.fellBackToFiller).toBe(true);
     expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' });
@@ -140,7 +150,7 @@ describe('generatePersonaTurn', () => {
     const client = fakeClient(['not valid json'], { parsedOutput: null });
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const result = await generatePersonaTurn(client, transcript);
+    const result = await generatePersonaTurn(client, transcript, valentina);
 
     expect(result.fellBackToFiller).toBe(true);
     expect(result.turn).toEqual({ comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' });
@@ -154,7 +164,7 @@ describe('generatePersonaTurn', () => {
   it('does not call onPartial at all when no onPartial callback was passed', async () => {
     const client = fakeClient([JSON.stringify(validTurn)], { parsedOutput: validTurn });
     // No `options` argument — should not throw despite the internal `on('text', ...)` listener running.
-    await expect(generatePersonaTurn(client, transcript)).resolves.toBeDefined();
+    await expect(generatePersonaTurn(client, transcript, valentina)).resolves.toBeDefined();
   });
 });
 
@@ -181,6 +191,7 @@ describeIfLiveApi('generatePersonaTurn (live API)', () => {
         { speaker: 'persona', text: 'Здравствуй! Заходи, будем пить чай.' },
         { speaker: 'learner', text: 'Спасибо большое!' },
       ],
+      valentina,
       { onPartial: partial => partialCalls.push(partial) },
     );
 

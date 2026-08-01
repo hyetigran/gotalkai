@@ -1,0 +1,11 @@
+# `translit_enabled`'s initial value is derived from the literacy answer, not a second onboarding question
+
+**Status:** accepted
+
+Ticket #30 asks for two things about transliteration: AC #1 asks onboarding to ask the Cyrillic-literacy question exactly once; AC #2 asks for `translit_enabled` to be "a separate field, so it can be retired deliberately rather than left on indefinitely" (quoting PRD §6.2/§8 directly). Read literally, these could imply two separate onboarding questions — one for literacy, one for the transliteration preference.
+
+**Decision:** onboarding asks only the literacy question. `translit_enabled`'s *initial* value is derived from that single answer (`cyrillicLiterate: false` → `translitEnabled: true`, and vice versa) at the moment `POST /learners` is called (`session-zero-screen.tsx`), not asked as a second question.
+
+**Reasoning:** "separate field" in the PRD's own language is about *storage* — the two settings must be able to diverge from each other *later* (a literacy-negative learner might want to turn transliteration off once they've learned to read some Cyrillic; that's the "retired deliberately" scenario) — not about *onboarding UX* requiring two questions on day one. Asking a second question ("would you also like a phonetic transliteration?") to a learner who just said they don't read Cyrillic is redundant — the sensible default is obvious from the first answer, and asking anyway would work against AC #4's spirit ("session zero... never announced as an assessment"): more questions read more like a test, not less.
+
+**Consequences:** there is currently no UI for a learner to change `translit_enabled` independently of their literacy answer after onboarding — that's explicitly a Settings-screen concern, not built by this ticket (no such screen exists yet). When that screen is built, it should read/write `translit_enabled` directly via `GET`/`PATCH /learners/:id` (the `GET` half already exists, `src/sessions.ts`'s `getLearner`) — `cyrillic_literate` itself should very likely stay immutable after onboarding (it's a fact about the learner, not a preference), so the two fields' independent-mutability story is asymmetric by design, not an oversight.

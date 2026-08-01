@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PERSONA_IDS } from './personas';
 
 /**
  * `POST /learners/:id/memories` request body — the client/server API
@@ -12,6 +13,8 @@ import { z } from 'zod';
  */
 export const recordMemoryRequestSchema = z.object({
   content: z.string().min(1),
+  /** Ticket #34 / docs/adr/0023: which persona this memory belongs to. Optional — omitted defaults to Валентина (persona-memories.ts), preserving every pre-#34 caller's behavior exactly. */
+  personaId: z.enum(PERSONA_IDS).optional(),
 });
 
 export type RecordMemoryRequest = z.infer<typeof recordMemoryRequestSchema>;

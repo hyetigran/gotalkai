@@ -2,48 +2,47 @@
 
 ## Current focus
 
-Bootstrap the product codebase and agent workflow after PRD + ADRs:
+Close the gap between **built pipeline/UI** and a **device-exercisable live Converse**:
 
-1. Mobile app scaffolded from Obytes template under `mobile/` with design-system foundation (tokens, fonts, splash fix).
-2. Agent ops: GitLab issue tracker docs, code-review → commit chaining, version bumps on `mobile/package.json`.
-3. Memory Bank created so sessions can resume without re-deriving PRD/ADR context.
-4. Root `ARCHITECTURE.md` added as the living system map (target + current).
+1. App-service per-session voice credentials (no secrets in the mobile bundle).
+2. Real mic audio path into the WS+PCM protocol (or revisit WebRTC peer + AEC — ADR-0017).
+3. Flip Converse from `use-converse-session` (scripted) to `use-live-converse-session`.
+4. Owner dogfooding + optional retrospective bake-off (#13) when schedule allows.
+
+Secondary: keep docs (`ARCHITECTURE.md`, Memory Bank) honest about current vs target; landing page marketing separate from the app loop.
 
 ## Recent changes
 
-- Research note: `docs/research/file-and-directory-layout-standards.md` (DB migrations, Node/TS services, Expo/Obytes mobile). Main gap called out: `app-service` full `schema.sql` vs incremental `migrations/`.
-- `ARCHITECTURE.md` written from PRD §7 + ADRs + current `mobile/` scaffold state.
-- PRD drafted (`PRD.md`); ADRs 0001–0003 accepted (skip WoZ; hold-to-think floor rule; Sonnet 5 persona LLM).
-- `mobile/` scaffold + design tokens; splash no longer hangs on first launch.
-- Cursor project rules: `code-review-then-commit`, `version-bump` (package.json only — no `VERSION` file).
-- `docs/agents/` configured for GitLab (`glab`), triage labels, domain docs, versioning.
-- App version at **0.1.2** in `mobile/package.json`.
+- **Ticket #40 (PRD §7.9):** turn-taking redesigned from server-side VAD to client hold-to-talk
+  (press/release, `commit` flag is the turn boundary) — real-device echo/false-interruption failure
+  with no AEC on the open mic made VAD untenable. Live pipeline verified end-to-end on device.
+- Large ticket wave: app-service + voice-service pipeline, eval harness, product screens, ADRs through **0024**.
+- **ADR-0013:** ElevenLabs for STT+TTS; formal bake-off skipped.
+- **ADR-0017:** Live wiring built but disclosed incomplete (no device activation; WS+PCM not WebRTC peer; mic PCM stub).
+- Marketing `landing/` (Next.js / Vercel, #38); character/cast assets.
+- `ARCHITECTURE.md` + Memory Bank refreshed **2026-07-30** after drift from scaffold-era text.
+- App version **0.1.31** in `mobile/package.json`.
 
 ## Next steps (product / eng)
 
-Per PRD §15 phasing:
-
-1. **Phase 1 slice** — no product UI required: hardcoded persona, mic in / audio out, six stage timestamps, backend proxy, vendor bake-off against hard STT/TTS requirements.
-2. Start **daily owner dogfooding** the moment the slice works.
-3. **Phase 2** — Open / Converse / Debrief screens, memory, scenario selection, eval harness in CI, session cap.
-4. Do not start Phase 3 privacy/canary/cost until Phase 2 loop is real.
-
-Near-term engineering hygiene:
-
-- Replace template feed/auth demo surface with product routes as Phase 2 approaches.
-- Add `schema.sql` / `eval/` artefacts when Phase 1–2 need them.
-- Ensure no root `VERSION` file creeps back; version only in `mobile/package.json`.
+1. Mint + validate short-lived voice tokens from app service → voice service.
+2. Solve live audio capture into JS (native module / segmented PCM / WebRTC peer).
+3. Activate live hook on Converse; physical-device UAT of cascade + hold + barge-in.
+4. Start daily owner dogfooding the moment that works.
+5. Delete any root `VERSION` file if present; version only via `mobile/package.json`.
 
 ## Active decisions / considerations
 
-- Premise unvalidated until dogfooding + post-release session-2 return (ADR-0001) — treat weak return as premise failure, not a retention tweak.
-- Hold-to-think: no queued intent during her turn (ADR-0002).
-- Persona model: Sonnet 5, thinking off; verify cache prefix ≥1024 tokens before relying on §9 caching (ADR-0003).
-- STT/TTS vendors provisional until bake-off; build to hard requirements, not a locked API.
-- Auto-release timeout for hold-to-think (~45s) still to specify before Phase 2.
+- Premise still unvalidated until dogfooding + session-2 return (ADR-0001).
+- Turn-taking: hold-to-talk, press/release (ticket #40); hold-to-think (ADR-0002) and VAD both retired — see risk 10 (PRD §14) for the backchanneling/barge-in tradeoff.
+- Persona LLM: Sonnet 5, thinking off (ADR-0003); verify cache prefix ≥1024 tokens.
+- Vendors: **ElevenLabs both**; n-best dropped; stress via IPA/`<phoneme>` (ADR-0013).
+- Transport: **WebSocket + base64 PCM**, not WebRTC peer — **no free AEC** (ADR-0017).
+- Second persona (Елена) parameterized in code; shipping polish / voice id still open (ADR-0023).
 
 ## Open questions
 
-- Exact Railway/Neon backup + PITR choice before Phase 3 (`persona_memories` irreplaceable).
-- Learner audio source for STT bake-off (record targets vs tutoring-platform students).
-- Whether Expo `app.config` / native build numbers should stay in lockstep with `package.json` version on every ticket bump.
+- Exact Railway/Neon backup + PITR before production memories.
+- Whether to run a retrospective bake-off or accept ElevenLabs permanently.
+- Expo `app.config` / native build numbers vs `package.json` version lockstep.
+- How to get live PCM (or AEC’d audio) into the client without a large native/WebRTC project.

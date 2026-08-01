@@ -10,7 +10,7 @@ A mobile app for **Russian speaking practice** built around AI conversation part
 
 1. Close the production gap for people who understand Russian but cannot hold a conversation under real-time social pressure.
 2. Ship a daily loop: **Open → Converse → Debrief → Tomorrow's scenario**.
-3. One v1 persona (**Валентина Сергеевна Румянцева**) with memory, register asymmetry (she ты / learner вы), and difficulty dials — not streaks or gamification.
+3. One v1 front-door persona (**Валентина Сергеевна Румянцева**) with memory, register asymmetry (she ты / learner вы), and difficulty dials — not streaks or gamification. Second persona (Елена) parameterized in code; not the default unlock.
 4. Validate premise via **owner dogfooding** and in-market signals (abandonment turn, session-2 return), not Wizard-of-Oz (ADR-0001).
 
 ## Target users
@@ -21,19 +21,19 @@ A mobile app for **Russian speaking practice** built around AI conversation part
 
 ## In scope (v1)
 
-- Cascaded voice pipeline (not speech-to-speech): VAD → STT → persona LLM → stress annotation → TTS.
-- React Native / Expo client; Node/TS app + voice services on Railway; Postgres.
-- Three product screens (Open / Converse / Debrief), memory, debrief ranking, scenario selection.
+- Cascaded voice pipeline (not speech-to-speech): VAD → STT → persona LLM → stress annotation → TTS (ElevenLabs STT/TTS; Sonnet 5 persona — ADR-0013 / 0003).
+- React Native / Expo client; Node/TS app + voice services; Postgres; optional marketing site (`landing/`).
+- Product loop screens (Open / Converse / Debrief / Tomorrow), memory, debrief ranking, scenario selection.
 - Eval harness, cost controls (daily session cap), safety escape hatch before launch.
 
 ## Out of scope (v1)
 
-Beginner-from-zero instruction; reading/writing/grammar drills; languages other than Russian; >1 shipped persona; photorealistic/video avatars; social/streaks; tutor marketplace; web client.
+Beginner-from-zero instruction; reading/writing/grammar drills; languages other than Russian; photorealistic/video avatars; social/streaks; tutor marketplace; **web Converse client** (marketing landing is allowed and separate).
 
 ## Source of truth
 
 - Product requirements: `PRD.md` (Draft v0.1)
-- System architecture: `ARCHITECTURE.md`
-- Architecture decisions: `docs/adr/`
+- System architecture: `ARCHITECTURE.md` (refresh when current ≠ target)
+- Architecture decisions: `docs/adr/` (0001–0024+)
 - Agent ops: `docs/agents/`
-- App code today: `mobile/` (Obytes Expo scaffold + design tokens)
+- Code: `mobile/`, `app-service/`, `voice-service/`, `landing/`

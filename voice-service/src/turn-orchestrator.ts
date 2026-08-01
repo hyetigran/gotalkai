@@ -3,6 +3,7 @@ import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import type { ServerMessage, TurnTimestamps } from './messages';
 import type { TranscriptTurn } from './persona';
 import type { GeneratePersonaTurnResult } from './persona-turn';
+import type { PersonaDefinition } from './personas';
 import type { SafetyCategory, SafetyTriggerCategory } from './safety-detection';
 import type { AnnotatedText } from './stress/stress-annotation';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
@@ -54,7 +55,8 @@ type PersonaTurnMarker = { turnId: string | null; audioStartMs: number };
 /** Injected dependencies — production wiring passes the real functions from persona-turn.ts/stt.ts/tts.ts/stress-annotation.ts directly; tests pass fakes. Matches the DI seam every one of those modules already uses. */
 export type TurnOrchestratorDeps = {
   createSttSession: (apiKey: string, handlers: SttEventHandlers) => { sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit?: boolean) => void; close: () => void };
-  generatePersonaTurn: (client: Anthropic, transcript: TranscriptTurn[]) => Promise<GeneratePersonaTurnResult>;
+  /** Ticket #34 / docs/adr/0023: takes the active session's own `PersonaDefinition` — generalized off the Валентина-hardcoded signature. */
+  generatePersonaTurn: (client: Anthropic, transcript: TranscriptTurn[], persona: PersonaDefinition) => Promise<GeneratePersonaTurnResult>;
   /** Ticket #27: the separate detection path PRD §12.1 requires — runs on every learner turn, gating whether the normal persona pipeline below even runs. */
   detectSafetyTrigger: (client: Anthropic, learnerText: string) => Promise<SafetyCategory>;
   annotateText: (text: string) => AnnotatedText;
@@ -62,6 +64,9 @@ export type TurnOrchestratorDeps = {
   anthropicClient: Anthropic;
   elevenLabsClient: ElevenLabsClient;
   elevenLabsApiKey: string;
+  /** Ticket #34: the connection's initial/default persona — Валентина in production (server.ts), overridable per session via `selectPersona` once `session_start` names a different one. */
+  persona: PersonaDefinition;
+  /** The initial/default voice id, paired with `persona` above — also overridable via `selectPersona`. */
   voiceId: string;
   sendMessage: (message: ServerMessage) => void;
   /**
@@ -81,18 +86,6 @@ export type TurnOrchestratorDeps = {
   /** Injectable clock, for the six-timestamp log to be testable without real wall-clock timing. */
   now?: () => number;
 };
-
-/**
- * PRD §6.4 / persona.ts: "she uses ты, the learner uses вы" — a fixed
- * register asymmetry for this V1 persona, not a per-turn detection (no
- * register-classification stage exists anywhere in this pipeline).
- * Recorded as a constant here for the same reason turns.ts's schema
- * carries separate persona/learner register columns at all — once
- * multi-persona work (the second-persona ticket) parameterizes identity,
- * this becomes a per-persona value instead of a file-level constant.
- */
-const PERSONA_REGISTER = 'ty';
-const LEARNER_REGISTER = 'vy';
 
 /** PRD §7.3: "In-character filler (ну…, сейчас…) on end-of-turn detection, masking 300-500ms." Rotated, not randomized — deterministic and testable; real variety is a smaller concern than genuinely masking the gap. */
 const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
@@ -230,8 +223,15 @@ export class TurnOrchestrator {
    * would be).
    */
   private lastPersonaTurn: PersonaTurnMarker | null = null;
+  /** Ticket #34: the persona this session is actually talking to — starts as `deps.persona` (Валентина, by default), swappable once via `selectPersona` before any turn runs. One persona per session (PRD §6.4: "talk to her daily"), not a mid-conversation switch. */
+  private activePersona: PersonaDefinition;
+  /** Paired with `activePersona` — the ElevenLabs voice id for whichever persona is currently active. */
+  private activeVoiceId: string;
 
-  constructor(private readonly deps: TurnOrchestratorDeps) {}
+  constructor(private readonly deps: TurnOrchestratorDeps) {
+    this.activePersona = deps.persona;
+    this.activeVoiceId = deps.voiceId;
+  }
 
   get currentState(): OrchestratorState {
     return this.state;
@@ -240,6 +240,12 @@ export class TurnOrchestrator {
   /** Ticket #29: called from server.ts on the `session_start` message — the real session id every subsequent `recordTurn`/`recordInterruption` call needs. */
   sessionStart(sessionId: string): void {
     this.sessionId = sessionId;
+  }
+
+  /** Ticket #34 / docs/adr/0023: called from server.ts when `session_start` names a persona other than the connection-time default. `voiceId` is supplied by the caller (server.ts resolves it from env) — this class stays env-free, matching the rest of this pipeline's separation between pure orchestration and vendor-config resolution. */
+  selectPersona(persona: PersonaDefinition, voiceId: string): void {
+    this.activePersona = persona;
+    this.activeVoiceId = voiceId;
   }
 
   /**
@@ -282,7 +288,7 @@ export class TurnOrchestrator {
     this.state = 'speaking';
     this.lastPersonaTurn = null;
     let finalTimestamps: TurnTimestamps | null = null;
-    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, annotated.text, {
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.activeVoiceId, annotated.text, {
       onChunk: (chunk, sentenceIndex) => {
         if (myToken !== this.generationToken)
           return;
@@ -572,7 +578,7 @@ export class TurnOrchestrator {
     // the reference it's given (it doesn't today, but that's an
     // implementation detail, not a guarantee) — passing a copy is what
     // "generate this turn from exactly this history" actually means.
-    const generated = await this.deps.generatePersonaTurn(this.deps.anthropicClient, [...this.history]);
+    const generated = await this.deps.generatePersonaTurn(this.deps.anthropicClient, [...this.history], this.activePersona);
     if (myToken !== this.generationToken)
       return;
     const t3PersonaComplete = now();
@@ -592,7 +598,7 @@ export class TurnOrchestrator {
     // — and wrongly — mark as interrupted).
     this.lastPersonaTurn = null;
     let finalTimestamps: TurnTimestamps | null = null;
-    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, annotated.text, {
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.activeVoiceId, annotated.text, {
       onChunk: (chunk, sentenceIndex) => {
         if (myToken !== this.generationToken)
           return;
@@ -629,7 +635,7 @@ export class TurnOrchestrator {
     if (!this.sessionId || !this.deps.recordTurn)
       return;
     const costUsd = estimateSttCostUsd(sttAudioMs / 1000);
-    void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content, learnerRegister: LEARNER_REGISTER, costUsd }).catch((error) => {
+    void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content, learnerRegister: this.activePersona.learnerRegister, costUsd }).catch((error) => {
       console.error('[turn-orchestrator] failed to record learner turn', { error });
     });
   }
@@ -651,7 +657,7 @@ export class TurnOrchestrator {
     const marker: PersonaTurnMarker = { turnId: null, audioStartMs: timestamps.t5FirstAudio };
     this.lastPersonaTurn = marker;
     const costUsd = estimateLlmCostUsd(usage) + estimateTtsCostUsd(ttsCharacterCount);
-    void this.deps.recordTurn(sessionId, { speaker: 'persona', content, personaRegister: PERSONA_REGISTER, timings: timestamps, costUsd })
+    void this.deps.recordTurn(sessionId, { speaker: 'persona', content, personaRegister: this.activePersona.personaRegister, timings: timestamps, costUsd })
       .then((turnId) => {
         if (!turnId)
           return;
@@ -676,11 +682,11 @@ export class TurnOrchestrator {
       // Ticket #29: learner content is only recorded when it's actually known — the STT-vendor-error path (handleTurnDetected's catch) has no transcript at all, only the low-confidence path does.
       if (learnerContent !== undefined) {
         const sttCost = estimateSttCostUsd(sttAudioMs / 1000);
-        void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content: learnerContent, learnerRegister: LEARNER_REGISTER, costUsd: sttCost }).catch((error) => {
+        void this.deps.recordTurn(this.sessionId, { speaker: 'learner', content: learnerContent, learnerRegister: this.activePersona.learnerRegister, costUsd: sttCost }).catch((error) => {
           console.error('[turn-orchestrator] failed to record learner turn', { error });
         });
       }
-      void this.deps.recordTurn(this.sessionId, { speaker: 'persona', content: DIDNT_UNDERSTAND_LINE, personaRegister: PERSONA_REGISTER, timings: timestamps }).catch((error) => {
+      void this.deps.recordTurn(this.sessionId, { speaker: 'persona', content: DIDNT_UNDERSTAND_LINE, personaRegister: this.activePersona.personaRegister, timings: timestamps }).catch((error) => {
         console.error('[turn-orchestrator] failed to record persona turn', { error });
       });
     }
@@ -711,7 +717,7 @@ export class TurnOrchestrator {
     // Ticket #29: this path deliberately doesn't record a turn (docs/adr/0022 — persisting distress-disclosure content deserves its own explicit product decision, not a default made inside this ticket). Clearing the marker here matters: without it, a barge-in during *this* playback would misattribute the interruption to whatever normal persona turn happened before it.
     this.lastPersonaTurn = null;
     let t5FirstAudio: number | null = null;
-    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.deps.voiceId, text, {
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.activeVoiceId, text, {
       onChunk: (chunk, sentenceIndex) => {
         if (myToken !== this.generationToken)
           return;

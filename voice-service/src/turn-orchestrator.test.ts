@@ -2,6 +2,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import type { ServerMessage } from './messages';
 import type { GeneratePersonaTurnResult } from './persona-turn';
+import { PERSONA_DEFINITIONS } from './personas';
+import type { PersonaDefinition } from './personas';
 import type { SafetyCategory } from './safety-detection';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
@@ -73,7 +75,7 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
   const sttHandlers: SttEventHandlers[] = [];
   const sttSendAudioChunk = jest.fn();
   const sttClose = jest.fn();
-  const generatePersonaTurn = jest.fn(async (): Promise<GeneratePersonaTurnResult> =>
+  const generatePersonaTurn = jest.fn(async (_client: Anthropic, _transcript: unknown, _persona: PersonaDefinition): Promise<GeneratePersonaTurnResult> =>
     options.personaTurn ?? { turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.', translation: 'Ah, of course.' }, fellBackToFiller: false, rawOutput: '', usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } });
   const detectSafetyTrigger = jest.fn(async (): Promise<SafetyCategory> => options.safetyCategory ?? 'none');
   const annotateText = jest.fn((text: string) => ({ text: `${text}[annotated]`, unresolvedWords: [] }));
@@ -100,6 +102,7 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
     anthropicClient: {} as Anthropic,
     elevenLabsClient: {} as ElevenLabsClient,
     elevenLabsApiKey: 'test-key',
+    persona: PERSONA_DEFINITIONS.valentina,
     voiceId: 'voice-123',
     sendMessage: waiter.sendMessage,
     recordTurn,
@@ -167,7 +170,7 @@ describe('TurnOrchestrator', () => {
       sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
       await waiter.waitFor('turn_complete');
 
-      expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: goodTranscript.text }]);
+      expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: goodTranscript.text }], deps.persona);
       expect(annotateText).toHaveBeenCalledWith('Ах, конечно.');
       expect(waiter.messages).toContainEqual({ type: 'transcript_final', text: goodTranscript.text });
       expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'voice-123', 'Ах, конечно.[annotated]', expect.any(Object));
@@ -234,7 +237,7 @@ describe('TurnOrchestrator', () => {
       { speaker: 'learner', text: 'Привет, как дела?' },
       { speaker: 'persona', text: 'Ах, конечно.' },
       { speaker: 'learner', text: 'Второй вопрос.' },
-    ]);
+    ], deps.persona);
   });
 
   it(
@@ -286,7 +289,7 @@ describe('TurnOrchestrator', () => {
       sttHandlers[0]?.onFinalTranscript?.({ text: 'Понял.', words: [] });
       await waiter.waitFor('turn_complete');
 
-      expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Понял.' }]);
+      expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Понял.' }], deps.persona);
     },
   );
 
@@ -432,7 +435,7 @@ describe('TurnOrchestrator safety escape hatch (ticket #27)', () => {
     sttHandlers[1]?.onFinalTranscript?.({ text: 'Второй вопрос.', words: [goodWord('Второй'), goodWord('вопрос')] });
     await waiter.waitFor('turn_complete');
 
-    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Второй вопрос.' }]);
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Второй вопрос.' }], deps.persona);
   });
 
   it('does not run generatePersonaTurn or synthesizeSpeech for ordinary conversation ("none")', async () => {
@@ -494,7 +497,7 @@ describe('TurnOrchestrator text input (ticket #32)', () => {
 
     await orchestrator.submitTextInput('Привет, как дела?');
 
-    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Привет, как дела?' }]);
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Привет, как дела?' }], deps.persona);
     expect(annotateText).toHaveBeenCalledWith('Ах, конечно.');
     expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'voice-123', 'Ах, конечно.[annotated]', expect.any(Object));
 
@@ -522,7 +525,7 @@ describe('TurnOrchestrator text input (ticket #32)', () => {
       { speaker: 'learner', text: 'Текстовое сообщение.' },
       { speaker: 'persona', text: 'Ах, конечно.' },
       { speaker: 'learner', text: goodTranscript.text },
-    ]);
+    ], deps.persona);
   });
 
   it('runs the safety check on typed text too, and breaks character the same way voice input does — same layer, per AC #3', async () => {
@@ -831,7 +834,7 @@ describe('TurnOrchestrator opening line (PRD §6.2: "she opens, not the learner"
       sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
       await waiter.waitFor('turn_complete');
 
-      expect(generatePersonaTurn).toHaveBeenCalledWith(expect.anything(), [{ speaker: 'learner', text: goodTranscript.text }]);
+      expect(generatePersonaTurn).toHaveBeenCalledWith(expect.anything(), [{ speaker: 'learner', text: goodTranscript.text }], expect.anything());
     },
   );
 
@@ -875,5 +878,56 @@ describe('TurnOrchestrator opening line (PRD §6.2: "she opens, not the learner"
     releaseSynthesis?.();
     await opening;
     expect(waiter.messages.filter(message => message.type === 'turn_complete')).toHaveLength(1);
+  });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('TurnOrchestrator persona selection (ticket #34)', () => {
+  it('defaults to the connection-time persona (Валентина in production) when selectPersona is never called — AC #1: existing behavior unaffected', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, generatePersonaTurn, synthesizeSpeech } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, expect.any(Array), PERSONA_DEFINITIONS.valentina);
+    expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'voice-123', expect.any(String), expect.any(Object));
+  });
+
+  it('selectPersona swaps the active persona, register, and voice id before the next turn runs', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, generatePersonaTurn, synthesizeSpeech, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+    orchestrator.selectPersona(PERSONA_DEFINITIONS.elena, 'elena-voice-id');
+
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, expect.any(Array), PERSONA_DEFINITIONS.elena);
+    expect(synthesizeSpeech).toHaveBeenCalledWith(deps.elevenLabsClient, 'elena-voice-id', expect.any(String), expect.any(Object));
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', learnerRegister: PERSONA_DEFINITIONS.elena.learnerRegister }));
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'persona', personaRegister: PERSONA_DEFINITIONS.elena.personaRegister }));
+  });
+
+  it('selectPersona before any turn means even the first turn of the session uses the newly selected persona, not the connection default', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.selectPersona(PERSONA_DEFINITIONS.elena, 'elena-voice-id');
+
+    await orchestrator.submitTextInput('Здравствуйте!');
+
+    expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Здравствуйте!' }], PERSONA_DEFINITIONS.elena);
+
+    // Second, unrelated assertion folded in here rather than a separate test: confirms the STT-triggered
+    // path also picks up the switched persona, not just the text-input path exercised above.
+    speakOneUtterance(orchestrator);
+    sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+    await waiter.waitFor('turn_complete');
+    expect(generatePersonaTurn).toHaveBeenLastCalledWith(deps.anthropicClient, expect.any(Array), PERSONA_DEFINITIONS.elena);
   });
 });

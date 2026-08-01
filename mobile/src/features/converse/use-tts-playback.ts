@@ -11,7 +11,7 @@ import { base64ToBytes } from './base64-decode';
  * Originally played each chunk via a `data:audio/mpeg;base64,...` URI
  * directly (`expo-audio`'s `AudioSource` accepts a plain string, so no
  * file write looked necessary). Confirmed on a physical device
- * (docs/adr/0024's on-device pass) that this doesn't work: expo-audio's
+ * (docs/adr/0026's on-device pass) that this doesn't work: expo-audio's
  * Android `createMediaItem` (AudioModule.kt) only special-cases
  * `http`/`https` schemes — everything else, including `data:`, falls
  * through to `DefaultDataSource.Factory`, which has no `data:`-scheme

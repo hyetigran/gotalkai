@@ -10,7 +10,7 @@ const SILENCE_RMS_FLOOR = 1e-6;
 
 /**
  * Level-meter amplitude for the live pipeline's native PCM capture
- * (docs/adr/0023) — the counterpart to `deriveMeterAmplitude`, which
+ * (docs/adr/0026) — the counterpart to `deriveMeterAmplitude`, which
  * expects `expo-audio`'s own dBFS metering reading instead. Deliberately
  * NOT a second, independently-calibrated 0-1 scale: this converts raw
  * float samples to an RMS-derived dBFS value first, then feeds that

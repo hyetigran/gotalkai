@@ -26,3 +26,4 @@ modules/*/android/build/
 expo-env.d.ts
 .env*.local
 # @end expo-cli
+.env

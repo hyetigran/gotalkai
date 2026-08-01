@@ -9,6 +9,8 @@ import type { Env } from './env';
 import type { ServerMessage } from './messages';
 import { clientMessageSchema } from './messages';
 import { generatePersonaTurn } from './persona-turn';
+import { DEFAULT_PERSONA_ID, PERSONA_DEFINITIONS } from './personas';
+import type { PersonaId } from './personas';
 import { detectSafetyTrigger } from './safety-detection';
 import { verifySessionToken } from './session-token';
 import { annotateText } from './stress/stress-annotation';
@@ -78,6 +80,11 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
     const anthropicClient = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const elevenLabsClient = new ElevenLabsClient({ apiKey: env.ELEVENLABS_API_KEY });
     const appServiceClient = createAppServiceClient(env.APP_SERVICE_URL);
+    /** Ticket #34: which voice id backs which persona — the one piece of persona config that's an env-var secret, kept out of personas.ts itself (see docs/adr/0023). Елена's is `undefined` until a real ElevenLabs account configures one. */
+    const voiceIdForPersona: Record<PersonaId, string | undefined> = {
+      valentina: env.ELEVENLABS_VALENTINA_VOICE_ID,
+      elena: env.ELEVENLABS_ELENA_VOICE_ID,
+    };
 
     const httpServer = createHttpServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -118,6 +125,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
         anthropicClient,
         elevenLabsClient,
         elevenLabsApiKey: env.ELEVENLABS_API_KEY,
+        persona: PERSONA_DEFINITIONS[DEFAULT_PERSONA_ID],
         voiceId: env.ELEVENLABS_VALENTINA_VOICE_ID,
         sendMessage: message => send(ws, message),
         recordTurn: appServiceClient.recordTurn,
@@ -151,7 +159,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
           case 'audio_chunk':
             orchestrator.pushAudioFrame(decodePcm16(result.data.pcmBase64), result.data.pcmBase64, result.data.sampleRateHz, result.data.commit);
             return;
-          case 'session_start':
+          case 'session_start': {
             // The orchestrator's real session id already comes from the
             // upgrade-time token (see `setUpConnection` above) — that's
             // the trustworthy source now, not this message. This
@@ -167,7 +175,22 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
               send(ws, { type: 'error', message: 'session_start sessionId does not match the authenticated session' });
               return;
             }
+
+            // Ticket #34 / docs/adr/0023: only switch personas when the
+            // message actually names one other than the connection-time
+            // default — omitting `personaId` (every pre-#34 client)
+            // keeps the orchestrator on Валентина, untouched.
+            const personaId = result.data.personaId ?? DEFAULT_PERSONA_ID;
+            if (personaId !== DEFAULT_PERSONA_ID) {
+              const voiceId = voiceIdForPersona[personaId];
+              if (!voiceId) {
+                send(ws, { type: 'error', message: `voice not configured for persona "${personaId}"` });
+                return;
+              }
+              orchestrator.selectPersona(PERSONA_DEFINITIONS[personaId], voiceId);
+            }
             return;
+          }
           case 'text_input':
             void orchestrator.submitTextInput(result.data.text);
             return;

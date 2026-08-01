@@ -212,7 +212,7 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
   }, [connectionRef]);
 
   /**
-   * docs/adr/0023: the send-side counterpart to real mic capture
+   * docs/adr/0026: the send-side counterpart to real mic capture
    * (`use-native-pcm-capture.ts`). Ticket #40: `commit` is the turn
    * boundary now (true on exactly the chunk sent when the talk button is
    * released — see `use-hold-to-talk.ts`, the caller). Silently drops
