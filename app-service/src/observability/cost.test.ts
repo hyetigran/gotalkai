@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
-import { applySchema } from '../schema';
-import { recordTurn } from '../turns';
+import { applySchema } from '../db/schema';
+import { recordTurn } from '../turns/turns';
 import { findCostAlerts, getLearnerCostRollup30Day } from './cost';
 
 describe('findCostAlerts (pure)', () => {

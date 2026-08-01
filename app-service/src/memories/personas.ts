@@ -1,4 +1,4 @@
-import type { DialDefaults } from './calibration-profiles';
+import type { DialDefaults } from '../learners/calibration-profiles';
 
 /**
  * Ticket #34 / docs/adr/0023: the persona-id vocabulary app-service needs

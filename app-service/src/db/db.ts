@@ -1,4 +1,4 @@
-import type { Env } from './env';
+import type { Env } from '../config/env';
 import { Pool } from 'pg';
 
 /**
@@ -6,7 +6,7 @@ import { Pool } from 'pg';
  * ... Long-lived Node processes plus per-request connections exhaust
  * Postgres connections faster than expected." No schema/queries beyond
  * the health check live here yet; that's later ticket work once
- * `schema.sql` exists (ARCHITECTURE.md §3.4).
+ * migrations exist (ARCHITECTURE.md §3.5).
  */
 export function createPool(env: Env): Pool {
   return new Pool({ connectionString: env.DATABASE_URL });

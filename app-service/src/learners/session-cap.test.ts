@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 import { countSessionsToday, hasReachedDailyCap } from './session-cap';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 describe('hasReachedDailyCap', () => {
   it('is false below the cap', () => {

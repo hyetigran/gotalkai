@@ -1,11 +1,11 @@
-import type { Env } from './env';
+import type { Env } from '../config/env';
 import http from 'node:http';
 import { Pool } from 'pg';
-import { applySchema } from './schema';
-import { seedBenchmark } from './seed-benchmark';
-import { seedScenarios } from './seed-scenarios';
+import { applySchema } from '../db/schema';
+import { seedBenchmark } from '../benchmark/seed-benchmark';
+import { seedScenarios } from '../scenarios/seed-scenarios';
 import { startServer } from './server';
-import { verifySessionToken } from './session-token';
+import { verifySessionToken } from '../learners/session-token';
 
 /**
  * Runs against a REAL local Postgres instance — no mocking the DB layer,

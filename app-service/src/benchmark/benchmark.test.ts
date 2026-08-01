@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 import { getCurrentBenchmarkSet, getBenchmarkTrend, InvalidBenchmarkAttemptError, submitBenchmarkAttempt } from './benchmark';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 /** Runs against a REAL local Postgres instance, no mocking — matching debrief.test.ts's precedent. */
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';

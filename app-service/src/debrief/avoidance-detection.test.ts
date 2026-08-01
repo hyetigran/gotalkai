@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { detectAndRecordAvoidance, detectAvoidance } from './avoidance-detection';
-import { applySchema } from './schema';
-import { seedScenarios } from './seed-scenarios';
+import { applySchema } from '../db/schema';
+import { seedScenarios } from '../scenarios/seed-scenarios';
 import { getStructureTaxonomyPriority } from './structure-taxonomy';
 
 describe('detectAvoidance', () => {

@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 import { seedStarterMemories } from './seed-starter-memories';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';

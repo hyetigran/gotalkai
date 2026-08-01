@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
-import { applySchema } from '../schema';
-import { recordTurn } from '../turns';
+import { applySchema } from '../db/schema';
+import { recordTurn } from '../turns/turns';
 import { checkP95Budget, getRecentStageP95 } from './p95';
 
 /** Runs against a REAL local Postgres instance, matching turns.test.ts's own precedent. */

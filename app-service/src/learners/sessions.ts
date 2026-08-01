@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 import { CALIBRATION_VARIANTS, DEFAULT_CALIBRATION_VARIANT, getDialDefaults } from './calibration-profiles';
 import type { CalibrationVariant } from './calibration-profiles';
-import { selectNextScenario } from './scenario-selector';
+import { selectNextScenario } from '../scenarios/scenario-selector';
 import { countSessionsToday, DailySessionCapReachedError, hasReachedDailyCap } from './session-cap';
-import { seedStarterMemories } from './seed-starter-memories';
+import { seedStarterMemories } from '../memories/seed-starter-memories';
 
 /**
  * `POST /sessions` request body. `learnerId` is validated as a

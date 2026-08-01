@@ -1,4 +1,4 @@
-import type { CalibrationVariant } from './calibration-profiles';
+import type { CalibrationVariant } from '../learners/calibration-profiles';
 
 /**
  * Ticket #36 AC #3 (PRD §14 risk #9): "audit §5.8 priority order against

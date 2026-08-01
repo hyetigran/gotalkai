@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 
 import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
 import { READINESS_MIN_EXPOSURES } from './debrief-ranking';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 /**
  * Runs against a REAL local Postgres instance, no mocking — matching the

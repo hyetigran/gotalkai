@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { deleteLearner, recordAudioSamplingConsent } from './privacy';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';
 

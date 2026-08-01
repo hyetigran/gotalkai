@@ -1,4 +1,4 @@
-import type { PersonaId } from './personas';
+import type { PersonaId } from '../memories/personas';
 
 /**
  * Ticket #34 AC #3 / docs/adr/0023: pure B1-readiness math. No I/O —

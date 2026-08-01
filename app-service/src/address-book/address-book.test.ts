@@ -2,9 +2,9 @@ import { Pool } from 'pg';
 
 import { B1_READY_STRUCTURE_COUNT } from './address-book-math';
 import { getAddressBookForLearner } from './address-book';
-import { READINESS_MASTERY_STABILITY } from './debrief-ranking';
-import { PERSONA_DIALS } from './personas';
-import { applySchema } from './schema';
+import { READINESS_MASTERY_STABILITY } from '../debrief/debrief-ranking';
+import { PERSONA_DIALS } from '../memories/personas';
+import { applySchema } from '../db/schema';
 
 /** Runs against a REAL local Postgres instance, matching persona-memories.test.ts's own precedent. */
 describe('getAddressBookForLearner', () => {

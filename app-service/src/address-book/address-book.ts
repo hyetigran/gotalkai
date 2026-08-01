@@ -1,10 +1,10 @@
 import type { Pool } from 'pg';
 import type { AddressBookEntryStatus } from './address-book-math';
 import { computeAddressBookEntryStatus } from './address-book-math';
-import type { DialDefaults } from './calibration-profiles';
-import { READINESS_MASTERY_STABILITY } from './debrief-ranking';
-import { PERSONA_DIALS, PERSONA_IDS } from './personas';
-import type { PersonaId } from './personas';
+import type { DialDefaults } from '../learners/calibration-profiles';
+import { READINESS_MASTERY_STABILITY } from '../debrief/debrief-ranking';
+import { PERSONA_DIALS, PERSONA_IDS } from '../memories/personas';
+import type { PersonaId } from '../memories/personas';
 
 /**
  * Ticket #34 AC #3 (PRD §6.4's persona-cast Address book): "shows Елена

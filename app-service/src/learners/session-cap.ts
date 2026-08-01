@@ -4,7 +4,7 @@ import type { Pool, PoolClient } from 'pg';
  * PRD §9: "a daily session cap... not just a client-side nag" — bounds
  * COGS for a power user without contradicting the product's own
  * pedagogical stance ("distributed practice beats massed practice").
- * Thrown by `createSession` (src/sessions.ts) and translated by the
+ * Thrown by `createSession` (src/learners/sessions.ts) and translated by the
  * server into a 429, never a silent no-op — the point is that a direct
  * API call can't bypass it either (ticket #24's UAT #3).
  */
@@ -28,7 +28,7 @@ export function hasReachedDailyCap(todaysSessionCount: number, cap: number): boo
  * modified client could otherwise spoof.
  *
  * Accepts a `Pool` or a checked-out `PoolClient` — `createSession`
- * (src/sessions.ts) calls this from inside a transaction holding a
+ * (src/learners/sessions.ts) calls this from inside a transaction holding a
  * per-learner advisory lock, so the count-then-insert can't race two
  * concurrent requests into both passing the check before either commits.
  */

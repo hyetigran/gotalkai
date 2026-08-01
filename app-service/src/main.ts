@@ -1,7 +1,7 @@
-import { createPool } from './db';
-import { loadEnv } from './env';
-import { deleteExpiredSessions } from './retention';
-import { startServer } from './server';
+import { createPool } from './db/db';
+import { loadEnv } from './config/env';
+import { deleteExpiredSessions } from './db/retention';
+import { startServer } from './http/server';
 
 const RETENTION_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 

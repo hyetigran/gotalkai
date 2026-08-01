@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 import { selectNextScenario } from './scenario-selector';
 import { seedScenarios } from './seed-scenarios';
 

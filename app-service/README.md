@@ -2,7 +2,7 @@
 
 Long-lived Node/TS service owning auth, persistence, memory, and debrief
 analysis. See `ARCHITECTURE.md` at the repo root for the target design
-(§3.2, §3.4). Schema is in `schema.sql` (PRD §8) — apply it with
+(§3.2, §3.5). Schema lives under `migrations/` (PRD §8) — apply with
 `pnpm db:migrate`.
 
 ## Run locally
@@ -26,35 +26,56 @@ curl http://localhost:8082/health
 
 - `pnpm dev` — run with `tsx watch` for local development
 - `pnpm build` — compile to `dist/`
-- `pnpm start` — run the compiled build (`node dist/index.js`) — what
+- `pnpm start` — run the compiled build (`node dist/main.js`) — what
   Railway (or any host) should run in production
-- `pnpm db:migrate` — apply `schema.sql` (idempotent — safe to re-run)
+- `pnpm db:migrate` — apply pending files in `migrations/` (safe to re-run)
 - `pnpm test` — runs against a real local Postgres instance (see above),
   no DB mocking — set `DATABASE_URL` to point tests at a different
   database
 - `pnpm type-check`, `pnpm lint`
 
+## Layout
+
+Nest-inspired modules under `src/` (no Nest framework):
+
+```text
+src/
+├── main.ts
+├── config/          # env
+├── db/              # pool, migrations runner, retention
+├── http/            # server, id-params
+├── learners/        # sessions, caps, tokens, privacy, calibration
+├── turns/
+├── memories/        # persona memories, personas, starter seeds
+├── debrief/         # ranking, observations, avoidance, taxonomy
+├── scenarios/
+├── address-book/
+├── benchmark/
+└── observability/
+```
+
 ## Schema (ticket #19)
 
-`schema.sql` is the full DDL — `learners`, `sessions`, `turns`,
-`learner_structures`, `persona_memories`, `observations`, `debrief_items`,
-`persona_world_state`. See the comments in the file for the reasoning
-behind each table and column, cited back to PRD §8.
+DDL is versioned under `migrations/` (currently `001_init.sql`) —
+`learners`, `sessions`, `turns`, `learner_structures`, `persona_memories`,
+`observations`, `debrief_items`, `persona_world_state`. Root `schema.sql`
+is a pointer only; add new changes as `002_….sql`, etc. See comments in
+the migration files for reasoning cited back to PRD §8.
 
 **`persona_memories` never appears in a log line or trace attribute** —
-enforced structurally, not just documented: `src/persona-memories.ts`
+enforced structurally, not just documented: `src/memories/persona-memories.ts`
 wraps every read of `content` in a value whose `toString`/`toJSON`/
 `util.inspect` formatting all redact it. `reveal()` is the one explicit,
 greppable escape hatch, meant to be called only where the persona prompt
 is actually assembled.
 
 **Retention policy** — `sessions`/`turns` older than `RETENTION_DAYS`
-(env var, default 180, provisional) are deleted; see `src/retention.ts`.
+(env var, default 180, provisional) are deleted; see `src/db/retention.ts`.
 Deleting a session cascades to its `turns`/`observations`/`debrief_items`
 via the FK graph. `learner_structures`, `persona_memories`, and
 `persona_world_state` are per-learner, not per-session, and are
 untouched. Enforced by a sweep that runs once at boot and then daily
-(`src/index.ts`) — not just "defined," genuinely running against a real
+(`src/main.ts`) — not just "defined," genuinely running against a real
 database in every started process.
 
 **Connection pooler** — required (PRD §7.7); `pgbouncer.ini.example`

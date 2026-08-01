@@ -1,24 +1,24 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Pool } from 'pg';
-import type { Env } from './env';
+import type { Env } from '../config/env';
 import { createServer as createHttpServer } from 'node:http';
 import { z } from 'zod';
 
-import { getAddressBookForLearner } from './address-book';
-import { detectAndRecordAvoidance } from './avoidance-detection';
-import { getBenchmarkTrend, getCurrentBenchmarkSet, InvalidBenchmarkAttemptError, submitBenchmarkAttempt, submitBenchmarkAttemptRequestSchema } from './benchmark';
-import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from './debrief';
+import { getAddressBookForLearner } from '../address-book/address-book';
+import { detectAndRecordAvoidance } from '../debrief/avoidance-detection';
+import { getBenchmarkTrend, getCurrentBenchmarkSet, InvalidBenchmarkAttemptError, submitBenchmarkAttempt, submitBenchmarkAttemptRequestSchema } from '../benchmark/benchmark';
+import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from '../debrief/debrief';
 import { parseUuidParam } from './id-params';
-import { recordMemoryRequestSchema } from './memories-request';
-import { recordObservationsRequestSchema } from './observations-request';
-import { recordPersonaMemory, selectAndMarkCallbackMemory } from './persona-memories';
-import { PERSONA_IDS } from './personas';
-import { deleteLearner, recordAudioSamplingConsent } from './privacy';
-import { getScenarioViewForSession } from './scenario-view';
-import { DailySessionCapReachedError } from './session-cap';
-import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from './sessions';
-import { issueSessionToken } from './session-token';
-import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from './turns';
+import { recordMemoryRequestSchema } from '../memories/memories-request';
+import { recordObservationsRequestSchema } from '../debrief/observations-request';
+import { recordPersonaMemory, selectAndMarkCallbackMemory } from '../memories/persona-memories';
+import { PERSONA_IDS } from '../memories/personas';
+import { deleteLearner, recordAudioSamplingConsent } from '../learners/privacy';
+import { getScenarioViewForSession } from '../scenarios/scenario-view';
+import { DailySessionCapReachedError } from '../learners/session-cap';
+import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from '../learners/sessions';
+import { issueSessionToken } from '../learners/session-token';
+import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from '../turns/turns';
 
 export type AppServiceHandle = {
   /** The port actually bound — matters when `env.PORT` is `0` (tests ask the OS for a free port). */

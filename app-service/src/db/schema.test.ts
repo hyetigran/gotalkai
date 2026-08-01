@@ -3,15 +3,15 @@ import { inspect } from 'node:util';
 import { Pool } from 'pg';
 
 import { deleteExpiredSessions } from './retention';
-import { getPersonaMemoriesForLearner } from './persona-memories';
+import { getPersonaMemoriesForLearner } from '../memories/persona-memories';
 import { applySchema } from './schema';
 
 /**
- * Runs against a REAL local Postgres instance, applying the actual
- * schema.sql — no mocking, matching the precedent set in server.test.ts.
- * Requires a reachable Postgres; set DATABASE_URL to override the local
- * default. See README.md for how to create the local database this
- * defaults to.
+ * Runs against a REAL local Postgres instance, applying migrations/
+ * via applySchema — no mocking, matching the precedent set in
+ * server.test.ts. Requires a reachable Postgres; set DATABASE_URL to
+ * override the local default. See README.md for how to create the
+ * local database this defaults to.
  */
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';
 
@@ -47,7 +47,7 @@ async function makeSession(pool: Pool, learnerId: string, startedAt: Date): Prom
   return row.id;
 }
 
-describe('schema.sql', () => {
+describe('migrations', () => {
   let pool: Pool;
 
   beforeAll(async () => {
@@ -70,6 +70,13 @@ describe('schema.sql', () => {
 
   it('is idempotent — applying it a second time is a no-op, not an error', async () => {
     await expect(applySchema(pool)).resolves.toBeUndefined();
+  });
+
+  it('records applied files in schema_migrations', async () => {
+    const result = await pool.query<{ id: string }>(
+      'SELECT id FROM schema_migrations ORDER BY id',
+    );
+    expect(result.rows.map((row) => row.id)).toContain('001_init.sql');
   });
 
   it('round-trips a learner with the onboarding literacy flags', async () => {

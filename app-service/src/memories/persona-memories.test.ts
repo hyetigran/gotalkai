@@ -3,7 +3,7 @@ import { inspect } from 'node:util';
 import { Pool } from 'pg';
 
 import { getPersonaMemoriesForLearner, recordPersonaMemory, selectAndMarkCallbackMemory, wrapPersonaMemoryContent } from './persona-memories';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 describe('RedactedMemoryContent', () => {
   const secret = 'her cat Marfa was sick last week';

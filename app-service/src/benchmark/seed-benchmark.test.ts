@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 import { seedBenchmark } from './seed-benchmark';
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/lingoai_app_service';
 const SEEDED_MONTH_KEYS = ['2026-06', '2026-07'];

@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 
-import { applySchema } from './schema';
+import { applySchema } from '../db/schema';
 import { markTurnRevealed, recordInterruption, recordTurn } from './turns';
 
 /** Runs against a REAL local Postgres instance, matching persona-memories.test.ts's own precedent. */
