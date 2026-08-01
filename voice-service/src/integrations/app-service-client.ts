@@ -1,4 +1,4 @@
-import type { RecordedTurnInput } from './turn-orchestrator';
+import type { RecordedTurnInput } from '../pipeline/turn-orchestrator';
 
 /**
  * Ticket #29 / docs/adr/0022: the real HTTP implementation of

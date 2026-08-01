@@ -1,4 +1,4 @@
-import type { Env } from './env';
+import type { Env } from '../config/env';
 import { createHmac } from 'node:crypto';
 import WebSocket from 'ws';
 import { startServer } from './server';

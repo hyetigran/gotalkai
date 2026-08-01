@@ -1,5 +1,5 @@
 import { buildSafetyDetectionRequest, detectSafetyTrigger, getSafetyResponseText } from './safety-detection';
-import { fakeAnthropicClient, fakeMessageStream } from './test-support/fake-anthropic';
+import { fakeAnthropicClient, fakeMessageStream } from '../test-support/fake-anthropic';
 
 describe('buildSafetyDetectionRequest', () => {
   it('pins the model and disables thinking, matching the rest of this codebase\'s classifier-style calls', () => {

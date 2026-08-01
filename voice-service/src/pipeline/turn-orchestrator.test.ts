@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
-import type { ServerMessage } from './messages';
+import type { ServerMessage } from '../realtime/messages';
 import type { GeneratePersonaTurnResult } from './persona-turn';
 import { PERSONA_DEFINITIONS } from './personas';
 import type { PersonaDefinition } from './personas';

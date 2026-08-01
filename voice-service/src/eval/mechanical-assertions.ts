@@ -1,5 +1,5 @@
-import type { PersonaTurn } from '../persona';
-import { splitIntoSentences } from '../split-sentences';
+import type { PersonaTurn } from '../pipeline/persona';
+import { splitIntoSentences } from '../pipeline/split-sentences';
 import type { GoldenEntry } from './golden-set-types';
 
 export type AssertionKey = 'schema_validity' | 'turn_length' | 'register_consistency' | 'yo_spelling' | 'no_false_recast' | 'no_missed_recast' | 'no_english_leakage' | 'no_praise' | 'no_grammar_talk';

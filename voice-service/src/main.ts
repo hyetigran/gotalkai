@@ -1,5 +1,5 @@
-import { loadEnv } from './env';
-import { startServer } from './server';
+import { loadEnv } from './config/env';
+import { startServer } from './realtime/server';
 
 /**
  * Entrypoint. Validates env at boot (crashes loudly on invalid config,

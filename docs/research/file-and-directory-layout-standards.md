@@ -264,17 +264,17 @@ voice-service/
 ├── tsconfig.json
 ├── dist/
 └── src/
-    ├── index.ts
-    ├── server.ts
-    ├── messages.ts
-    ├── turn-orchestrator.ts
-    ├── …                   # STT/TTS/persona modules
+    ├── main.ts
+    ├── config/             # env
+    ├── realtime/           # server, messages, session-token
+    ├── pipeline/           # turn, stt, tts, stress/, persona*, safety
+    ├── integrations/       # app-service-client
+    ├── observability/      # tracing, alerting, cost
     ├── eval/               # offline / CI evaluation (not request path)
-    ├── stress/
     └── test-support/
 ```
 
-If adopting Fastify later, map **ecosystem plugins → app plugins → decorators/hooks → services** in registration order ([Fastify Getting Started](https://fastify.io/docs/latest/Guides/Getting-Started/)), with folders named to match that mental model only if helpful.
+Nest-inspired module folders without adopting NestJS. If adopting Fastify later, map **ecosystem plugins → app plugins → decorators/hooks → services** in registration order ([Fastify Getting Started](https://fastify.io/docs/latest/Guides/Getting-Started/)), with folders named to match that mental model only if helpful.
 
 ### 2.4 Gaps / conflicts between sources
 
@@ -399,9 +399,9 @@ High-level comparison only (not a full audit):
 
 ### `voice-service/`
 
-- **Aligned:** same TS package layout as `app-service`; specialized subdirs (`eval/`, `stress/`, `test-support/`) are fine under Jest’s discovery rules.
+- **Aligned:** Nest-inspired domain folders under `src/` (`config/`, `realtime/`, `pipeline/`, `integrations/`, `observability/`) plus `eval/` and `test-support/`; same TS package layout as `app-service`; entry `main.ts`.
 - **No DB mid-turn:** §1 migration layout mostly N/A unless persistence is added later.
-- Fastify/Nest structures are optional references if the HTTP/WS framework choice changes.
+- Fastify/Nest **framework** structures remain optional; this layout copies Nest’s *module folders* without Nest DI.
 
 ### `mobile/`
 

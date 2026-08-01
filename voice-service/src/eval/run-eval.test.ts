@@ -1,4 +1,4 @@
-import type { PersonaTurn } from '../persona';
+import type { PersonaTurn } from '../pipeline/persona';
 import { fakeAnthropicClient, fakeMessageStream } from '../test-support/fake-anthropic';
 import { GOLDEN_SET } from './golden-set';
 import { runEval } from './run-eval';

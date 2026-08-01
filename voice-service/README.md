@@ -18,7 +18,7 @@ pnpm dev
 
 - `pnpm dev` — run with `tsx watch` for local development
 - `pnpm build` — compile to `dist/`
-- `pnpm start` — run the compiled build (`node dist/index.js`) — this is
+- `pnpm start` — run the compiled build (`node dist/main.js`) — this is
   what Railway (or any host) should run in production
 - `pnpm test` — unit + integration tests (a real server instance, a real
   `ws` client, no mocks) — this is what verifies the auth handshake and

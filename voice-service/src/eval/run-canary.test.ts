@@ -1,4 +1,4 @@
-import type { PersonaTurn } from '../persona';
+import type { PersonaTurn } from '../pipeline/persona';
 import { fakeAnthropicClient, fakeMessageStream } from '../test-support/fake-anthropic';
 import { getCanarySet } from './canary';
 import { runCanary } from './run-canary';

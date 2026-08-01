@@ -8,13 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node --env-file=.env dist/index.js",
-    "dev": "node --env-file=.env --import tsx --watch src/index.ts",
+    "start": "node --env-file=.env dist/main.js",
+    "dev": "node --env-file=.env --import tsx --watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint .",
-    "debug:persona-turn": "node --env-file=.env --import tsx src/debug-persona-turn.ts",
+    "debug:persona-turn": "node --env-file=.env --import tsx src/pipeline/debug-persona-turn.ts",
     "eval": "node --env-file=.env --import tsx src/eval/run-eval.ts",
     "eval:golden-set-append-only": "tsx src/eval/append-only.ts",
     "eval:canary": "node --env-file=.env --import tsx src/eval/run-canary.ts"

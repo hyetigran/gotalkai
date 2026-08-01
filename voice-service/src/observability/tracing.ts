@@ -1,4 +1,4 @@
-import type { TurnTimestamps } from './messages';
+import type { TurnTimestamps } from '../realtime/messages';
 
 /**
  * Ticket #29 (PRD §11): "Trace shape: one trace per session, span per

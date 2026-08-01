@@ -1,5 +1,5 @@
-import { PERSONA_IDS } from './personas';
-import type { SafetyTriggerCategory } from './safety-detection';
+import { PERSONA_IDS } from '../pipeline/personas';
+import type { SafetyTriggerCategory } from '../pipeline/safety-detection';
 import { z } from 'zod';
 
 /**

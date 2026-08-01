@@ -1,8 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { sendHealthAlert } from '../alerting';
-import { loadEnv } from '../env';
-import { generatePersonaTurn } from '../persona-turn';
-import { PERSONA_DEFINITIONS } from '../personas';
+import { sendHealthAlert } from '../observability/alerting';
+import { loadEnv } from '../config/env';
+import { generatePersonaTurn } from '../pipeline/persona-turn';
+import { PERSONA_DEFINITIONS } from '../pipeline/personas';
 import { getCanarySet } from './canary';
 import { computeGates } from './gates';
 import { judgeTurn } from './judge';

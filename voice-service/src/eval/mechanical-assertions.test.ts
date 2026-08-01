@@ -1,4 +1,4 @@
-import type { PersonaTurn } from '../persona';
+import type { PersonaTurn } from '../pipeline/persona';
 import type { GoldenEntry } from './golden-set-types';
 import {
   checkNoEnglishLeakage,

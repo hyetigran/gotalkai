@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
-import type { ServerMessage, TurnTimestamps } from './messages';
+import type { ServerMessage, TurnTimestamps } from '../realtime/messages';
 import type { TranscriptTurn } from './persona';
 import type { GeneratePersonaTurnResult } from './persona-turn';
 import type { PersonaDefinition } from './personas';
@@ -8,9 +8,9 @@ import type { SafetyCategory, SafetyTriggerCategory } from './safety-detection';
 import type { AnnotatedText } from './stress/stress-annotation';
 import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
-import { estimateLlmCostUsd, estimateSttCostUsd, estimateTtsCostUsd } from './cost';
+import { estimateLlmCostUsd, estimateSttCostUsd, estimateTtsCostUsd } from '../observability/cost';
 import { getSafetyResponseText } from './safety-detection';
-import { logTrace } from './tracing';
+import { logTrace } from '../observability/tracing';
 
 /**
  * Ticket #18: assembles the components built in #14-#17

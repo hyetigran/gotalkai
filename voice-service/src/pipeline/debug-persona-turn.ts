@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { loadEnv } from './env';
+import { loadEnv } from '../config/env';
 import { generatePersonaTurn } from './persona-turn';
 import type { TranscriptTurn } from './persona';
 import { PERSONA_DEFINITIONS } from './personas';

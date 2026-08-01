@@ -2,7 +2,7 @@ import type { PersonaTurn, TranscriptTurn } from './persona';
 import { FILLER_LINE } from './persona';
 import { buildPersonaTurnRequest, extractPartialFields, generatePersonaTurn } from './persona-turn';
 import { PERSONA_DEFINITIONS } from './personas';
-import { fakeAnthropicClient, fakeMessageStream } from './test-support/fake-anthropic';
+import { fakeAnthropicClient, fakeMessageStream } from '../test-support/fake-anthropic';
 
 const valentina = PERSONA_DEFINITIONS.valentina;
 

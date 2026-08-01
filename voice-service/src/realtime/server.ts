@@ -4,19 +4,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { createServer as createHttpServer } from 'node:http';
 import { WebSocketServer } from 'ws';
-import { createAppServiceClient } from './app-service-client';
-import type { Env } from './env';
+import { createAppServiceClient } from '../integrations/app-service-client';
+import type { Env } from '../config/env';
 import type { ServerMessage } from './messages';
 import { clientMessageSchema } from './messages';
-import { generatePersonaTurn } from './persona-turn';
-import { DEFAULT_PERSONA_ID, PERSONA_DEFINITIONS } from './personas';
-import type { PersonaId } from './personas';
-import { detectSafetyTrigger } from './safety-detection';
+import { generatePersonaTurn } from '../pipeline/persona-turn';
+import { DEFAULT_PERSONA_ID, PERSONA_DEFINITIONS } from '../pipeline/personas';
+import type { PersonaId } from '../pipeline/personas';
+import { detectSafetyTrigger } from '../pipeline/safety-detection';
 import { verifySessionToken } from './session-token';
-import { annotateText } from './stress/stress-annotation';
-import { createSttSession } from './stt';
-import { synthesizeSpeech } from './tts';
-import { TurnOrchestrator } from './turn-orchestrator';
+import { annotateText } from '../pipeline/stress/stress-annotation';
+import { createSttSession } from '../pipeline/stt';
+import { synthesizeSpeech } from '../pipeline/tts';
+import { TurnOrchestrator } from '../pipeline/turn-orchestrator';
 
 export type VoiceServiceHandle = {
   /** The port actually bound — matters when `env.PORT` is `0` (tests ask the OS to pick a free port). */
