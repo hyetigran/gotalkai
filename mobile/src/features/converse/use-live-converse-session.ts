@@ -5,9 +5,6 @@ import { configureConverseAudioSession } from '@/lib/audio/audio-session';
 import { VoiceConnection } from '@/lib/voice-service/voice-connection';
 import { useTtsPlayback } from './use-tts-playback';
 
-/** README: "Auto-release ~45s, so a learner who puts the phone down cannot hang the session." Same value as the scripted demo (use-converse-session.ts) — a product decision independent of transport. */
-const HOLD_AUTO_RELEASE_MS = 45_000;
-
 export type ConverseTurn = {
   /** 'system' is the out-of-character safety escape hatch (ticket #27) — deliberately distinct from 'persona', never Валентина speaking. */
   speaker: 'learner' | 'persona' | 'system';
@@ -29,11 +26,10 @@ export type LiveConversePhase = 'connecting' | 'listening' | 'thinking' | 'speak
 type ConverseState = {
   phase: LiveConversePhase;
   turns: ConverseTurn[];
-  holdSeen: boolean;
   lastTimestamps: TurnTimestamps | null;
 };
 
-const INITIAL_STATE: ConverseState = { phase: 'connecting', turns: [], holdSeen: false, lastTimestamps: null };
+const INITIAL_STATE: ConverseState = { phase: 'connecting', turns: [], lastTimestamps: null };
 
 type ConverseAction
   = | { type: 'connection_state'; state: VoiceConnectionState }
@@ -42,9 +38,8 @@ type ConverseAction
 /** Pure: all side effects (TTS playback, sending session_start) live in the effect below, not here. */
 function converseReducer(state: ConverseState, action: ConverseAction): ConverseState {
   if (action.type === 'connection_state') {
-    if (action.state === 'open')
-      return { ...state, phase: 'listening' };
-    return { ...state, phase: action.state === 'connecting' ? 'connecting' : 'disconnected' };
+    const nextPhase = action.state === 'open' ? 'listening' : action.state === 'connecting' ? 'connecting' : 'disconnected';
+    return { ...state, phase: nextPhase };
   }
 
   const { message } = action;
@@ -52,12 +47,11 @@ function converseReducer(state: ConverseState, action: ConverseAction): Converse
     case 'persona_filler':
       // UAT: "get rid of [the filler] completely" — text and (the mobile
       // side never actually spoke it; only the server-side FILLER_LINES
-      // text existed) audio both gone. Still updates phase/holdSeen: the
-      // server still sends this message to mark "she's now generating a
-      // reply," and hold-to-think (docs/adr/0002) still needs that
-      // signal — just no turn gets pushed for it anymore, so nothing
+      // text existed) audio both gone. Still updates phase: the server
+      // still sends this message to mark "she's now generating a
+      // reply" — just no turn gets pushed for it anymore, so nothing
       // renders and nothing needs replacing once the real reply arrives.
-      return { ...state, phase: 'thinking', holdSeen: true };
+      return { ...state, phase: 'thinking' };
     case 'transcript_final':
       return { ...state, turns: [...state.turns, { speaker: 'learner', text: message.text }] };
     case 'persona_turn': {
@@ -110,17 +104,13 @@ export type InputMode = 'voice' | 'text';
 /**
  * Real counterpart to `use-converse-session.ts`'s scripted state machine —
  * ticket #18. Drives `phase`/`turns` off actual server messages instead of
- * local timers, over a real `VoiceConnection`. Preserves the single
- * `hasFloor` check from docs/adr/0002 ("holding does nothing during her
- * turn, and does nothing before the learner has spoken") without
- * special-casing it for the live transport.
+ * local timers, over a real `VoiceConnection`.
  *
- * There is currently no way to trigger this hook's happy path end to end
- * in this environment: nothing sends real `audio_chunk` messages (see
- * docs/adr/0017 — `expo-audio` has no live mic-streaming API), so the
- * server-side pipeline this hook reacts to can never actually fire here.
- * This hook is real, wired, and independently testable against a fake
- * `VoiceConnection`-shaped message stream; it is unverified end to end.
+ * Ticket #40 (PRD §7.9): turn-taking is hold-to-talk now, not VAD-gated
+ * open-mic — `use-hold-to-talk.ts` owns the press/release lifecycle and
+ * mic capture, calling this hook's `sendAudioChunk` with the `commit` flag
+ * that's now the turn boundary. This hook itself no longer has any
+ * "hold"/"floor" concept — there's no open mic to gate in the first place.
  *
  * Unlike the scripted demo, there is no `speak()` — suggestion chips are
  * PRD-described scaffolding a learner reads aloud into a live mic, not a
@@ -144,12 +134,11 @@ function useVoiceConnectionLifecycle(options: {
   token: string;
   learnerId: string;
   sessionId: string;
-  autoReleaseTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
   dispatch: React.Dispatch<ConverseAction>;
   enqueueTts: (audioBase64: string) => void;
   stopTts: () => void;
 }): React.RefObject<VoiceConnection | null> {
-  const { url, token, learnerId, sessionId, autoReleaseTimerRef, dispatch, enqueueTts, stopTts } = options;
+  const { url, token, learnerId, sessionId, dispatch, enqueueTts, stopTts } = options;
   const connectionRef = React.useRef<VoiceConnection | null>(null);
 
   React.useEffect(() => {
@@ -184,21 +173,16 @@ function useVoiceConnectionLifecycle(options: {
     return () => {
       connection.disconnect();
       connectionRef.current = null;
-      if (autoReleaseTimerRef.current)
-        clearTimeout(autoReleaseTimerRef.current);
     };
-  }, [url, token, learnerId, sessionId, enqueueTts, stopTts, autoReleaseTimerRef, dispatch]);
+  }, [url, token, learnerId, sessionId, enqueueTts, stopTts, dispatch]);
 
   return connectionRef;
 }
 
 export function useLiveConverseSession({ url, token, learnerId, sessionId }: UseLiveConverseSessionOptions) {
   const [state, dispatch] = React.useReducer(converseReducer, INITIAL_STATE);
-  const [holding, setHolding] = React.useState(false);
   const [mode, setMode] = React.useState<InputMode>('voice');
 
-  const autoReleaseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdingRef = React.useRef(false);
   const { enqueue: enqueueTts, stopAndClear: stopTts } = useTtsPlayback();
 
   // The scripted demo's useMicCapture calls this before recording; the live
@@ -210,35 +194,7 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
     void configureConverseAudioSession();
   }, []);
 
-  // docs/adr/0002: holding does nothing during her turn. The scripted demo's
-  // `phase` only ever had 'thinking' cover her whole turn; this hook splits
-  // that into 'thinking' (generating) and 'speaking' (TTS audio playing), so
-  // both must be excluded here, not just 'thinking' — otherwise a hold could
-  // start while she's still mid-line.
-  const hasFloor = state.phase === 'listening' && state.holdSeen;
-
-  const connectionRef = useVoiceConnectionLifecycle({ url, token, learnerId, sessionId, autoReleaseTimerRef, dispatch, enqueueTts, stopTts });
-
-  const holdOff = React.useCallback(() => {
-    if (!holdingRef.current)
-      return;
-    holdingRef.current = false;
-    setHolding(false);
-    if (autoReleaseTimerRef.current) {
-      clearTimeout(autoReleaseTimerRef.current);
-      autoReleaseTimerRef.current = null;
-    }
-    connectionRef.current?.sendHoldEnd();
-  }, [connectionRef]);
-
-  const holdOn = React.useCallback(() => {
-    if (!hasFloor || holdingRef.current)
-      return;
-    holdingRef.current = true;
-    setHolding(true);
-    connectionRef.current?.sendHoldStart();
-    autoReleaseTimerRef.current = setTimeout(holdOff, HOLD_AUTO_RELEASE_MS);
-  }, [hasFloor, holdOff, connectionRef]);
+  const connectionRef = useVoiceConnectionLifecycle({ url, token, learnerId, sessionId, dispatch, enqueueTts, stopTts });
 
   /**
    * Ticket #32: the text-input path. Deliberately thin — everything that
@@ -257,26 +213,21 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
 
   /**
    * docs/adr/0023: the send-side counterpart to real mic capture
-   * (`use-native-pcm-capture.ts`) now existing. This hook already owned
-   * `VoiceConnection` for every other message type — audio chunks are no
-   * different, just not needed until a real frame source existed to call
-   * this with. Silently drops while disconnected, same as
-   * `VoiceConnection.sendAudioChunk` itself already does — see that
-   * method's own comment for why that's fine here.
+   * (`use-native-pcm-capture.ts`). Ticket #40: `commit` is the turn
+   * boundary now (true on exactly the chunk sent when the talk button is
+   * released — see `use-hold-to-talk.ts`, the caller). Silently drops
+   * while disconnected, same as `VoiceConnection.sendAudioChunk` itself
+   * already does — see that method's own comment for why that's fine
+   * here.
    */
-  const sendAudioChunk = React.useCallback((pcmBase64: string, sampleRateHz: number) => {
-    connectionRef.current?.sendAudioChunk(pcmBase64, sampleRateHz);
+  const sendAudioChunk = React.useCallback((pcmBase64: string, sampleRateHz: number, commit: boolean) => {
+    connectionRef.current?.sendAudioChunk(pcmBase64, sampleRateHz, commit);
   }, [connectionRef]);
 
   return {
     phase: state.phase,
     turns: state.turns,
-    holding,
-    holdSeen: state.holdSeen,
-    hasFloor,
     lastTimestamps: state.lastTimestamps,
-    holdOn,
-    holdOff,
     mode,
     setMode,
     submitText,

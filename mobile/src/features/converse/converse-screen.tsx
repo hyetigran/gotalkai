@@ -1,15 +1,15 @@
 import type { MediaStream } from 'react-native-webrtc';
-import type { ConversePhase } from './use-converse-session';
-import type { LiveConversePhase } from './use-live-converse-session';
 import Env from 'env';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
 import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useLearner } from './api';
 import { FrequencyBackground } from './components/frequency-background';
+import { HoldToTalkButton } from './components/hold-to-talk-button';
 import { HoldToThinkButton } from './components/hold-to-think-button';
 import { LevelMeter } from './components/level-meter';
 import { LiveTranscript } from './components/live-transcript';
@@ -18,9 +18,9 @@ import { SuggestionChips } from './components/suggestion-chips';
 import { Transcript } from './components/transcript';
 import { useConverseSession } from './use-converse-session';
 import { useHardwareBackToOpen } from './use-hardware-back-to-open';
+import { useHoldToTalk } from './use-hold-to-talk';
 import { useLiveConverseSession } from './use-live-converse-session';
 import { useMicCapture } from './use-mic-capture';
-import { useNativePcmCapture } from './use-native-pcm-capture';
 
 /**
  * Whether the shared reveal slot shows transliteration instead of
@@ -91,30 +91,21 @@ function useElapsedClock() {
 /** After the last turn lands, how long to let it sit before moving on to Debrief. Scripted-demo only — a live conversation has no fixed script to exhaust, so it has no equivalent auto-advance; the learner always ends it manually via "End". */
 const AUTO_DEBRIEF_DELAY_MS = 1500;
 
-/**
- * `LevelMeter`'s `phase` prop only distinguishes 'listening' and
- * 'thinking' from everything else (see `level-meter.tsx`) — this maps
- * the live pipeline's richer `LiveConversePhase` onto that narrower
- * shape rather than widening `LevelMeter` itself. 'speaking' (her TTS
- * audio is actually playing) maps to 'thinking' ("she's talking" is
- * exactly what that phase's own label already says) — a genuine fit, not
- * a lossy approximation.
- */
-function mapLivePhaseToMeterPhase(phase: LiveConversePhase): ConversePhase {
-  if (phase === 'listening')
-    return 'listening';
-  if (phase === 'thinking' || phase === 'speaking')
-    return 'thinking';
-  return 'idle';
-}
-
 type ConverseHeaderProps = {
   clock: string;
   onBack: () => void;
+  onEnd: () => void;
 };
 
-/** Shared between both screens below — identical in either mode. */
-function ConverseHeader({ clock, onBack }: ConverseHeaderProps) {
+/**
+ * Shared between both screens below — identical in either mode.
+ *
+ * UAT: "not sure I like where 'end' is located [bottom footer] — it
+ * probably should be in the top right in the header." Moved here,
+ * alongside the clock, out of `ConverseFooterRow` — see that component's
+ * own comment for what's left there.
+ */
+function ConverseHeader({ clock, onBack, onEnd }: ConverseHeaderProps) {
   return (
     <View className="flex-row items-center justify-between px-[22px] pt-[60px] pb-[12px]">
       {/* Visually just the "‹" glyph (~15px) — same "raise the hit area, keep the visual
@@ -131,30 +122,30 @@ function ConverseHeader({ clock, onBack }: ConverseHeaderProps) {
         <Text className="text-[15px] text-accent">‹</Text>
       </Pressable>
       <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
-      <Text className="font-mono-medium text-[10px] text-ink/40">{clock}</Text>
+      <View className="flex-row items-center gap-[12px]">
+        <Text className="font-mono-medium text-[10px] text-ink/40">{clock}</Text>
+        <Pressable onPress={onEnd} hitSlop={{ top: 20, bottom: 20, left: 12, right: 20 }} accessibilityRole="button" accessibilityLabel="end">
+          <Text className="text-[13px] text-ink/50">End</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-type ConverseFooterRowProps = {
-  showHoldButton: boolean;
-  holding: boolean;
-  onHoldOn: () => void;
-  onHoldOff: () => void;
-  onEnd: () => void;
-};
-
-/** The bottom row's hold-button/End layout — also shared, since both modes place it identically. */
-function ConverseFooterRow({ showHoldButton, holding, onHoldOn, onHoldOff, onEnd }: ConverseFooterRowProps) {
+/**
+ * The bottom row — just the hold button now (a slot, not a hardcoded
+ * component: the scripted demo's hold-to-think and the live pipeline's
+ * hold-to-talk, ticket #40, are different buttons with different
+ * semantics — pause vs. the only way to talk at all — not the same
+ * component with different props). "End" moved to `ConverseHeader`
+ * (see its own comment); this row is what's left, shared purely for the
+ * consistent spacing/margin, not because there's meaningful layout left
+ * to share.
+ */
+function ConverseFooterRow({ holdButton }: { holdButton?: React.ReactNode }) {
   return (
-    <View className="mt-[14px] min-h-[56px] flex-row items-center justify-between gap-[12px]">
-      <View className="w-[62px]" />
-      {showHoldButton && (
-        <HoldToThinkButton holding={holding} onHoldOn={onHoldOn} onHoldOff={onHoldOff} />
-      )}
-      <Pressable onPress={onEnd} accessibilityRole="button" accessibilityLabel="end">
-        <Text className="w-[62px] text-right text-[13px] text-ink/50">End</Text>
-      </Pressable>
+    <View className="mt-[14px] min-h-[56px]">
+      {holdButton}
     </View>
   );
 }
@@ -213,7 +204,7 @@ function ScriptedConverseScreen({ learnerId, sessionId }: ScriptedConverseScreen
 
   return (
     <View className="flex-1 bg-paper">
-      <ConverseHeader clock={clock} onBack={goBackToOpen} />
+      <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} />
 
       <View className="px-[22px]">
         {/* Scripted demo's `phase` collapses "generating" and "audio playing" into one 'thinking' — same mapping LevelMeter's label already relies on (see mapLivePhaseToMeterPhase's comment). */}
@@ -238,11 +229,7 @@ function ScriptedConverseScreen({ learnerId, sessionId }: ScriptedConverseScreen
         <LevelMeter phase={phase} holding={holding} amplitude={amplitude} />
 
         <ConverseFooterRow
-          showHoldButton={holdSeen}
-          holding={holding}
-          onHoldOn={holdOn}
-          onHoldOff={holdOff}
-          onEnd={goToDebrief}
+          holdButton={holdSeen && <HoldToThinkButton holding={holding} onHoldOn={holdOn} onHoldOff={holdOff} />}
         />
       </View>
     </View>
@@ -276,35 +263,22 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
     learnerId,
     sessionId,
   });
-  // Continuous open-mic capture while it's her turn to listen (PRD §6.2:
-  // no press-to-speak), same as `use-mic-capture.ts`'s own `paused:
-  // holding` convention — paused during a hold (nothing to send while the
-  // server's been told to ignore audio anyway) and while typing in text
-  // mode. UAT: "remove voice and text options. there should be no text
-  // input. only voice" — this screen no longer offers a mode switch at
-  // all (see the render below), so mode is permanently 'voice'; the
+  // Ticket #40 (PRD §6.2/§7.9): hold-to-talk, not open-mic. The mic is
+  // only ever capturing while this button is physically held — a real
+  // echo/false-interruption failure on a physical device (no acoustic
+  // echo cancellation on the raw PCM capture path: her own TTS audio
+  // re-entering the mic read as a barge-in, cancelling her audio before
+  // it played and looping the session into a silent fallback forever)
+  // led to trading away the open-mic model entirely rather than trying to
+  // fix the acoustic problem. See PRD §7.10 and risk 10 (§14) for the
+  // full reasoning and the tradeoff (backchanneling and barge-in no
+  // longer work). UAT: "remove voice and text options. there should be
+  // no text input. only voice" — mode stays permanently 'voice'; the
   // underlying text-input capability (ticket #32) stays real and tested
-  // in use-live-converse-session.ts, just unreachable from this UI now.
-  //
-  // UAT: "the character doesn't have sound anymore" — on a real device,
-  // with no echo cancellation, this screen's own mic picks up her TTS
-  // audio coming out of the phone speaker as soon as it starts playing.
-  // That reads as a barge-in server-side (turn-orchestrator.ts's
-  // `pushAudioFrame`: any speech onset while `state === 'speaking'`
-  // cancels the in-flight synthesis), so her very first line's audio got
-  // cancelled before its first chunk ever arrived, and every turn after
-  // that fell into the silent (by design, no LLM/TTS) "didn't understand"
-  // fallback forever — a self-sustaining loop with no real user speech
-  // involved at all. `phase === 'listening'` (not just `!live.holding`)
-  // now also excludes 'thinking'/'speaking': nothing is sent to the
-  // server while she's generating or talking, so there's nothing for the
-  // server to mishear as an interruption. Trade-off, not a full fix: real
-  // barge-in (interrupting her mid-sentence) no longer works until actual
-  // echo cancellation exists — docs/adr/0017's disclosed gap, now with a
-  // concrete failure mode behind it instead of just a caveat.
-  const capture = useNativePcmCapture({
-    enabled: !live.holding && live.phase === 'listening',
-    onChunk: live.sendAudioChunk,
+  // in use-live-converse-session.ts, just unreachable from this UI.
+  const holdToTalk = useHoldToTalk({
+    canTalk: live.phase === 'listening',
+    sendAudioChunk: live.sendAudioChunk,
   });
 
   const goToDebrief = React.useCallback(() => {
@@ -315,11 +289,11 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
     router.replace(realParamsOrBarePath('/open', { learnerId }));
   }, [router, learnerId]);
 
-  const meterPhase = mapLivePhaseToMeterPhase(live.phase);
+  const insets = useSafeAreaInsets();
 
   return (
     <View className="flex-1 bg-paper">
-      <ConverseHeader clock={clock} onBack={goBackToOpen} />
+      <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} />
 
       <View className="px-[22px]">
         <PersonaPortrait3D background={<FrequencyBackground active={live.phase === 'speaking'} />} />
@@ -327,21 +301,32 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
 
       <LiveTranscript turns={live.turns} thinking={live.phase === 'thinking'} />
 
-      <View className="px-[22px] pt-[14px] pb-[40px]">
-        {capture.error && (
+      {/*
+        UAT: "the chat window appears to be a bit cutoff at the bottom" —
+        this screen (like the rest of this codebase, per a repo-wide grep)
+        never accounted for the gesture-nav-bar safe area at all, only a
+        fixed `pb-[40px]`. `insets.bottom` is 0 on devices with none (a
+        physical home button), so this is additive, not a regression
+        there.
+      */}
+      <View className="px-[22px] pt-[14px]" style={{ paddingBottom: 40 + insets.bottom }}>
+        {holdToTalk.error && (
           <Text className="font-mono-medium mb-[8px] text-center text-[10px] tracking-[0.03em] text-red-700/70">
-            {`mic: ${capture.error}`}
+            {`mic: ${holdToTalk.error}`}
           </Text>
         )}
 
-        <LevelMeter phase={meterPhase} holding={live.holding} amplitude={capture.amplitude} />
-
+        {/* UAT: "move the frequency icon animation ... inside the hold to talk button" — LevelMeter's separate row is gone; HoldToTalkButton renders its own bars now (see that component's own comment). */}
         <ConverseFooterRow
-          showHoldButton={live.holdSeen}
-          holding={live.holding}
-          onHoldOn={live.holdOn}
-          onHoldOff={live.holdOff}
-          onEnd={goToDebrief}
+          holdButton={(
+            <HoldToTalkButton
+              pressed={holdToTalk.pressed}
+              disabled={live.phase !== 'listening'}
+              amplitude={holdToTalk.amplitude}
+              onPressIn={holdToTalk.onPressIn}
+              onPressOut={holdToTalk.onPressOut}
+            />
+          )}
         />
       </View>
     </View>

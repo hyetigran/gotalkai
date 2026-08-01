@@ -91,8 +91,13 @@ export function LiveTranscript({ turns, thinking }: LiveTranscriptProps) {
   return (
     <ScrollView
       ref={scrollRef}
-      className="flex-1 px-[22px] pt-[12px] pb-[8px]"
-      contentContainerClassName="gap-[18px]"
+      className="flex-1 px-[22px] pt-[12px]"
+      // UAT: "the text still gets cut off at the bottom by the footer" —
+      // `pb-[8px]` (on the ScrollView itself, not its content) gave the
+      // last turn almost no breathing room before the controls below it;
+      // this is content-container padding, so it's real scrollable space
+      // after the last turn, not just viewport inset.
+      contentContainerClassName="gap-[18px] pb-[24px]"
     >
       {turns.map((turn, index) => (
         turn.speaker === 'persona'

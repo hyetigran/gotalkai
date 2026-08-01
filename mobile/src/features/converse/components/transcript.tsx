@@ -51,7 +51,13 @@ export function LearnerTurn({ ru }: { ru: string }) {
   );
 }
 
-/** The «ну…» thinking filler — visible only while her reply is generating. */
+/**
+ * The thinking-indicator ellipsis — visible only while her reply is
+ * generating. UAT: previously the Cyrillic «ну…» ("well…") — legible as
+ * Cyrillic, but at a glance reads like the Latin "hy..." to someone not
+ * parsing it as Cyrillic, which is confusing rather than in-character.
+ * Plain "…" avoids that entirely without losing the thinking cue.
+ */
 export function ThinkingFiller() {
   const opacity = React.useRef(new Animated.Value(0.25)).current;
 
@@ -68,7 +74,7 @@ export function ThinkingFiller() {
 
   return (
     <Animated.Text className="font-serif text-[20px] leading-[30px] text-ink/35" style={{ opacity }}>
-      ну…
+      …
     </Animated.Text>
   );
 }
