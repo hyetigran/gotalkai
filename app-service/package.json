@@ -8,14 +8,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "start": "node --env-file=.env dist/index.js",
+    "dev": "node --env-file=.env --import tsx --watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint .",
-    "db:migrate": "tsx src/migrate.ts",
-    "observability:run-checks": "tsx src/observability/run-checks.ts"
+    "db:migrate": "node --env-file=.env --import tsx src/migrate.ts",
+    "observability:run-checks": "node --env-file=.env --import tsx src/observability/run-checks.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",

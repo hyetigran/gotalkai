@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, shadows } from '@/components/ui/design-tokens';
 import { PortraitHatch } from '@/components/ui/portrait-hatch';
 import { useIsFirstSession } from '@/lib/hooks/use-is-first-session';
+import { PersonaPortrait3D } from '../converse/components/persona-portrait-3d';
 import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
 import { useOpenAnswerHandler, useOpenCallbackLine } from './use-open-screen';
 
@@ -32,36 +33,31 @@ export function OpenScreen() {
 
   return (
     <View className="flex-1 bg-paper px-[22px] pt-[66px] pb-[44px]">
+      {/* UAT: tabs restructuring — "who else" used to push to Address book from here; now that it's the Home tab (src/app/(tabs)/_layout.tsx), the tab bar already provides that navigation, so the in-header link was just a redundant second path to the same place. */}
       <View className="flex-row items-baseline justify-between gap-[12px]">
         <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
           {openData.openDay}
         </Text>
-        <View className="flex-row items-baseline gap-[14px]">
-          <Pressable onPress={() => router.push('/address-book')} accessibilityRole="button" accessibilityLabel={openData.whoElse}>
-            <Text className="text-[13px] text-accent">{openData.whoElse}</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel={openData.settingsLink}>
-            <Text className="text-[13px] text-ink/42">{openData.settingsLink}</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel={openData.settingsLink}>
+          <Text className="text-[13px] text-ink/42">{openData.settingsLink}</Text>
+        </Pressable>
       </View>
 
       {/* Shadow on this outer wrapper, clipping on the inner one — RN/iOS
           clips shadows when overflow:hidden and a shadow share one view. */}
       <View className="mt-[26px] rounded-[20px]" style={shadows.card}>
         <View className="overflow-hidden rounded-[20px] border border-ink/10 bg-white">
-          <View className="h-[196px] items-center justify-end pb-[14px]">
-            <View className="absolute inset-0">
-              <PortraitHatch
-                stop1={colors.portraitHatch.stop1}
-                stop2={colors.portraitHatch.stop2}
-                stripeWidth={7}
-              />
-            </View>
-            <Text className="rounded-[4px] bg-paper/90 px-[8px] py-[5px] font-mono text-[10px] text-ink/50">
-              portrait — Rive character, v2
-            </Text>
-          </View>
+          <PersonaPortrait3D
+            background={(
+              <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                <PortraitHatch
+                  stop1={colors.portraitHatch.stop1}
+                  stop2={colors.portraitHatch.stop2}
+                  stripeWidth={7}
+                />
+              </View>
+            )}
+          />
           <View className="px-[20px] pt-[20px] pb-[22px]">
             <Text className="font-serif text-[21px] text-ink">{openData.personaName}</Text>
             <Text className="mt-[6px] font-mono text-[12px] text-ink/50">{openData.personaMeta}</Text>

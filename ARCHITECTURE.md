@@ -95,9 +95,19 @@ Node/TypeScript under `app-service/`. Owns:
 Node/TypeScript under `voice-service/`. Owns:
 
 - Authenticated WebSocket server (shared-secret placeholder today)
-- Pipeline modules: VAD, ElevenLabs STT, persona LLM (Sonnet 5 + Zod), stress annotation, ElevenLabs TTS, turn orchestrator, safety detection, cost/tracing hooks
+- Bidirectional stream with the client
+- Pipeline orchestration: hold-to-talk (press/release) → STT → LLM → stress annotation → TTS
+- Stage timing instrumentation (six timestamps per turn)
 - Eval harness under `voice-service/src/eval/` (golden set, mechanical assertions, judge, canary)
 - Persona definitions for Валентина and Елена (ADR-0023); default remains Валентина
+- **No mid-conversation database access** — receives frozen context at session start
+
+Turn detection was originally VAD-based, with a hold-to-think override (see §5) and a split
+designed so detection could move to Python + Pipecat without touching the app service. Both are
+gone (ticket #40, PRD §7.9): a real-device echo/false-interruption failure with no acoustic echo
+cancellation on the open mic led to replacing VAD with the client's hold-to-talk button — press
+and hold to talk, release to send. See PRD §6.2/§7.9/§7.10 and risk 10 (§14) for the full
+reasoning and the tradeoff (backchanneling and barge-in no longer work).
 
 **Not yet:** production dogfooding of the full cascade from a physical device through the shipped Converse UI.
 
@@ -126,7 +136,7 @@ Load-bearing tables:
 ## 4. Voice pipeline
 
 ```
-VAD → streaming STT → persona LLM → stress annotation → sentence-chunked TTS
+hold-to-talk (press/release) → streaming STT → persona LLM → stress annotation → sentence-chunked TTS
 ```
 
 Speech-to-speech is rejected: it hides STT confidence, phoneme timings (visemes), and editable text (recasts, register, repair dial).
@@ -170,24 +180,29 @@ Russian-specific stage ([ADR-0015](./docs/adr/0015-stress-annotation-scope.md)).
 | TTS phoneme / char timings | Met |
 | TTS Unicode-codepoint billing | Met |
 
-Ticket #13 remains open as a reminder the empirical bake-off never ran.
+Ticket #13 remains open as a reminder the empirical bake-off never ran. STT bills by **audio
+duration**, not connection time — hold-to-talk naturally bounds this to the held duration (see §5).
 
 ---
 
-## 5. Turn-taking and hold-to-think
+## 5. Turn-taking: hold-to-talk
 
-Hardest UX problem: B1 learners pause mid-sentence hunting for a word. Silence-threshold VAD cuts them off; that destroys trust.
+**Revised (ticket #40, PRD §7.9).** Originally open-mic + silence-threshold VAD, with a
+hold-to-think override ([ADR-0002](./docs/adr/0002-hold-to-think-requires-the-floor.md)) for B1
+learners pausing mid-sentence — VAD cutting them off destroyed trust, and per-level timeouts /
+Pipecat SmartTurnDetection were both being considered to soften that. Reversed after a real-device
+failure: with no acoustic echo cancellation on the open mic, her own TTS audio re-entering the mic
+read as a genuine interruption, cancelling her audio before it played and locking sessions into a
+silent fallback loop.
 
-- Patience timeout is a **per-level parameter** (repair dial in milliseconds)
-- Pipecat SmartTurnDetection stays an option if Node turn detection fails
-- Open mic for the whole session by default; push-to-talk is a setting with stated tradeoffs (kills backchanneling)
-
-**Hold-to-think** ([ADR-0002](./docs/adr/0002-hold-to-think-requires-the-floor.md)):
-
-- Meaning: *wait, I’m still going* — not “pause the session”
-- While held **and learner has the floor:** suspend turn detection + mute STT
-- During her turn, or before the learner has spoken: **no-op** (no queued-hold flag)
-- **Auto-release ~45s** implemented in scripted and live session hooks
+- **Press and hold to talk; release to send.** Release is the turn boundary — no VAD, no
+  threshold, no hold-to-think (there's no open mic left to pause).
+- **Button disabled while she's speaking or generating a reply.**
+- **This also resolves the hesitant-learner problem by construction**, not mitigation — the
+  learner controls exactly how long they hold, so there's no threshold to cut them off early.
+- **Cost, stated plainly:** backchanneling and barge-in no longer work. See PRD §5.6/§7.10 and risk
+  10 (§14) — `react-native-webrtc`'s AEC path (already built for the scripted demo, not wired to
+  the live pipeline) is a possible way to bring the open mic back later.
 
 ---
 
@@ -224,7 +239,7 @@ Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incre
 | --- | --- |
 | Eval | Golden set + mechanical assertions + judge under `voice-service/src/eval/` (ADR-0012); same Zod schema as production |
 | Observability | Health vs quality split; tracing hooks (ADR-0022); canary runners present |
-| Cost | TTS largest line; prompt caching; VAD-gated STT; short turns; **daily session cap** (ADR-0006) |
+| Cost | TTS largest line; prompt caching; hold-to-talk-bounded STT; short turns; **daily session cap** (ADR-0006) |
 | Safety | Out-of-character escape hatch design (ADR-0019); safety detection in voice service; memories never in logs |
 | Privacy | Deletion / sampling policy (ADR-0009); check biometric (e.g. BIPA) before storing voice |
 
@@ -240,7 +255,7 @@ Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incre
 | `landing/` | Next.js marketing site (Vercel) |
 | `PRD.md` | Requirements and detailed tech rationale |
 | `CHARACTER.md` | Persona / expression asset notes |
-| `docs/adr/` | Accepted decisions (**0001–0024**) |
+| `docs/adr/` | Accepted decisions (**0001–0026**) |
 | `docs/agents/` | Tracker, triage, domain, versioning for agents |
 | `memory-bank/` | Agent session continuity |
 | `.cursor/rules/` | Review→commit, version bump, memory bank |

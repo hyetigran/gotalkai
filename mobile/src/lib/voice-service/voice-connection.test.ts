@@ -138,24 +138,24 @@ describe('voiceConnection', () => {
 // Sibling describe, not nested inside the block above — keeps each describe
 // callback under the max-lines-per-function limit.
 describe('voiceConnection pipeline messages (ticket #18)', () => {
-  it('sends audio_chunk, hold_start, hold_end, session_start, and text_input with the expected shape', () => {
+  it('sends audio_chunk (with commit), session_start, text_input, and begin_conversation with the expected shape', () => {
     const connection = new VoiceConnection({ url: 'ws://example.test', token: 't' });
     connection.connect();
     FakeWebSocket.instances[0]?.simulateOpen();
 
-    connection.sendAudioChunk('AAAA', 16000);
-    connection.sendHoldStart();
-    connection.sendHoldEnd();
+    connection.sendAudioChunk('AAAA', 16000, false);
+    connection.sendAudioChunk('BBBB', 16000, true);
     connection.sendSessionStart('learner-1', 'session-1');
     connection.sendTextInput('Привет!');
+    connection.sendBeginConversation();
 
     const sent = (FakeWebSocket.instances[0]?.sent ?? []).map(raw => JSON.parse(raw));
     expect(sent).toEqual([
-      { type: 'audio_chunk', pcmBase64: 'AAAA', sampleRateHz: 16000 },
-      { type: 'hold_start' },
-      { type: 'hold_end' },
+      { type: 'audio_chunk', pcmBase64: 'AAAA', sampleRateHz: 16000, commit: false },
+      { type: 'audio_chunk', pcmBase64: 'BBBB', sampleRateHz: 16000, commit: true },
       { type: 'session_start', learnerId: 'learner-1', sessionId: 'session-1' },
       { type: 'text_input', text: 'Привет!' },
+      { type: 'begin_conversation' },
     ]);
   });
 
@@ -163,7 +163,7 @@ describe('voiceConnection pipeline messages (ticket #18)', () => {
     const connection = new VoiceConnection({ url: 'ws://example.test', token: 't' });
     connection.connect();
 
-    expect(() => connection.sendAudioChunk('AAAA', 16000)).not.toThrow();
+    expect(() => connection.sendAudioChunk('AAAA', 16000, false)).not.toThrow();
     expect(FakeWebSocket.instances[0]?.sent).toEqual([]);
   });
 

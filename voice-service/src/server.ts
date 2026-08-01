@@ -39,7 +39,9 @@ function send(ws: WebSocket, message: ServerMessage): void {
 }
 
 /**
- * Decodes a base64 PCM chunk into 16-bit samples for VAD/RMS purposes.
+ * Decodes a base64 PCM chunk into 16-bit samples for `pushAudioFrame`'s
+ * `frameDurationMs` cost-tracking math — not for any speech/silence
+ * decision (ticket #40 removed VAD entirely; see turn-orchestrator.ts).
  * `Int16Array` over the raw buffer bytes assumes little-endian encoding —
  * the convention `pcm-encode.ts` (mobile) writes, and what `Buffer`'s
  * default byte order matches on every platform Node actually runs on.
@@ -155,13 +157,7 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
             send(ws, { type: 'pong', requestId: result.data.requestId, serverTime: Date.now() });
             return;
           case 'audio_chunk':
-            orchestrator.pushAudioFrame(decodePcm16(result.data.pcmBase64), result.data.pcmBase64, result.data.sampleRateHz);
-            return;
-          case 'hold_start':
-            orchestrator.holdStart();
-            return;
-          case 'hold_end':
-            orchestrator.holdEnd();
+            orchestrator.pushAudioFrame(decodePcm16(result.data.pcmBase64), result.data.pcmBase64, result.data.sampleRateHz, result.data.commit);
             return;
           case 'session_start': {
             // The orchestrator's real session id already comes from the
@@ -197,6 +193,9 @@ export function startServer(env: Env): Promise<VoiceServiceHandle> {
           }
           case 'text_input':
             void orchestrator.submitTextInput(result.data.text);
+            return;
+          case 'begin_conversation':
+            void orchestrator.openConversation();
             return;
         }
       });

@@ -36,6 +36,19 @@ export const personaTurnSchema = z.object({
   affect: z.enum(PERSONA_AFFECT_VALUES),
   /** Валентина's Russian dialogue line — one conversational turn (1-2 sentences per ADR-0003), never English, never meta-commentary. */
   text: z.string().min(1),
+  /**
+   * UAT: "the text is no longer clickable to show translation. add it
+   * back" — the scripted demo's tap-to-reveal (PRD §6.2) has always had
+   * a hand-authored English line per turn; the live pipeline never had
+   * an equivalent, since nothing generated one (live-transcript.tsx's
+   * own prior disclosure: "a real, disclosed gap upstream of this
+   * component"). Placed after `text`, not before: unlike
+   * comprehension/affect (PRD §6.5 needs those readable mid-stream,
+   * before she speaks — extractPartialFields depends on that
+   * ordering), the translation is not needed early and conceptually
+   * depends on the Russian line it translates.
+   */
+  translation: z.string().min(1),
 });
 
 export type PersonaComprehension = (typeof PERSONA_COMPREHENSION_VALUES)[number];
@@ -136,7 +149,13 @@ export const VALENTINA_IDENTITY_PROMPT = `Ты — Валентина Серге
 Формат ответа: одна реплика (1-2 предложения), только на русском языке.
 Никогда не переключайся на английский, не давай метакомментариев о том,
 что ты ИИ или языковая модель, не объясняй грамматику, не выходи из роли
-ни при каких обстоятельствах — ты Валентина, а не учитель и не ассистент.`;
+ни при каких обстоятельствах — ты Валентина, а не учитель и не ассистент.
+
+Отдельным полем ("translation") дай естественный английский перевод
+именно своей реплики (только что написанного текста, не всего разговора)
+— не дословный, а такой, как звучал бы этот же смысл на нормальном
+английском. Это поле для интерфейса приложения, не часть твоей реплики
+как персонажа — на сам разговор оно не влияет.`;
 
 /**
  * Ticket #34 / docs/adr/0023: Елена Николаевна's identity layer, authored

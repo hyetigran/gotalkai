@@ -13,6 +13,9 @@ Secondary: keep docs (`ARCHITECTURE.md`, Memory Bank) honest about current vs ta
 
 ## Recent changes
 
+- **Ticket #40 (PRD §7.9):** turn-taking redesigned from server-side VAD to client hold-to-talk
+  (press/release, `commit` flag is the turn boundary) — real-device echo/false-interruption failure
+  with no AEC on the open mic made VAD untenable. Live pipeline verified end-to-end on device.
 - Large ticket wave: app-service + voice-service pipeline, eval harness, product screens, ADRs through **0024**.
 - **ADR-0013:** ElevenLabs for STT+TTS; formal bake-off skipped.
 - **ADR-0017:** Live wiring built but disclosed incomplete (no device activation; WS+PCM not WebRTC peer; mic PCM stub).
@@ -31,7 +34,7 @@ Secondary: keep docs (`ARCHITECTURE.md`, Memory Bank) honest about current vs ta
 ## Active decisions / considerations
 
 - Premise still unvalidated until dogfooding + session-2 return (ADR-0001).
-- Hold-to-think: floor rule (ADR-0002); **45s auto-release** implemented.
+- Turn-taking: hold-to-talk, press/release (ticket #40); hold-to-think (ADR-0002) and VAD both retired — see risk 10 (PRD §14) for the backchanneling/barge-in tradeoff.
 - Persona LLM: Sonnet 5, thinking off (ADR-0003); verify cache prefix ≥1024 tokens.
 - Vendors: **ElevenLabs both**; n-best dropped; stress via IPA/`<phoneme>` (ADR-0013).
 - Transport: **WebSocket + base64 PCM**, not WebRTC peer — **no free AEC** (ADR-0017).

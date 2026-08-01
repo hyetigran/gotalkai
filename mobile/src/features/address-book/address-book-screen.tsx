@@ -1,7 +1,7 @@
 import type { EntryStatus } from './address-book-fixture';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 
 import { CAST_FIXTURE, ADDRESS_BOOK_COPY as copy, REACHED_COUNT } from './address-book-fixture';
 import { AddressBookEntry } from './components/address-book-entry';
@@ -26,12 +26,9 @@ export function AddressBookScreen() {
 
   return (
     <View className="flex-1 bg-paper px-[22px] pt-[60px] pb-[44px]">
-      <View className="flex-row items-center justify-between">
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="back">
-          <Text className="text-[15px] text-accent">‹</Text>
-        </Pressable>
+      {/* UAT: tabs restructuring — this is now the Home tab's root screen (src/app/(tabs)/_layout.tsx), reached by switching tabs, not pushed onto a stack, so there's no "back" screen for router.back() to return to any more. */}
+      <View className="items-center">
         <Text className="font-serif text-[13px] text-ink/60">{copy.castHead}</Text>
-        <View className="w-[12px]" />
       </View>
 
       <View className="mt-[16px]">

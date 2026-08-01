@@ -9,10 +9,7 @@ import type { SttEventHandlers, SttTranscript, SttWord } from './stt';
 import type { TtsEventHandlers } from './tts';
 import { type RecordedTurnInput, TurnOrchestrator, type TurnOrchestratorDeps } from './turn-orchestrator';
 
-function silentFrame(length = 160): Int16Array {
-  return new Int16Array(length);
-}
-
+/** Ticket #40: amplitude is no longer meaningful — there's no VAD/RMS threshold left to cross. Kept as "a real audio frame" for readability at call sites. */
 function loudFrame(length = 160, amplitude = 20000): Int16Array {
   const samples = new Int16Array(length);
   for (let i = 0; i < length; i++) samples[i] = i % 2 === 0 ? amplitude : -amplitude;
@@ -79,7 +76,7 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
   const sttSendAudioChunk = jest.fn();
   const sttClose = jest.fn();
   const generatePersonaTurn = jest.fn(async (_client: Anthropic, _transcript: unknown, _persona: PersonaDefinition): Promise<GeneratePersonaTurnResult> =>
-    options.personaTurn ?? { turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.' }, fellBackToFiller: false, rawOutput: '', usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } });
+    options.personaTurn ?? { turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.', translation: 'Ah, of course.' }, fellBackToFiller: false, rawOutput: '', usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 } });
   const detectSafetyTrigger = jest.fn(async (): Promise<SafetyCategory> => options.safetyCategory ?? 'none');
   const annotateText = jest.fn((text: string) => ({ text: `${text}[annotated]`, unresolvedWords: [] }));
   const synthesizeSpeech = jest.fn(async (_client: unknown, _voiceId: string, _text: string, handlers?: TtsEventHandlers) => {
@@ -111,41 +108,42 @@ function fakeDeps(waiter: ReturnType<typeof createMessageWaiter>, options: FakeD
     recordTurn,
     recordInterruption,
     now: () => clock++,
-    vadConfig: { speechThresholdRms: 5000, silenceHangoverMs: 40 },
   };
 
   return { deps, sttHandlers, sttSendAudioChunk, sttClose, generatePersonaTurn, detectSafetyTrigger, annotateText, synthesizeSpeech, recordTurn, recordInterruption };
 }
 
-/** Pushes one loud frame (starts speech) then enough silent frames to cross the 40ms hangover — the standard "learner spoke one utterance" sequence for these tests. */
+/** Ticket #40: one non-final chunk (button still held) then the release chunk (commit: true) — the standard "learner pressed, spoke, released" sequence for these tests. */
 function speakOneUtterance(orchestrator: TurnOrchestrator): void {
-  orchestrator.pushAudioFrame(loudFrame(), 'loud-base64', 8000);
-  orchestrator.pushAudioFrame(silentFrame(), 'silent-1', 8000); // 20ms
-  orchestrator.pushAudioFrame(silentFrame(), 'silent-2', 8000); // 40ms — crosses hangover, triggers commit
+  orchestrator.pushAudioFrame(loudFrame(), 'chunk-1', 8000, false);
+  orchestrator.pushAudioFrame(loudFrame(), 'chunk-2', 8000, true);
 }
 
 const goodTranscript: SttTranscript = { text: 'Привет, как дела?', words: [goodWord('Привет'), goodWord('как'), goodWord('дела')] };
 
 describe('TurnOrchestrator', () => {
-  it('opens an STT session on speech start and forwards audio while in speech', () => {
+  it('opens an STT session on the first frame of a press and forwards audio while listening', () => {
     const waiter = createMessageWaiter();
     const { deps, sttSendAudioChunk } = fakeDeps(waiter);
     const orchestrator = new TurnOrchestrator(deps);
 
-    orchestrator.pushAudioFrame(loudFrame(), 'loud-base64', 8000);
+    orchestrator.pushAudioFrame(loudFrame(), 'loud-base64', 8000, false);
 
     expect(deps.createSttSession).toHaveBeenCalledTimes(1);
     expect(sttSendAudioChunk).toHaveBeenCalledWith('loud-base64', 8000, false);
   });
 
-  it('does not open an STT session or forward anything while silence continues', () => {
+  it('does not open an STT session or forward anything while not listening (e.g. mid-turn)', async () => {
     const waiter = createMessageWaiter();
     const { deps, sttSendAudioChunk } = fakeDeps(waiter);
     const orchestrator = new TurnOrchestrator(deps);
 
-    orchestrator.pushAudioFrame(silentFrame(), 'silent', 8000);
+    speakOneUtterance(orchestrator);
+    await waiter.waitFor('persona_filler'); // now 'processing', not 'listening'
+    sttSendAudioChunk.mockClear();
 
-    expect(deps.createSttSession).not.toHaveBeenCalled();
+    orchestrator.pushAudioFrame(loudFrame(), 'stray-frame', 8000, false);
+
     expect(sttSendAudioChunk).not.toHaveBeenCalled();
   });
 
@@ -194,6 +192,34 @@ describe('TurnOrchestrator', () => {
     },
   );
 
+  it(
+    'sends generatePersonaTurn\'s translation field on persona_turn — PRD §6.2 tap-to-reveal, real-pipeline counterpart to the scripted demo\'s hand-authored `en` field (UAT: "the text is no longer clickable to show translation. add it back")',
+    async () => {
+      const waiter = createMessageWaiter();
+      const { deps, sttHandlers } = fakeDeps(waiter, {
+        personaTurn: {
+          turn: { comprehension: 'understood', affect: 'warm', text: 'Ах, конечно.', translation: 'Ah, of course.' },
+          fellBackToFiller: false,
+          rawOutput: '',
+          usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+        },
+      });
+      const orchestrator = new TurnOrchestrator(deps);
+
+      speakOneUtterance(orchestrator);
+      sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+      await waiter.waitFor('turn_complete');
+
+      expect(waiter.messages).toContainEqual({
+        type: 'persona_turn',
+        text: 'Ах, конечно.',
+        comprehension: 'understood',
+        affect: 'warm',
+        translation: 'Ah, of course.',
+      });
+    },
+  );
+
   it('accumulates real conversation history across multiple turns', async () => {
     const waiter = createMessageWaiter();
     const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
@@ -222,7 +248,13 @@ describe('TurnOrchestrator', () => {
       const orchestrator = new TurnOrchestrator(deps);
 
       speakOneUtterance(orchestrator);
-      sttHandlers[0]?.onFinalTranscript?.({ text: 'мумбл мумбл', words: [goodWord('мумбл', -4), goodWord('мумбл', -5)] });
+      // -7/-8 (avg -7.5), not the old -4/-5 fixture — real logcat data
+      // (LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD's own comment) put clean,
+      // correctly-heard speech at -3 to -4.5 and the one genuine
+      // disfluency this codebase has actually observed at -6.5; -4/-5
+      // would no longer represent "low confidence" at all under the
+      // recalibrated -6 threshold.
+      sttHandlers[0]?.onFinalTranscript?.({ text: 'мумбл мумбл', words: [goodWord('мумбл', -7), goodWord('мумбл', -8)] });
       await waiter.waitFor('turn_complete');
 
       expect(generatePersonaTurn).not.toHaveBeenCalled();
@@ -234,7 +266,7 @@ describe('TurnOrchestrator', () => {
     },
   );
 
-  it('treats an empty transcript (no words at all) as low confidence too, not a crash', async () => {
+  it('treats a genuinely empty transcript (no text at all) as low confidence too, not a crash', async () => {
     const waiter = createMessageWaiter();
     const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
     const orchestrator = new TurnOrchestrator(deps);
@@ -245,6 +277,21 @@ describe('TurnOrchestrator', () => {
 
     expect(generatePersonaTurn).not.toHaveBeenCalled();
   });
+
+  it(
+    'runs the normal persona cascade for real, non-empty text with an empty words array — the real ElevenLabs committed_transcript shape (no "_with_timestamps"), which carries no per-word breakdown at all despite include_timestamps being requested (UAT: real, correctly-heard, on-screen speech got "I didn\'t understand you" every single time — words.length === 0 was treated as automatic low confidence regardless of real, non-empty text)',
+    async () => {
+      const waiter = createMessageWaiter();
+      const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      speakOneUtterance(orchestrator);
+      sttHandlers[0]?.onFinalTranscript?.({ text: 'Понял.', words: [] });
+      await waiter.waitFor('turn_complete');
+
+      expect(generatePersonaTurn).toHaveBeenCalledWith(deps.anthropicClient, [{ speaker: 'learner', text: 'Понял.' }], deps.persona);
+    },
+  );
 
   it('degrades to the "didn\'t catch that" line (not a crash) when the STT vendor itself errors', async () => {
     const waiter = createMessageWaiter();
@@ -259,12 +306,32 @@ describe('TurnOrchestrator', () => {
   });
 
   it(
-    'a barge-in (new speech while speaking) sends barge_in, resets state, and drops the abandoned turn\'s results — no stale tts_chunk/turn_complete for the interrupted turn',
+    'still degrades to "didn\'t catch that" (not a permanent hang) when the STT vendor errors *before* commit — a real deadlock: the error used to arrive while pendingTranscript was still null, so handleTurnDetected\'s later promise, tied to an already-dead session, could never settle (UAT: "the \'nu\' filler text still renders, my voice isn\'t captured")',
+    async () => {
+      const waiter = createMessageWaiter();
+      const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      // First frame creates the STT session — then the vendor rejects the
+      // connection immediately, well before any commit frame arrives.
+      orchestrator.pushAudioFrame(loudFrame(), 'chunk-1', 8000, false);
+      expect(() => sttHandlers[0]?.onError?.(new Error('auth_error: not authenticated'))).not.toThrow();
+
+      // Only now does the button release, committing the turn.
+      orchestrator.pushAudioFrame(loudFrame(), 'chunk-2', 8000, true);
+
+      await waiter.waitFor('turn_complete');
+      expect(generatePersonaTurn).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'a stray frame arriving after state has already moved on (e.g. network reordering) is silently dropped, not treated as a barge-in — the in-flight turn completes normally, undisturbed',
     async () => {
       const waiter = createMessageWaiter();
       let releaseSynthesis: (() => void) | undefined;
       const { deps, sttHandlers } = fakeDeps(waiter);
-      // Override synthesizeSpeech to hang until the test releases it, so the orchestrator is genuinely mid-"speaking" when the barge-in frame arrives.
+      // Override synthesizeSpeech to hang until the test releases it, so the orchestrator is genuinely mid-"speaking" when the stray frame arrives.
       deps.synthesizeSpeech = jest.fn(() => new Promise((resolve) => {
         releaseSynthesis = () => resolve([]);
       }));
@@ -275,92 +342,45 @@ describe('TurnOrchestrator', () => {
       await waiter.waitFor('persona_turn'); // proves we're now in the 'speaking' phase, synthesis in flight
 
       expect(orchestrator.currentState).toBe('speaking');
-      orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000); // learner speaks over her
+      // The client's talk button is disabled while she's speaking (PRD
+      // §7.9), so this shouldn't happen in practice — this test is the
+      // server-side defensive guard for a frame that was already in
+      // flight when that transition happened.
+      orchestrator.pushAudioFrame(loudFrame(), 'stray-frame', 8000, false);
 
-      expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
-      expect(orchestrator.currentState).toBe('listening');
+      expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(false);
+      expect(orchestrator.currentState).toBe('speaking'); // undisturbed — not reset to 'listening'
 
-      releaseSynthesis?.(); // let the abandoned turn's synthesis "complete" now
+      releaseSynthesis?.(); // the original, never-superseded turn completes normally
       await new Promise(resolve => setTimeout(resolve, 0));
-      expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(false); // superseded, never sent
+      expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
     },
   );
-
-  it('while held, incoming audio is entirely ignored — no STT session, no messages, matching "no audio sent to STT" (PRD §7.9)', () => {
-    const waiter = createMessageWaiter();
-    const { deps } = fakeDeps(waiter);
-    const orchestrator = new TurnOrchestrator(deps);
-
-    orchestrator.holdStart();
-    orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
-
-    expect(deps.createSttSession).not.toHaveBeenCalled();
-    expect(waiter.messages).toEqual([]);
-  });
-
-  it('resumes normal processing after holdEnd', () => {
-    const waiter = createMessageWaiter();
-    const { deps } = fakeDeps(waiter);
-    const orchestrator = new TurnOrchestrator(deps);
-
-    orchestrator.holdStart();
-    orchestrator.holdEnd();
-    orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
-
-    expect(deps.createSttSession).toHaveBeenCalledTimes(1);
-  });
-
-  it('auto-releases a hold after ~45s if hold_end never arrives — a server-side backstop for a dropped/crashed client (PRD §7.9)', () => {
-    jest.useFakeTimers();
-    try {
-      const waiter = createMessageWaiter();
-      const { deps } = fakeDeps(waiter);
-      const orchestrator = new TurnOrchestrator(deps);
-
-      orchestrator.holdStart();
-      orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
-      expect(deps.createSttSession).not.toHaveBeenCalled(); // still held
-
-      jest.advanceTimersByTime(45_000);
-      orchestrator.pushAudioFrame(loudFrame(), 'loud-after-release', 8000);
-      expect(deps.createSttSession).toHaveBeenCalledTimes(1); // auto-released, now processes audio
-    }
-    finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('an explicit holdEnd before the 45s backstop cancels it — no late, spurious auto-release', () => {
-    jest.useFakeTimers();
-    try {
-      const waiter = createMessageWaiter();
-      const { deps } = fakeDeps(waiter);
-      const orchestrator = new TurnOrchestrator(deps);
-
-      orchestrator.holdStart();
-      orchestrator.holdEnd();
-      orchestrator.holdStart(); // hold again, well within the first backstop's original window
-      jest.advanceTimersByTime(20_000);
-      orchestrator.holdEnd();
-      jest.advanceTimersByTime(30_000); // past the original (cancelled) 45s deadline
-
-      orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
-      expect(deps.createSttSession).toHaveBeenCalledTimes(1); // not held — the stale timer never fired
-    }
-    finally {
-      jest.useRealTimers();
-    }
-  });
 
   it('forwards STT partial transcripts to the client (PRD §6.2 live "what did I just say" feedback)', () => {
     const waiter = createMessageWaiter();
     const { deps, sttHandlers } = fakeDeps(waiter);
     const orchestrator = new TurnOrchestrator(deps);
 
-    orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000);
+    orchestrator.pushAudioFrame(loudFrame(), 'loud', 8000, false);
     sttHandlers[0]?.onPartialTranscript?.('Прив');
 
     expect(waiter.messages).toContainEqual({ type: 'transcript_partial', text: 'Прив' });
+  });
+
+  it('a hold pinned open past MAX_HOLD_MS is force-committed server-side — a backstop against a client that never sends commit: true', () => {
+    const waiter = createMessageWaiter();
+    let clockMs = 0;
+    const { deps, sttSendAudioChunk } = fakeDeps(waiter);
+    deps.now = () => clockMs;
+    const orchestrator = new TurnOrchestrator(deps);
+
+    orchestrator.pushAudioFrame(loudFrame(), 'chunk-1', 8000, false);
+    clockMs = 60_000;
+    orchestrator.pushAudioFrame(loudFrame(), 'chunk-2', 8000, false); // client still hasn't released
+
+    // Forced commit: true despite the client sending false.
+    expect(sttSendAudioChunk).toHaveBeenLastCalledWith('chunk-2', 8000, true);
   });
 });
 
@@ -431,7 +451,7 @@ describe('TurnOrchestrator safety escape hatch (ticket #27)', () => {
     expect(waiter.messages.some(message => message.type === 'safety_response')).toBe(false);
   });
 
-  it('a barge-in during a safety response is handled the same as any other turn — no stale safety_response/turn_complete for the abandoned turn', async () => {
+  it('audio arriving during a safety response\'s TTS is silently ignored, same as any other "speaking" turn — no spurious barge_in, the safety response completes normally', async () => {
     const waiter = createMessageWaiter();
     let releaseSynthesis: (() => void) | undefined;
     const { deps, sttHandlers } = fakeDeps(waiter, { safetyCategory: 'distress' });
@@ -445,14 +465,14 @@ describe('TurnOrchestrator safety escape hatch (ticket #27)', () => {
     await waiter.waitFor('safety_response');
 
     expect(orchestrator.currentState).toBe('speaking');
-    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+    orchestrator.pushAudioFrame(loudFrame(), 'stray-frame', 8000, false);
 
-    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
-    expect(orchestrator.currentState).toBe('listening');
+    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(false);
+    expect(orchestrator.currentState).toBe('speaking');
 
     releaseSynthesis?.();
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(false); // superseded, never sent
+    expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
   });
 
   it('skips the safety check entirely for an empty transcript — nothing to classify', async () => {
@@ -518,18 +538,6 @@ describe('TurnOrchestrator text input (ticket #32)', () => {
     expect(generatePersonaTurn).not.toHaveBeenCalled();
     const safetyMessage = waiter.messages.find(message => message.type === 'safety_response');
     expect(safetyMessage).toMatchObject({ type: 'safety_response', category: 'distress' });
-  });
-
-  it('is a no-op while held, matching PRD §7.9\'s "turn detection is suspended entirely" for any input modality', async () => {
-    const waiter = createMessageWaiter();
-    const { deps, generatePersonaTurn } = fakeDeps(waiter);
-    const orchestrator = new TurnOrchestrator(deps);
-
-    orchestrator.holdStart();
-    await orchestrator.submitTextInput('should be ignored while held');
-
-    expect(generatePersonaTurn).not.toHaveBeenCalled();
-    expect(waiter.messages).toEqual([]);
   });
 
   it('is a no-op for empty or whitespace-only text', async () => {
@@ -632,13 +640,32 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     const personaCallIndex = recordTurn.mock.calls.findIndex(call => (call[1] as { speaker: string }).speaker === 'persona');
     const turnId = await recordTurn.mock.results[personaCallIndex]?.value;
     expect(orchestrator.currentState).toBe('speaking');
+    // Claims the original turn's own persona_turn occurrence — only
+    // `tts_chunk` was awaited for it above, so without this the later
+    // `waitFor('persona_turn')` below would resolve against *this*
+    // still-unclaimed occurrence instead of the interrupting turn's.
+    await waiter.waitFor('persona_turn');
 
-    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+    // Voice can no longer trigger a barge-in here (see pushAudioFrame's own
+    // comment: the mic's own echo of her TTS used to be indistinguishable
+    // from a real interruption) — text input is the only remaining barge-in
+    // trigger, same mechanism (`handleBargeIn`/`recordInterruptionIfAny`)
+    // either way. Not awaited: `handleBargeIn` runs synchronously before
+    // any await point in `submitTextInput` — awaiting the whole call here
+    // would hang on the interrupting turn's own (also-stubbed)
+    // synthesizeSpeech, same reasoning as the text-input barge-in test above.
+    const interrupting = orchestrator.submitTextInput('Перебиваю.');
 
     expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(true);
     expect(recordInterruption).toHaveBeenCalledWith(turnId, expect.any(Number));
 
+    // Waits for the interrupting turn's own persona_turn — proves
+    // `releaseSynthesis` now points to *that* call's resolver, not the
+    // superseded original turn's (which is simply left hanging — nothing
+    // here awaits it directly).
+    await waiter.waitFor('persona_turn');
     releaseSynthesis?.();
+    await interrupting;
   });
 
   it('does not record a barge-in that lands before her audio has actually started (still fetching the first TTS chunk)', async () => {
@@ -656,7 +683,11 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
     await waiter.waitFor('persona_turn'); // proves we're in 'speaking', still before any chunk
 
-    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+    // Voice can no longer trigger a barge-in (see pushAudioFrame's own
+    // comment) — text input is the only remaining trigger, same
+    // `handleBargeIn` either way. Not awaited: its own synthesizeSpeech
+    // call would hang on this test's shared stub.
+    void orchestrator.submitTextInput('Перебиваю.');
 
     expect(recordInterruption).not.toHaveBeenCalled();
     releaseSynthesis?.();
@@ -684,7 +715,7 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     sttHandlers[1]?.onFinalTranscript?.(goodTranscript);
     await waiter.waitFor('safety_response');
 
-    orchestrator.pushAudioFrame(loudFrame(), 'barge-in-audio', 8000);
+    void orchestrator.submitTextInput('Перебиваю.');
 
     // Must not fire against the earlier, already-completed normal turn.
     expect(recordInterruption).not.toHaveBeenCalled();
@@ -698,7 +729,8 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     orchestrator.sessionStart('session-abc');
 
     speakOneUtterance(orchestrator);
-    sttHandlers[0]?.onFinalTranscript?.({ text: 'мумбл мумбл', words: [goodWord('мумбл', -4), goodWord('мумбл', -5)] });
+    // See the "responds with the 'didn't catch that' line" test's own comment for why -7/-8, not the old -4/-5.
+    sttHandlers[0]?.onFinalTranscript?.({ text: 'мумбл мумбл', words: [goodWord('мумбл', -7), goodWord('мумбл', -8)] });
     await waiter.waitFor('turn_complete');
 
     expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({ speaker: 'learner', content: 'мумбл мумбл' }));
@@ -759,6 +791,93 @@ describe('TurnOrchestrator observability (ticket #29)', () => {
     expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+});
+
+// Sibling describe, not nested inside the top-level one above — keeps this
+// file's per-describe test count from growing unbounded as coverage accretes.
+describe('TurnOrchestrator opening line (PRD §6.2: "she opens, not the learner")', () => {
+  it('sends a filler, then a persona_turn and tts_chunk(s), then turn_complete — with no preceding learner turn', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, generatePersonaTurn, synthesizeSpeech } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.openConversation();
+
+    expect(waiter.messages[0]).toMatchObject({ type: 'persona_filler' });
+    const personaTurn = waiter.messages.find(message => message.type === 'persona_turn');
+    // translation: PRD §6.2 tap-to-reveal — the opening line is fixed copy, not LLM-generated,
+    // so its translation must be too (OPENING_LINE_TRANSLATION), same reasoning as the line itself.
+    expect(personaTurn).toMatchObject({ type: 'persona_turn', comprehension: 'understood', affect: 'warm', translation: expect.any(String) });
+    expect(waiter.messages.some(message => message.type === 'tts_chunk')).toBe(true);
+    expect(waiter.messages.some(message => message.type === 'turn_complete')).toBe(true);
+    // No LLM call for a fixed opening line, and nothing to have generated it from anyway.
+    expect(generatePersonaTurn).not.toHaveBeenCalled();
+    expect(synthesizeSpeech).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('[annotated]'), expect.anything());
+  });
+
+  it(
+    'does not add the opening line to history — the learner\'s first real turn is still the only, and first, message sent to the persona LLM',
+    async () => {
+      // Anthropic's Messages API requires the first message in a request to
+      // be role 'user'. this.history feeds toMessageParams (persona.ts),
+      // which maps speaker 'persona' -> role 'assistant'. If the opening
+      // line were pushed onto history, it would be the first (and, until
+      // now, only) entry, making this call structurally invalid.
+      const waiter = createMessageWaiter();
+      const { deps, sttHandlers, generatePersonaTurn } = fakeDeps(waiter);
+      const orchestrator = new TurnOrchestrator(deps);
+
+      await orchestrator.openConversation();
+      await waiter.waitFor('turn_complete'); // the opening line's own turn_complete — consume it before waiting for the real turn's
+      speakOneUtterance(orchestrator);
+      sttHandlers[0]?.onFinalTranscript?.(goodTranscript);
+      await waiter.waitFor('turn_complete');
+
+      expect(generatePersonaTurn).toHaveBeenCalledWith(expect.anything(), [{ speaker: 'learner', text: goodTranscript.text }], expect.anything());
+    },
+  );
+
+  it('records the opening line via recordTurn once session id is set, with zero LLM usage and a real TTS character count', async () => {
+    const waiter = createMessageWaiter();
+    const { deps, recordTurn } = fakeDeps(waiter);
+    const orchestrator = new TurnOrchestrator(deps);
+    orchestrator.sessionStart('session-abc');
+
+    await orchestrator.openConversation();
+
+    expect(recordTurn).toHaveBeenCalledWith('session-abc', expect.objectContaining({
+      speaker: 'persona',
+      costUsd: expect.any(Number),
+    }));
+  });
+
+  it('a stray frame arriving while she is still opening is silently ignored, not a barge-in; the opening line completes normally', async () => {
+    const waiter = createMessageWaiter();
+    let releaseSynthesis: (() => void) | undefined;
+    const { deps } = fakeDeps(waiter);
+    deps.synthesizeSpeech = jest.fn((_client, _voiceId, _text, handlers) => {
+      handlers?.onChunk?.({ audioBase64: 'chunk-0' } as never, 0);
+      return new Promise((resolve) => {
+        releaseSynthesis = () => resolve([]);
+      });
+    });
+    const orchestrator = new TurnOrchestrator(deps);
+
+    const opening = orchestrator.openConversation();
+    await waiter.waitFor('tts_chunk');
+    expect(orchestrator.currentState).toBe('speaking');
+
+    // The client's talk button is disabled while she's speaking — this
+    // tests the server-side defensive guard for a frame already in
+    // flight when that transition happened, not a real client scenario.
+    orchestrator.pushAudioFrame(loudFrame(), 'stray-frame', 8000, false);
+    expect(waiter.messages.some(message => message.type === 'barge_in')).toBe(false);
+    expect(orchestrator.currentState).toBe('speaking');
+
+    releaseSynthesis?.();
+    await opening;
+    expect(waiter.messages.filter(message => message.type === 'turn_complete')).toHaveLength(1);
   });
 });
 

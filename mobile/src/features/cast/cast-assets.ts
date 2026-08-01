@@ -6,13 +6,13 @@
 
 export type CastId = 'valentina' | 'elena' | 'masha' | 'dima' | 'irina';
 
-export type ValentinaExpression =
-  | 'idle'
-  | 'listening'
-  | 'speaking'
-  | 'thinking'
-  | 'surprised'
-  | 'smile';
+export type ValentinaExpression
+  = | 'idle'
+    | 'listening'
+    | 'speaking'
+    | 'thinking'
+    | 'surprised'
+    | 'smile';
 
 export const CAST_PORTRAITS: Record<CastId, number> = {
   valentina: require('../../../assets/cast/valentina.png'),

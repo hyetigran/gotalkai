@@ -26,7 +26,7 @@ function fakeClient(options: {
   });
 }
 
-const PERFECT_TURN: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, как приятно — заходи скорее.' };
+const PERFECT_TURN: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Ах, как приятно — заходи скорее.', translation: 'Ah, how nice — come in quickly.' };
 
 describe('runCanary', () => {
   it('runs exactly the five-entry canary set, not the full golden set', async () => {
@@ -43,7 +43,7 @@ describe('runCanary', () => {
   });
 
   it('a deliberately broken response (false recast) fails the report — the deterministic failure PRD says should page', async () => {
-    const brokenTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Нет, нужно сказать по-другому.' };
+    const brokenTurn: PersonaTurn = { comprehension: 'understood', affect: 'warm', text: 'Нет, нужно сказать по-другому.', translation: 'No, you need to say it differently.' };
     const client = fakeClient({ turnFor: () => brokenTurn });
     const report = await runCanary(client);
     expect(report.passed).toBe(false);

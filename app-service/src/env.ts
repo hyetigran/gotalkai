@@ -8,8 +8,13 @@ import { z } from 'zod';
  * not this skeleton.
  */
 const envSchema = z.object({
-  /** Railway injects this for the container; falls back to a sane local default. */
-  PORT: z.coerce.number().int().positive().default(8081),
+  /**
+   * Railway injects this for the container; falls back to a local default.
+   * Not 8081 — that's Expo/Metro's own default dev-server port, and the two
+   * running side by side (this service + the mobile app) on the same
+   * machine is the common case, not an edge case.
+   */
+  PORT: z.coerce.number().int().positive().default(8082),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   /** Standard `postgres://` connection string — Railway's own Postgres addon env var name. */
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),

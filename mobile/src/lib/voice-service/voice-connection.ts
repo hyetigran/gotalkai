@@ -39,7 +39,8 @@ export type ServerMessage
     | { type: 'transcript_partial'; text: string }
     | { type: 'transcript_final'; text: string }
     | { type: 'persona_filler'; text: string }
-    | { type: 'persona_turn'; text: string; comprehension: string; affect: string }
+    /** `translation`: PRD §6.2 tap-to-reveal — real-pipeline counterpart to scripted-demo-script.ts's hand-authored `en` field. */
+    | { type: 'persona_turn'; text: string; comprehension: string; affect: string; translation: string }
     | { type: 'tts_chunk'; sentenceIndex: number; audioBase64: string }
     | { type: 'turn_complete'; timestamps: TurnTimestamps }
     | { type: 'barge_in' }
@@ -123,35 +124,23 @@ export class VoiceConnection {
   }
 
   /**
-   * Audio frames are naturally lossy (VAD tolerates dropped frames
-   * elsewhere in this pipeline too) — a chunk sent while briefly
-   * disconnected is silently dropped rather than thrown, so a live mic
-   * capture loop (once one exists — see docs/adr/0017) doesn't need to
-   * guard every call.
+   * A chunk sent while briefly disconnected is silently dropped rather
+   * than thrown, so the hold-to-talk capture loop (use-native-pcm-
+   * capture.ts) doesn't need to guard every call. `commit`: true on
+   * exactly the chunk sent when the talk button is released — ticket
+   * #40 (PRD §7.9), the turn boundary now, replacing server-side VAD.
    */
-  sendAudioChunk(pcmBase64: string, sampleRateHz: number): void {
-    this.trySend({ type: 'audio_chunk', pcmBase64, sampleRateHz });
-  }
-
-  /**
-   * Unlike audio chunks, a dropped hold_start/hold_end is a real
-   * correctness gap (the server could be left thinking the learner is
-   * still holding, or not) — but the client already only calls these on
-   * explicit user action, and a reconnect re-syncs state implicitly
-   * through the fresh connection's default (server never holds). Silent
-   * drop on disconnect is accepted rather than queuing/retrying, since
-   * that reconnect-resync already bounds the damage.
-   */
-  sendHoldStart(): void {
-    this.trySend({ type: 'hold_start' });
-  }
-
-  sendHoldEnd(): void {
-    this.trySend({ type: 'hold_end' });
+  sendAudioChunk(pcmBase64: string, sampleRateHz: number, commit: boolean): void {
+    this.trySend({ type: 'audio_chunk', pcmBase64, sampleRateHz, commit });
   }
 
   sendSessionStart(learnerId: string, sessionId: string): void {
     this.trySend({ type: 'session_start', learnerId, sessionId });
+  }
+
+  /** PRD §6.2: "she opens, not the learner" — tells the server it's safe to start her opening line (turn-orchestrator.ts's `openConversation`). Sent once, right alongside `session_start`. */
+  sendBeginConversation(): void {
+    this.trySend({ type: 'begin_conversation' });
   }
 
   /** Ticket #32: the text-input path — bypasses audio entirely, funnels into the exact same server-side pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */

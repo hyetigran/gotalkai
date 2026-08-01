@@ -11,7 +11,6 @@ import type { TtsEventHandlers } from './tts';
 import { estimateLlmCostUsd, estimateSttCostUsd, estimateTtsCostUsd } from './cost';
 import { getSafetyResponseText } from './safety-detection';
 import { logTrace } from './tracing';
-import { computeRmsEnergy, VadGate } from './vad';
 
 /**
  * Ticket #18: assembles the components built in #14-#17
@@ -20,17 +19,24 @@ import { computeRmsEnergy, VadGate } from './vad';
  * own ADRs deferred to this ticket. Real, unit-tested orchestration logic
  * (all four vendor calls are injected, same DI pattern as every module
  * this depends on); wiring it to real audio in/out over a WebSocket is
- * server.ts's job, and *that* wiring is unverified (docs/adr/0017 — no
- * physical device exists in this environment).
+ * server.ts's job.
  *
  * Ticket #32 adds `submitTextInput` as a second entry point alongside
  * the voice path's `pushAudioFrame`/`handleTurnDetected` — both funnel
  * into the same `checkSafetyAndRespond`/`runPersonaCascade` (persona
  * generation, stress annotation, TTS, history, timestamps), per AC #3:
  * "no duplicated pipeline logic." Only what's genuinely specific to
- * voice (VAD, STT, the low-confidence "didn't catch that" mechanic —
- * there's no ASR confidence concept for exact typed text) stays in the
+ * voice (STT, the low-confidence "didn't catch that" mechanic — there's
+ * no ASR confidence concept for exact typed text) stays in the
  * voice-only path.
+ *
+ * Ticket #40 (PRD §7.9): turn detection used to be server-side VAD
+ * (energy-threshold speech/silence classification over every incoming
+ * frame). Replaced with the client's own hold-to-talk button — the
+ * learner presses to start, releases to send, and `pushAudioFrame`'s
+ * `commit` parameter (sourced from the client's own `audio_chunk.commit`
+ * field) *is* the turn boundary now. No RMS threshold exists anywhere in
+ * this file to mistune.
  */
 
 /** Ticket #29 / docs/adr/0022: what `deps.recordTurn` posts to app-service's `POST /sessions/:id/turns` — field-for-field the same shape as `app-service/src/turns.ts`'s `recordTurnRequestSchema` (duplicated, not imported — no pnpm workspace links the two services, same constraint docs/adr/0012 already hit). */
@@ -79,10 +85,7 @@ export type TurnOrchestratorDeps = {
   recordInterruption?: (turnId: string, interruptedAfterMs: number) => Promise<void>;
   /** Injectable clock, for the six-timestamp log to be testable without real wall-clock timing. */
   now?: () => number;
-  vadConfig?: { speechThresholdRms: number; silenceHangoverMs: number };
 };
-
-const DEFAULT_VAD_CONFIG = { speechThresholdRms: 5000, silenceHangoverMs: 500 };
 
 /** PRD §7.3: "In-character filler (ну…, сейчас…) on end-of-turn detection, masking 300-500ms." Rotated, not randomized — deterministic and testable; real variety is a smaller concern than genuinely masking the gap. */
 const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
@@ -101,15 +104,52 @@ const FILLER_LINES = ['Ну…', 'Сейчас…', 'Так…'];
  * characterization of the persona, which was never the intent here.
  */
 const DIDNT_UNDERSTAND_LINE = 'Прости, я не поняла — повтори, пожалуйста?';
+/** PRD §6.2 tap-to-reveal translation for DIDNT_UNDERSTAND_LINE — a fixed line, same reasoning as OPENING_LINE_TRANSLATION below for why this isn't LLM-generated. */
+const DIDNT_UNDERSTAND_LINE_TRANSLATION = 'Sorry, I didn\'t understand — could you say that again?';
+
+/**
+ * PRD §6.2 / docs/adr/0002: "she opens, not the learner" — the scripted
+ * demo shows this exact line (scripted-demo-script.ts's turn 0)
+ * immediately on entering Converse, no learner input required. The live
+ * pipeline had no equivalent: nothing ever triggered a persona turn
+ * until the learner spoke first, so she never said anything at all
+ * until then (UAT-reported: "the persona doesn't open"). Same copy as
+ * the scripted demo, stripped of its hand-authored stress marks —
+ * `annotateText` computes those itself from plain text, same as every
+ * other live persona turn; passing pre-stressed text through it would
+ * double-mark or misparse it.
+ *
+ * Fixed, not LLM-generated: the Open screen's callback line (ticket
+ * #22) already delivers the personalized "she remembers you" beat
+ * before the learner ever reaches this screen — Converse's opening
+ * line only needs to be a natural, in-character entrance, which a
+ * fixed line provides without the latency, cost, or (at the single
+ * most visible moment in the session) generation-failure risk of a
+ * real model call.
+ */
+const OPENING_LINE = 'Ну наконец-то ты позвонил! Садись, я чай поставила. Как выходные?';
+/** PRD §6.2 tap-to-reveal translation for OPENING_LINE — same English already established in scripted-demo-script.ts's turn 0 (this is the same line), reused verbatim rather than re-translated independently. */
+const OPENING_LINE_TRANSLATION = 'Finally you called! Sit down, I’ve put the kettle on. How was your weekend?';
+
+/** OPENING_LINE is fixed copy, not a real `generatePersonaTurn` call — no LLM tokens spent, so `recordPersonaTurn`'s cost accounting has nothing to attribute beyond the real TTS characters. */
+const ZERO_USAGE: GeneratePersonaTurnResult['usage'] = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
 
 /**
  * PRD §5.7 doesn't specify a numeric threshold — ElevenLabs' `logprob` is
  * a log-probability (range (-∞, 0]), not the 0-100% score PRD's own
- * framing implicitly assumes. This value is an unvalidated placeholder:
- * real tuning needs real accented-learner STT data, which docs/adr/0013
- * already discloses as unavailable in this environment.
+ * framing implicitly assumes. Was an "unvalidated placeholder... real
+ * tuning needs real accented-learner STT data" (this constant's own
+ * prior disclosure) — a physical device's real committed_transcript_
+ * with_timestamps payloads (temporary [DEBUG-stt2] logging) finally
+ * supplied that data: clean, correctly-heard short utterances
+ * ("Здравствуйте!", "Алло!", "Нет.") scored -3.0 to -4.5; the one
+ * outlier that looked like a genuine stutter/disfluency ("...с-с-с-с-")
+ * scored -6.5. -1.5 rejected every one of them — real speech never got
+ * remotely close. Still a single-device empirical measurement, not a
+ * validated cross-device/cross-accent constant, same caveat as the VAD
+ * threshold's own recalibration.
  */
-const LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD = -1.5;
+const LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD = -6;
 
 function averageLogprob(words: SttWord[]): number {
   const scored = words.filter(word => word.type === 'word');
@@ -118,27 +158,53 @@ function averageLogprob(words: SttWord[]): number {
   return scored.reduce((sum, word) => sum + word.logprob, 0) / scored.length;
 }
 
-/** PRD §7.9: "A learner who holds and puts the phone down must not hang the session." Mirrors the client's own ~45s auto-release (mobile/src/features/converse/use-live-converse-session.ts) as a server-side backstop for when hold_end never arrives at all — a dropped connection or crashed client, not just a slow one. */
-const HOLD_AUTO_RELEASE_MS = 45_000;
+/**
+ * Ticket #40: a server-side backstop, independent of the client's own
+ * hold-to-talk auto-release — a defensive cap in case a buggy or
+ * malicious client just never sends `commit: true`. Generous relative to
+ * any real utterance (PRD's "one or two sentences" turn-length rule,
+ * §9) specifically so it never fires during genuine use; it exists to
+ * bound STT cost exposure, not to shape the interaction.
+ */
+const MAX_HOLD_MS = 60_000;
 
 export type OrchestratorState = 'listening' | 'processing' | 'speaking';
 
 /**
  * One instance per live Converse session (one WebSocket connection).
- * Holds the conversation's real history (fed to `generatePersonaTurn` on
- * every turn) and the VAD gate across the whole session — barge-in
- * (PRD §7.10) is detected by the same gate transitioning to `speech_start`
- * while `state === 'speaking'`, not a separate mechanism.
+ * Holds the conversation's real history, fed to `generatePersonaTurn` on
+ * every turn. Turn detection (ticket #40, PRD §7.9) is the client's
+ * hold-to-talk button, not anything this class classifies itself — see
+ * `pushAudioFrame`'s own comment.
  */
 export class TurnOrchestrator {
-  private readonly vadGate: VadGate;
   private readonly history: TranscriptTurn[] = [];
   private state: OrchestratorState = 'listening';
-  private held = false;
   private generationToken = 0;
   private sttSession: ReturnType<TurnOrchestratorDeps['createSttSession']> | null = null;
   private pendingTranscript: { resolve: (transcript: SttTranscript) => void; reject: (error: Error) => void } | null = null;
-  private holdAutoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * A real, observed deadlock (UAT: "the 'nu' filler text still renders,
+   * my voice isn't captured"): the STT session is created on the first
+   * `pushAudioFrame` of a press — well before `commit`, which is the only
+   * thing that calls `handleTurnDetected` (and only *there* does
+   * `pendingTranscript` get set). If the vendor rejects the connection
+   * (or it errors/closes for any other reason) *during* that window —
+   * confirmed via logcat: an ElevenLabs `auth_error` arrived
+   * mid-utterance, well before commit — `onError` below found
+   * `pendingTranscript` still null and `?.reject(...)` silently did
+   * nothing. By the time commit finally arrived and `handleTurnDetected`
+   * created a *fresh* `pendingTranscript` to await, the session was
+   * already dead — no further callback would ever fire on it, so that
+   * promise could never settle. The filler ("Ну…") had already been sent
+   * by then and never got replaced. This field lets a `handleTurnDetected`
+   * that starts *after* the error already happened reject immediately
+   * instead of hanging forever; reset whenever a fresh STT session is
+   * created.
+   */
+  private sttSessionError: Error | null = null;
+  /** Ticket #40: when the current STT session was created — `pushAudioFrame`'s `MAX_HOLD_MS` backstop measures elapsed wall-clock time against this, independent of the client's own commit signal. Reset to `null` whenever the session closes (turn resolved, error, or the cap itself firing). */
+  private sttSessionStartedAtMs: number | null = null;
   /** Ticket #29: the real session id, set once `session_start` arrives (server.ts). Turn recording/tracing is a no-op until this is set — there's no session to attribute a turn to yet. */
   private sessionId: string | null = null;
   /** Ticket #29: ms of audio actually forwarded to the STT vendor for the utterance currently in flight — `cost.ts`'s `estimateSttCostUsd` input. Accumulated in `pushAudioFrame`, read and reset at the top of `handleTurnDetected`. */
@@ -163,7 +229,6 @@ export class TurnOrchestrator {
   private activeVoiceId: string;
 
   constructor(private readonly deps: TurnOrchestratorDeps) {
-    this.vadGate = new VadGate(deps.vadConfig ?? DEFAULT_VAD_CONFIG);
     this.activePersona = deps.persona;
     this.activeVoiceId = deps.voiceId;
   }
@@ -183,53 +248,99 @@ export class TurnOrchestrator {
     this.activeVoiceId = voiceId;
   }
 
-  /** PRD §7.9: "While held, turn detection is suspended entirely and no audio is sent to STT." The client already stops sending audio_chunk messages while held (see mobile's hold wiring) — this is the server-side half of the same guarantee, in case a stray chunk arrives anyway. Applies uniformly to text input too (ticket #32) — hold-to-think is about giving the learner space, not specifically about audio. */
-  holdStart(): void {
-    this.held = true;
-    if (this.holdAutoReleaseTimer)
-      clearTimeout(this.holdAutoReleaseTimer);
-    this.holdAutoReleaseTimer = setTimeout(() => this.holdEnd(), HOLD_AUTO_RELEASE_MS);
-    // Node-only: doesn't block process shutdown while a hold is outstanding.
-    this.holdAutoReleaseTimer.unref?.();
-  }
+  /**
+   * Sends OPENING_LINE through the same filler → persona_turn → TTS →
+   * turn_complete cascade a normal turn uses, without a preceding
+   * learner utterance. A separate, explicitly-called method rather than
+   * folded into `sessionStart` above — every existing test in this file
+   * calls `sessionStart` as pure setup with no side effects, and firing
+   * a full async cascade from inside it would race every one of those
+   * tests' own `pushAudioFrame`/`submitTextInput` calls (both check
+   * `this.state === 'speaking'` for barge-in) against this cascade's
+   * `state` transitions. server.ts calls this once, right after
+   * `sessionStart`, at real connection setup.
+   *
+   * Deliberately does NOT push onto `this.history`: the Anthropic
+   * Messages API requires the first message in a request to be role
+   * `user`. Every later real turn calls `toMessageParams(this.history)`
+   * (persona.ts) to build that request — if this turn's line were in
+   * `this.history`, it would be the first (and, until the learner's
+   * first reply, only) entry, with role `assistant`, making every
+   * subsequent `generatePersonaTurn` call structurally invalid. The
+   * model not "remembering" its own opening line is an accepted,
+   * disclosed tradeoff of staying out of that transcript — the same
+   * precedent `respondWithSafetyMessage` already establishes for a
+   * different reason (see its own comment).
+   */
+  async openConversation(): Promise<void> {
+    const { myToken, t0TurnDetected } = this.beginTurn();
+    const now = this.deps.now ?? Date.now;
+    // Collapsed to t0: no STT or persona-LLM stage runs for a fixed opening line.
+    const t1SttFinal = t0TurnDetected;
+    const t2PersonaStart = t0TurnDetected;
+    const t3PersonaComplete = t0TurnDetected;
 
-  holdEnd(): void {
-    this.held = false;
-    if (this.holdAutoReleaseTimer) {
-      clearTimeout(this.holdAutoReleaseTimer);
-      this.holdAutoReleaseTimer = null;
+    this.deps.sendMessage({ type: 'persona_turn', text: OPENING_LINE, comprehension: 'understood', affect: 'warm', translation: OPENING_LINE_TRANSLATION });
+
+    const annotated = this.deps.annotateText(OPENING_LINE);
+    const t4StressAnnotated = now();
+
+    this.state = 'speaking';
+    this.lastPersonaTurn = null;
+    let finalTimestamps: TurnTimestamps | null = null;
+    await this.deps.synthesizeSpeech(this.deps.elevenLabsClient, this.activeVoiceId, annotated.text, {
+      onChunk: (chunk, sentenceIndex) => {
+        if (myToken !== this.generationToken)
+          return;
+        if (!finalTimestamps) {
+          finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: now() };
+          this.recordPersonaTurn(OPENING_LINE, finalTimestamps, ZERO_USAGE, annotated.text.length);
+        }
+        this.deps.sendMessage({ type: 'tts_chunk', sentenceIndex, audioBase64: chunk.audioBase64 });
+      },
+    });
+    if (myToken !== this.generationToken)
+      return;
+    if (!finalTimestamps) {
+      finalTimestamps = { t0TurnDetected, t1SttFinal, t2PersonaStart, t3PersonaComplete, t4StressAnnotated, t5FirstAudio: t4StressAnnotated };
+      this.recordPersonaTurn(OPENING_LINE, finalTimestamps, ZERO_USAGE, annotated.text.length);
     }
+    this.sendTurnComplete(finalTimestamps);
+    this.state = 'listening';
   }
 
   /**
    * Called for every incoming audio_chunk message. `pcmBase64` is
    * forwarded to the vendor as-is (already the wire format `stt.ts`
-   * expects) — only the RMS-energy decision (from the decoded samples)
-   * happens here, not re-encoding.
+   * expects); `samples` exists only for `frameDurationMs`'s cost-tracking
+   * math, not for any speech/silence decision — there isn't one anymore.
+   *
+   * Ticket #40 (PRD §7.9): `commit` comes from the client's own
+   * hold-to-talk button (true on exactly the chunk sent when it's
+   * released) — this method no longer runs VAD or makes any
+   * speech/silence judgement of its own. Every frame that reaches here
+   * while `state === 'listening'` is, by construction, real audio the
+   * learner chose to send by holding the button; forwarding it
+   * unconditionally is correct, not a gap.
+   *
+   * `state !== 'listening'` is still checked — while she's
+   * 'processing'/'speaking', the button is disabled client-side, but a
+   * frame already in flight when that transition happens is dropped here
+   * rather than trusted. There's no barge-in path this could feed into
+   * anymore (that required a stray frame to look like a deliberate
+   * interruption, which hold-to-talk's design removes at the source —
+   * see PRD §7.10).
    */
-  pushAudioFrame(samples: Int16Array, pcmBase64: string, sampleRateHz: number): void {
-    if (this.held)
+  pushAudioFrame(samples: Int16Array, pcmBase64: string, sampleRateHz: number, commit: boolean): void {
+    if (this.state !== 'listening')
       return;
 
     const frameDurationMs = (samples.length / sampleRateHz) * 1000;
-    const rms = computeRmsEnergy(samples);
-    const transition = this.vadGate.pushFrame(rms, frameDurationMs);
-
-    if (this.state === 'speaking' && transition === 'speech_start') {
-      this.handleBargeIn();
-      // Fall through: this frame is also the start of the learner's new utterance.
-    }
-
-    // The frame that triggers `speech_end` must still be forwarded (it's
-    // the commit signal) even though VadGate's own state has already
-    // flipped to 'silence' by the time this line runs — checking
-    // `currentState !== 'speech'` alone would silently drop exactly the
-    // one frame that's supposed to finalize the utterance.
-    if (this.vadGate.currentState !== 'speech' && transition !== 'speech_end')
-      return;
+    const now = this.deps.now ?? Date.now;
 
     if (!this.sttSession) {
-      this.state = 'listening';
+      this.sttSessionError = null;
+      this.sttSessionStartedAtMs = now();
       this.sttSession = this.deps.createSttSession(this.deps.elevenLabsApiKey, {
         // PRD §6.2's live "what did I just say" feedback — see messages.ts's
         // transcript_partial doc comment. Not authoritative; transcript_final
@@ -242,18 +353,28 @@ export class TurnOrchestrator {
           this.pendingTranscript = null;
         },
         onError: (error) => {
+          // No pendingTranscript yet (error arrived before commit) is the
+          // exact deadlock sttSessionError's own comment describes — stash
+          // it so handleTurnDetected can reject immediately once it does
+          // start awaiting, instead of hanging on a session that's
+          // already dead.
+          this.sttSessionError = error;
           this.pendingTranscript?.reject(error);
           this.pendingTranscript = null;
         },
       });
     }
 
-    const commit = transition === 'speech_end';
-    // Ticket #29: only frames actually forwarded to the vendor count toward STT cost — this line, not every frame pushAudioFrame receives (many return early above: held, pre-speech silence).
-    this.speechAudioMsThisTurn += frameDurationMs;
-    this.sttSession.sendAudioChunk(pcmBase64, sampleRateHz, commit);
+    // Ticket #40: MAX_HOLD_MS's server-side backstop — force this frame to
+    // be the commit regardless of what the client sent, so a client that
+    // never releases (bug, or a phone stuck pressed in a pocket) can't
+    // keep billing STT indefinitely.
+    const effectiveCommit = commit || (this.sttSessionStartedAtMs !== null && now() - this.sttSessionStartedAtMs >= MAX_HOLD_MS);
 
-    if (commit)
+    this.speechAudioMsThisTurn += frameDurationMs;
+    this.sttSession.sendAudioChunk(pcmBase64, sampleRateHz, effectiveCommit);
+
+    if (effectiveCommit)
       void this.handleTurnDetected();
   }
 
@@ -269,14 +390,13 @@ export class TurnOrchestrator {
    * path uses (AC #3: "no duplicated pipeline logic").
    */
   async submitTextInput(text: string): Promise<void> {
-    if (this.held)
-      return;
     const trimmed = text.trim();
     if (trimmed.length === 0)
       return;
 
-    // Typing while she's still speaking interrupts her — the text-input
-    // equivalent of speaking over her (pushAudioFrame's own barge-in check).
+    // Typing while she's still speaking interrupts her — the only
+    // remaining barge-in trigger now that voice can't (see
+    // pushAudioFrame's own comment).
     if (this.state === 'speaking')
       this.handleBargeIn();
 
@@ -312,6 +432,7 @@ export class TurnOrchestrator {
     this.state = 'listening';
     this.sttSession?.close();
     this.sttSession = null;
+    this.sttSessionStartedAtMs = null;
     this.pendingTranscript = null;
     this.deps.sendMessage({ type: 'barge_in' });
     this.recordInterruptionIfAny();
@@ -349,13 +470,20 @@ export class TurnOrchestrator {
   private async handleTurnDetected(): Promise<void> {
     const { myToken, t0TurnDetected } = this.beginTurn();
     const now = this.deps.now ?? Date.now;
-    // Ticket #29: captures this utterance's real STT-forwarded audio duration and resets the accumulator for the next one — must happen here, before any `await`, not inside beginTurn (which runs before speech_end's own frame finishes accumulating).
+    // Ticket #29: captures this utterance's real STT-forwarded audio duration and resets the accumulator for the next one — must happen here, before any `await`, not inside beginTurn (which runs before the commit frame finishes accumulating).
     const sttAudioMs = this.speechAudioMsThisTurn;
     this.speechAudioMsThisTurn = 0;
 
     let transcript: SttTranscript;
     try {
       transcript = await new Promise<SttTranscript>((resolve, reject) => {
+        // See sttSessionError's own comment: the STT session can die
+        // before commit ever arrives here — reject on what already
+        // happened instead of awaiting a session that's already gone.
+        if (this.sttSessionError) {
+          reject(this.sttSessionError);
+          return;
+        }
         this.pendingTranscript = { resolve, reject };
       });
     }
@@ -368,6 +496,7 @@ export class TurnOrchestrator {
     finally {
       this.sttSession?.close();
       this.sttSession = null;
+      this.sttSessionStartedAtMs = null;
     }
     if (myToken !== this.generationToken)
       return;
@@ -385,7 +514,24 @@ export class TurnOrchestrator {
     if (await this.checkSafetyAndRespond(myToken, transcript.text, t0TurnDetected, t1SttFinal))
       return;
 
-    if (transcript.words.length === 0 || averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD) {
+    // UAT: real speech, correctly transcribed and shown on screen, still
+    // got "I didn't understand you" every time. Root cause: `words.length
+    // === 0` was meant to catch a genuinely empty transcript (STT heard
+    // nothing), but ElevenLabs' real committed_transcript message (no
+    // "_with_timestamps" suffix — stt.ts's own header comment on that case
+    // assumed it was unreachable since include_timestamps is always
+    // requested; wrong in practice, confirmed via logcat) carries real,
+    // non-empty `text` with *no* per-word breakdown at all — `words` is
+    // always `[]` for it. That's "no confidence data available," not "no
+    // confidence" — checking `words.length === 0` treated real, correctly-
+    // heard speech as automatically unconfident on every single turn,
+    // unconditionally, regardless of LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD's
+    // own value. Checking `transcript.text` for real emptiness is what
+    // "STT heard nothing" actually means; the confidence *score* only
+    // applies, and only ever did apply, when there's a score to check.
+    const heardNothing = transcript.text.trim().length === 0;
+    const isLowConfidence = transcript.words.length > 0 && averageLogprob(transcript.words) < LOW_CONFIDENCE_AVG_LOGPROB_THRESHOLD;
+    if (heardNothing || isLowConfidence) {
       this.respondWithDidntCatchThat(myToken, t0TurnDetected, t1SttFinal, sttAudioMs, transcript.text);
       return;
     }
@@ -437,7 +583,7 @@ export class TurnOrchestrator {
       return;
     const t3PersonaComplete = now();
     this.history.push({ speaker: 'persona', text: generated.turn.text });
-    this.deps.sendMessage({ type: 'persona_turn', text: generated.turn.text, comprehension: generated.turn.comprehension, affect: generated.turn.affect });
+    this.deps.sendMessage({ type: 'persona_turn', text: generated.turn.text, comprehension: generated.turn.comprehension, affect: generated.turn.affect, translation: generated.turn.translation });
 
     const annotated = this.deps.annotateText(generated.turn.text);
     const t4StressAnnotated = now();
@@ -528,7 +674,7 @@ export class TurnOrchestrator {
       return;
     const now = this.deps.now ?? Date.now;
     const timestamp = t1SttFinal ?? now();
-    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_UNDERSTAND_LINE, comprehension: 'not_understood', affect: 'concerned' });
+    this.deps.sendMessage({ type: 'persona_turn', text: DIDNT_UNDERSTAND_LINE, comprehension: 'not_understood', affect: 'concerned', translation: DIDNT_UNDERSTAND_LINE_TRANSLATION });
     // Collapsed: no real per-stage timing exists for a turn that skipped LLM/TTS entirely.
     const timestamps: TurnTimestamps = { t0TurnDetected, t1SttFinal: timestamp, t2PersonaStart: timestamp, t3PersonaComplete: timestamp, t4StressAnnotated: timestamp, t5FirstAudio: timestamp };
     this.sendTurnComplete(timestamps);

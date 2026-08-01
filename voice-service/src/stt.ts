@@ -82,8 +82,13 @@ const sttMessageEnvelopeSchema = z.looseObject({ message_type: z.string() });
 const partialTranscriptSchema = z.object({ text: z.string() });
 const finalTranscriptWithTimestampsSchema = z.object({
   text: z.string(),
-  language_code: z.string().optional(),
-  words: z.array(sttWordSchema).optional(),
+  // `.nullish()`, not `.optional()`: the real vendor payload sends these as
+  // explicit `null` (confirmed via logcat), not merely omitted — `.optional()`
+  // only accepts `undefined`, so real committed_transcript_with_timestamps
+  // messages were failing this parse and going to onError as "malformed",
+  // never reaching onFinalTranscript at all.
+  language_code: z.string().nullish(),
+  words: z.array(sttWordSchema).nullish(),
 });
 const finalTranscriptSchema = z.object({ text: z.string() });
 const errorPayloadSchema = z.looseObject({ error: z.string().optional() });
@@ -99,28 +104,36 @@ function handleIncomingMessage(envelope: z.infer<typeof sttMessageEnvelopeSchema
       handlers.onPartialTranscript?.(result.data.text);
       return;
     }
-    case 'final_transcript_with_timestamps': {
+    case 'committed_transcript_with_timestamps': {
+      // Real message_type, confirmed via logcat — NOT `final_transcript_with_timestamps`,
+      // which this file assumed (presumably an older/documented-elsewhere name)
+      // and which the vendor has never actually sent once in practice. Every
+      // real transcript was silently falling through to `default:` below —
+      // no `error` field on it, so nothing happened at all: no
+      // onFinalTranscript, no onError, `handleTurnDetected`'s promise never
+      // settled. UAT: "app seems to be in a stuck state."
       const result = finalTranscriptWithTimestampsSchema.safeParse(envelope);
       if (!result.success) {
-        handlers.onError?.(new Error(`malformed final_transcript_with_timestamps message: ${result.error.message}`));
+        handlers.onError?.(new Error(`malformed committed_transcript_with_timestamps message: ${result.error.message}`));
         return;
       }
       handlers.onFinalTranscript?.({
         text: result.data.text,
-        languageCode: result.data.language_code,
+        languageCode: result.data.language_code ?? undefined,
         words: result.data.words ?? [],
       });
       return;
     }
-    case 'final_transcript': {
-      // Only reachable if the session wasn't configured to request
-      // timestamps — this codebase always requests them (buildSttUrl
-      // below), so word-level confidence is never silently unavailable
-      // in practice. Still handled, not ignored, in case that
-      // configuration ever changes.
+    case 'committed_transcript': {
+      // Real name for the no-timestamps variant (see the sibling case's own
+      // comment) — only reachable if the session wasn't configured to
+      // request timestamps. This codebase always requests them (buildSttUrl
+      // below), so word-level confidence is never silently unavailable in
+      // practice. Still handled, not ignored, in case that configuration
+      // ever changes.
       const result = finalTranscriptSchema.safeParse(envelope);
       if (!result.success) {
-        handlers.onError?.(new Error(`malformed final_transcript message: ${result.error.message}`));
+        handlers.onError?.(new Error(`malformed committed_transcript message: ${result.error.message}`));
         return;
       }
       handlers.onFinalTranscript?.({ text: result.data.text, words: [] });
@@ -128,13 +141,24 @@ function handleIncomingMessage(envelope: z.infer<typeof sttMessageEnvelopeSchema
     }
     case 'session_started':
       return;
-    default:
-      if (envelope.message_type.includes('error')) {
-        const result = errorPayloadSchema.safeParse(envelope);
-        handlers.onError?.(new Error(result.success && result.data.error ? result.data.error : `STT error: ${envelope.message_type}`));
+    default: {
+      // Checks the payload for a real `error` string directly, rather than
+      // guessing from the message_type's own name (the previous
+      // `message_type.includes('error')` heuristic silently swallowed a
+      // real vendor rejection — `invalid_request`, sent for an invalid
+      // `model_id` — since that name doesn't contain the substring
+      // "error" at all: no onError, no onFinalTranscript, the pending
+      // transcript promise just hung forever. UAT: "just seeing Ну over
+      // and over" — the filler fires, then nothing, forever, every turn).
+      const result = errorPayloadSchema.safeParse(envelope);
+      if (result.success && result.data.error) {
+        handlers.onError?.(new Error(result.data.error));
+        return;
       }
-      // Other message types (committed_transcript*, etc.) aren't used by
-      // this ticket's scope — acknowledged, not treated as errors.
+      // Other message types (committed_transcript*, session metadata,
+      // etc.) aren't used by this ticket's scope — acknowledged, not
+      // treated as errors, since they genuinely carry no error payload.
+    }
   }
 }
 
@@ -145,10 +169,17 @@ function handleIncomingMessage(envelope: z.infer<typeof sttMessageEnvelopeSchema
  */
 function buildSttUrl(): string {
   const url = new URL(ELEVENLABS_STT_REALTIME_URL);
-  url.searchParams.set('model_id', 'scribe_v2');
+  // ElevenLabs rejects this connection outright (invalid_request) for
+  // any model_id other than these three exact strings — 'scribe_v2'
+  // (this file's prior value) isn't one of them. 'scribe_v2_realtime' is
+  // the baseline/default quality tier, not _turbo (faster, presumably
+  // lower accuracy) or _lite (smaller/cheaper) — accuracy matters more
+  // than latency for a language-learning product transcribing accented
+  // non-native Russian.
+  url.searchParams.set('model_id', 'scribe_v2_realtime');
   url.searchParams.set('language_code', 'ru');
   // AC #3 depends on this: without it, the server sends plain
-  // `final_transcript` (no `words[].logprob`), silently losing the
+  // `committed_transcript` (no `words[].logprob`), silently losing the
   // confidence signal this ticket exists to plumb through.
   url.searchParams.set('include_timestamps', 'true');
   return url.toString();
@@ -169,6 +200,29 @@ export function createSttSession(
   connect: (url: string, options: { headers: Record<string, string> }) => MinimalWebSocket = defaultConnect,
 ): { sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit?: boolean) => void; close: () => void } {
   const ws = connect(buildSttUrl(), { headers: { 'xi-api-key': apiKey } });
+
+  /**
+   * `new WebSocket(...)` returns immediately with the handshake still in
+   * flight (readyState CONNECTING) — real network latency to ElevenLabs,
+   * not instant. turn-orchestrator.ts calls `createSttSession` and then
+   * `sendAudioChunk` with the *same* frame in the same synchronous tick
+   * (pushAudioFrame), so the very first chunk of every utterance was
+   * guaranteed to hit `ws.send()` before the socket opened — `ws` throws
+   * synchronously in that state ("WebSocket is not open: readyState 0
+   * (CONNECTING)"), uncaught, crashing the whole process. Buffering here
+   * (rather than dropping) keeps the fix zero-loss: nothing captured
+   * before the mic-audio "naturally lossy" boundary this pipeline already
+   * accepts elsewhere gets thrown away for a reason as mundane as normal
+   * connection latency.
+   */
+  let isOpen = false;
+  const pendingChunks: string[] = [];
+
+  ws.on('open', () => {
+    isOpen = true;
+    for (const chunk of pendingChunks) ws.send(chunk);
+    pendingChunks.length = 0;
+  });
 
   ws.on('message', (raw: unknown) => {
     let json: unknown;
@@ -193,7 +247,11 @@ export function createSttSession(
 
   return {
     sendAudioChunk: (pcmBase64: string, sampleRateHz: number, commit = false) => {
-      ws.send(JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: pcmBase64, sample_rate: sampleRateHz, commit }));
+      const payload = JSON.stringify({ message_type: 'input_audio_chunk', audio_base_64: pcmBase64, sample_rate: sampleRateHz, commit });
+      if (isOpen)
+        ws.send(payload);
+      else
+        pendingChunks.push(payload);
     },
     close: () => ws.close(),
   };

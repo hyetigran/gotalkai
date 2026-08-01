@@ -7,8 +7,9 @@
 | `PRD.md` | Product requirements (Draft v0.1) |
 | `ARCHITECTURE.md` | System architecture map (target + current) — refreshed 2026-07-30 |
 | `CHARACTER.md` | Persona / expression asset notes |
-| `docs/adr/` | Architecture decision records (0001–0024) |
+| `docs/adr/` | Architecture decision records (0001–0026) |
 | `docs/agents/` | Issue tracker, triage, domain, versioning for agents |
+| `docs/research/` | Primary-source research notes (e.g. layout standards) |
 | `mobile/` | Expo / React Native app |
 | `app-service/` | Node/TS HTTP API + Postgres |
 | `voice-service/` | Node/TS realtime WS + voice pipeline + eval |

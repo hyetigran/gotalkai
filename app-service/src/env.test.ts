@@ -8,7 +8,7 @@ describe('loadEnv', () => {
 
   it('accepts a minimal valid environment and applies defaults', () => {
     const env = loadEnv(validBase);
-    expect(env.PORT).toBe(8081);
+    expect(env.PORT).toBe(8082);
     expect(env.NODE_ENV).toBe('development');
     expect(env.DATABASE_URL).toBe(validBase.DATABASE_URL);
     expect(env.RETENTION_DAYS).toBe(180);

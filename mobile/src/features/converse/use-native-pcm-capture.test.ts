@@ -44,11 +44,29 @@ function createMockNativeModule() {
 
 const mockNativeModule = createMockNativeModule();
 
+/**
+ * A getter, not a plain value — lets one test (see "when the native module
+ * fails to load on Android" below) simulate `requireOptionalNativeModule`
+ * returning null (the native side never actually linked into the build)
+ * by reassigning `mockNativeModuleOrNull`, without `jest.resetModules()`
+ * (which hands the freshly-required hook a *different* React module
+ * instance than the one `renderHook` is using — confirmed empirically:
+ * "Cannot read properties of null (reading 'useState')" — a real, if
+ * indirect, Jest/React footgun, not this hook's own bug).
+ */
+let mockNativeModuleOrNull: typeof mockNativeModule | null = mockNativeModule;
+
+/** No native-module mock infrastructure exists for expo-audio in this repo (see use-tts-playback.test.ts's own comment) — this hook only needs requestRecordingPermissionsAsync, so a minimal standalone mock is enough rather than reaching for that shared gap. */
+const mockRequestRecordingPermissionsAsync = jest.fn(() => Promise.resolve({ granted: true }));
+jest.mock('expo-audio', () => ({
+  requestRecordingPermissionsAsync: () => mockRequestRecordingPermissionsAsync(),
+}));
+
 // Relative path, not the (nonexistent) `@modules` alias — see
 // use-native-pcm-capture.ts's import comment for why (an earlier alias
 // attempt didn't survive contact with Jest's moduleNameMapper).
 jest.mock('../../../modules/expo-live-pcm-capture', () => ({
-  ExpoLivePcmCaptureModule: mockNativeModule,
+  get ExpoLivePcmCaptureModule() { return mockNativeModuleOrNull; },
 }));
 
 // Pulled in via `require`, not `import`, deliberately: empirically
@@ -72,6 +90,8 @@ beforeEach(() => {
   mockNativeModule.startCapture.mockImplementation(() => Promise.resolve());
   mockNativeModule.stopCapture.mockImplementation(() => Promise.resolve());
   mockNativeModule.hasRecordAudioPermission.mockImplementation(() => true);
+  mockRequestRecordingPermissionsAsync.mockImplementation(() => Promise.resolve({ granted: true }));
+  mockNativeModuleOrNull = mockNativeModule;
 });
 
 afterEach(() => {
@@ -190,6 +210,67 @@ describe('useNativePcmCapture', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useNativePcmCapture RECORD_AUDIO permission', () => {
+  it(
+    'requests RECORD_AUDIO before starting capture — the native module documents that it does not request this itself (ExpoLivePcmCaptureModule.kt\'s MicPermissionDeniedException)',
+    async () => {
+      Platform.OS = 'android';
+      const { result } = renderHook(() => useNativePcmCapture({ enabled: true, onChunk: jest.fn() }));
+
+      await waitFor(() => expect(result.current.isCapturing).toBe(true));
+
+      expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1);
+      expect(mockNativeModule.startCapture).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('surfaces an error and never calls startCapture when RECORD_AUDIO is denied — UAT: "my voice doesn\'t get registered"', async () => {
+    Platform.OS = 'android';
+    mockRequestRecordingPermissionsAsync.mockImplementation(() => Promise.resolve({ granted: false }));
+    const onError = jest.fn();
+
+    const { result } = renderHook(() => useNativePcmCapture({ enabled: true, onChunk: jest.fn(), onError }));
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+
+    expect(mockNativeModule.startCapture).not.toHaveBeenCalled();
+    expect(result.current.isCapturing).toBe(false);
+    expect(result.current.error).toContain('RECORD_AUDIO permission');
+  });
+
+  it(
+    'does not call requestRecordingPermissionsAsync again for an overlapping start while the first is still awaiting the permission prompt',
+    async () => {
+      // Reproduces a real crash (adb logcat): the system permission prompt itself steals
+      // foreground focus, which triggered useAppStateCaptureSync's 'active' handler to call
+      // startCaptureIfWanted() again *while the first call was still awaiting that same
+      // prompt* — ~9 overlapping rounds in under 2 seconds, each firing its own
+      // requestRecordingPermissionsAsync()/startCapture(), which crashed the app outright.
+      // Toggling `enabled` off/on here is a convenient stand-in for that same "another
+      // caller invokes startCaptureIfWanted() before the first call has settled" shape,
+      // without needing to mock AppState directly.
+      Platform.OS = 'android';
+      let resolvePermission: ((value: { granted: boolean }) => void) | undefined;
+      mockRequestRecordingPermissionsAsync.mockImplementation(() => new Promise((resolve) => {
+        resolvePermission = resolve;
+      }));
+
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useNativePcmCapture({ enabled, onChunk: jest.fn() }),
+        { initialProps: { enabled: true } },
+      );
+      await waitFor(() => expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1));
+
+      rerender({ enabled: false });
+      rerender({ enabled: true });
+      expect(mockRequestRecordingPermissionsAsync).toHaveBeenCalledTimes(1); // the overlapping call was a no-op, not a second prompt
+
+      resolvePermission?.({ granted: true });
+      await waitFor(() => expect(result.current.isCapturing).toBe(true));
+      expect(mockNativeModule.startCapture).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
 describe('useNativePcmCapture amplitude (docs/adr/0026)', () => {
   it('derives amplitude from each emitted frame via derivePcmAmplitude, and resets it to zero on stop', async () => {
     Platform.OS = 'android';
@@ -208,5 +289,25 @@ describe('useNativePcmCapture amplitude (docs/adr/0026)', () => {
     rerender({ enabled: false });
     await waitFor(() => expect(result.current.isCapturing).toBe(false));
     expect(result.current.amplitude).toBe(0);
+  });
+});
+
+// Isolated module registry, not the outer static mock (which always returns a populated
+// mockNativeModule) — this simulates ExpoLivePcmCaptureModule failing to link into the
+// build at all (requireOptionalNativeModule returning null), the one Android-specific
+// failure mode that otherwise produces total silence: no permission prompt, no error,
+// no level-meter movement (UAT: "my voice doesn't get captured" survived a full
+// `expo run:android` rebuild — this is what that dead end looks like from the inside).
+describe('useNativePcmCapture when the native module fails to load on Android', () => {
+  it('reports a diagnosable error instead of silently behaving like an unsupported platform', async () => {
+    mockNativeModuleOrNull = null;
+    Platform.OS = 'android';
+    const onError = jest.fn();
+    const { result } = renderHook(() => useNativePcmCapture({ enabled: true, onChunk: jest.fn(), onError }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(result.current.isSupported).toBe(false);
+    expect(result.current.error).toContain('did not load');
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('rebuild'));
   });
 });

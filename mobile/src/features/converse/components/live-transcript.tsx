@@ -1,23 +1,43 @@
 import type { ConverseTurn } from '../use-live-converse-session';
 import * as React from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { LearnerTurn, ThinkingFiller } from './transcript';
 
 /**
- * Her turn, live-pipeline version. Deliberately NOT `Transcript.tsx`'s
- * `HerTurn` (no tap-to-reveal, no underline affordance): `persona_turn`'s
- * wire shape (voice-connection.ts's `ServerMessage`) carries `text`,
- * `comprehension`, and `affect` — no translation/transliteration field —
- * so there's nothing to reveal yet. This is a real, disclosed gap
- * upstream of this component (the server-side pipeline doesn't generate
- * one), not something to fabricate here.
+ * Her turn, live-pipeline version. PRD §6.2 tap-to-reveal, real-pipeline
+ * counterpart to `Transcript.tsx`'s `HerTurn` — `persona_turn` now
+ * carries a real `translation` (turn-orchestrator.ts generates one
+ * alongside every reply; persona.ts's schema, not fabricated
+ * client-side), so this can use the same dotted-underline affordance
+ * `HerTurn` does. No transliteration slot here (unlike `HerTurn`,
+ * which switches between `en`/`translit`): translit is real-learner-only
+ * data (ticket #30) the live pipeline's `persona_turn` message doesn't
+ * carry — English-only reveal for now, not a regression, a narrower
+ * scope than the scripted demo's.
  */
-function LivePersonaTurn({ text }: { text: string }) {
+function LivePersonaTurn({ text, translation, revealed, onToggleReveal }: {
+  text: string;
+  translation?: string;
+  revealed: boolean;
+  onToggleReveal: () => void;
+}) {
   return (
-    <Text className="font-serif text-[20px] leading-[30px] text-ink">
-      {text}
-    </Text>
+    <Pressable onPress={onToggleReveal} accessibilityRole="button" accessibilityLabel="toggle translation">
+      <Text
+        className="font-serif text-[20px] leading-[30px] text-ink"
+        style={{
+          textDecorationLine: 'underline',
+          textDecorationStyle: 'dotted',
+          textDecorationColor: 'rgba(160,84,58,0.4)',
+        }}
+      >
+        {text}
+      </Text>
+      {revealed && translation && (
+        <Text className="mt-[8px] text-[14px] leading-[21px] text-ink/60">{translation}</Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -53,6 +73,16 @@ type LiveTranscriptProps = {
  */
 export function LiveTranscript({ turns, thinking }: LiveTranscriptProps) {
   const scrollRef = React.useRef<ScrollView>(null);
+  // Local, UI-only state — which turns' translations are currently shown.
+  // Not threaded through use-live-converse-session.ts: a tap-to-reveal
+  // toggle has no bearing on the session/connection state machine, same
+  // separation the scripted demo's own `revealed` (use-converse-session.ts)
+  // doesn't quite make, but there it's driven by scripted content, not a
+  // live WS-connected hook.
+  const [revealed, setRevealed] = React.useState<Record<number, boolean>>({});
+  const toggleReveal = React.useCallback((index: number) => {
+    setRevealed(prev => ({ ...prev, [index]: !prev[index] }));
+  }, []);
 
   React.useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -61,13 +91,26 @@ export function LiveTranscript({ turns, thinking }: LiveTranscriptProps) {
   return (
     <ScrollView
       ref={scrollRef}
-      className="flex-1 px-[22px] pt-[12px] pb-[8px]"
-      contentContainerClassName="gap-[18px]"
+      className="flex-1 px-[22px] pt-[12px]"
+      // UAT: "the text still gets cut off at the bottom by the footer" —
+      // `pb-[8px]` (on the ScrollView itself, not its content) gave the
+      // last turn almost no breathing room before the controls below it;
+      // this is content-container padding, so it's real scrollable space
+      // after the last turn, not just viewport inset.
+      contentContainerClassName="gap-[18px] pb-[24px]"
     >
       {turns.map((turn, index) => (
         turn.speaker === 'persona'
-          // eslint-disable-next-line react/no-array-index-key
-          ? <LivePersonaTurn key={index} text={turn.text} />
+          ? (
+              <LivePersonaTurn
+                // eslint-disable-next-line react/no-array-index-key
+                key={index}
+                text={turn.text}
+                translation={turn.translation}
+                revealed={!!revealed[index]}
+                onToggleReveal={() => toggleReveal(index)}
+              />
+            )
           : turn.speaker === 'system'
             // eslint-disable-next-line react/no-array-index-key
             ? <SystemTurn key={index} text={turn.text} />

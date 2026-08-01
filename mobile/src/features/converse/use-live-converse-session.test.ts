@@ -8,6 +8,7 @@ jest.mock('expo-audio', () => ({
     remove: jest.fn(),
     addListener: jest.fn(() => ({ remove: jest.fn() })),
   })),
+  setAudioModeAsync: jest.fn(),
 }));
 
 /**
@@ -30,6 +31,8 @@ jest.mock('expo-file-system', () => ({
   Paths: { cache: 'mock-cache-dir' },
 }));
 
+// eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
+import { setAudioModeAsync } from 'expo-audio';
 // eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
 import { useLiveConverseSession } from './use-live-converse-session';
 
@@ -76,6 +79,7 @@ beforeEach(() => {
   // @ts-expect-error test double standing in for the ambient WebSocket global
   globalThis.WebSocket = FakeWebSocket;
   jest.useFakeTimers();
+  (setAudioModeAsync as jest.Mock).mockClear();
 });
 
 afterEach(() => {
@@ -94,6 +98,8 @@ describe('useLiveConverseSession', () => {
     expect(result.current.phase).toBe('listening');
     const sent = latestSocket().sent.map(raw => JSON.parse(raw));
     expect(sent).toContainEqual({ type: 'session_start', learnerId: 'learner-1', sessionId: 'session-1' });
+    // PRD §6.2: "she opens, not the learner" — tells the server it's safe to start her opening line.
+    expect(sent).toContainEqual({ type: 'begin_conversation' });
   });
 
   it('runs the full cascade through phase and turns: filler -> transcript -> reply -> tts -> turn_complete', () => {
@@ -102,18 +108,16 @@ describe('useLiveConverseSession', () => {
 
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
     expect(result.current.phase).toBe('thinking');
-    expect(result.current.holdSeen).toBe(true);
-    expect(result.current.turns).toEqual([{ speaker: 'persona', text: 'Ну…' }]);
+    // UAT: "get rid of [the filler] completely" — no placeholder turn renders for it.
+    expect(result.current.turns).toEqual([]);
 
     act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет' },
     ]);
 
     act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет' },
       { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' },
     ]);
@@ -127,7 +131,7 @@ describe('useLiveConverseSession', () => {
     expect(result.current.lastTimestamps).toEqual(timestamps);
   });
 
-  it('replaces the filler turn with the real reply rather than appending a second persona turn', () => {
+  it('renders no placeholder for the filler — the real reply is the only turn', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
@@ -147,7 +151,7 @@ describe('useLiveConverseSession', () => {
     expect(result.current.phase).toBe('listening');
   });
 
-  it('replaces the filler with a "system" turn (not "persona") on safety_response — ticket #27\'s escape hatch', () => {
+  it('renders a "system" turn (not "persona"), not a filler placeholder, on safety_response — ticket #27\'s escape hatch', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
     act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
@@ -171,11 +175,9 @@ describe('useLiveConverseSession', () => {
     act(() => latestSocket().simulateMessage({ type: 'tts_chunk', sentenceIndex: 0, audioBase64: 'abc' }));
 
     expect(result.current.phase).toBe('speaking');
-    // Matches the voice path's own established behavior (see "runs the full cascade" above): once
-    // transcript_final has landed between the filler and the real reply, the filler turn is kept
-    // (not replaced) and both the transcript and the real reply append as their own entries.
+    // Matches the voice path's own established behavior (see "runs the full cascade" above):
+    // no placeholder for the filler — just the learner's transcript and the real reply.
     expect(result.current.turns).toEqual([
-      { speaker: 'persona', text: 'Ну…' },
       { speaker: 'learner', text: 'Привет!' },
       { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' },
     ]);
@@ -194,79 +196,43 @@ describe('useLiveConverseSession', () => {
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
-describe('useLiveConverseSession audio send (docs/adr/0026)', () => {
-  it('sends audio_chunk over the wire — the send-side counterpart to real mic capture', () => {
-    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
-    act(() => latestSocket().simulateOpen());
+describe('useLiveConverseSession audio session (UAT: no audio from the persona)', () => {
+  /**
+   * use-mic-capture.ts (the scripted-demo path) calls
+   * configureConverseAudioSession() before recording, which is what puts
+   * expo-audio into `playsInSilentMode: true` — without it, expo-audio's
+   * playback session defaults to NOT playing while the device is in silent
+   * mode (iOS) / at low media-stream priority (Android), so TTS chunks play
+   * into silence. The live pipeline uses native PCM capture instead of
+   * useMicCapture, so it never went through that call — this hook must
+   * configure the session itself.
+   */
+  it('configures the audio session for silent-mode playback before the session opens', () => {
+    renderHook(() => useLiveConverseSession(OPTIONS));
 
-    act(() => result.current.sendAudioChunk('cGNt', 16000));
-    const sent = latestSocket().sent.map(raw => JSON.parse(raw));
-    expect(sent).toContainEqual({ type: 'audio_chunk', pcmBase64: 'cGNt', sampleRateHz: 16000 });
+    expect(setAudioModeAsync).toHaveBeenCalledWith(expect.objectContaining({
+      playsInSilentMode: true,
+      allowsRecording: true,
+    }));
   });
 });
 
 // Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
-describe('useLiveConverseSession hold-to-think and lifecycle', () => {
-  it('does not have the floor until the first persona activity, per docs/adr/0002', () => {
-    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
-    act(() => latestSocket().simulateOpen());
-    expect(result.current.hasFloor).toBe(false);
-
-    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
-    // hasFloor requires holdSeen AND phase === 'listening' — filler just set phase to 'thinking'.
-    expect(result.current.hasFloor).toBe(false);
-
-    const timestamps = { t0TurnDetected: 0, t1SttFinal: 1, t2PersonaStart: 2, t3PersonaComplete: 3, t4StressAnnotated: 4, t5FirstAudio: 5 };
-    act(() => latestSocket().simulateMessage({ type: 'turn_complete', timestamps }));
-    expect(result.current.hasFloor).toBe(true);
-  });
-
-  it('does not have the floor while she is speaking (tts audio playing), not just while thinking', () => {
-    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
-    act(() => latestSocket().simulateOpen());
-    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
-    const timestamps = { t0TurnDetected: 0, t1SttFinal: 1, t2PersonaStart: 2, t3PersonaComplete: 3, t4StressAnnotated: 4, t5FirstAudio: 5 };
-    act(() => latestSocket().simulateMessage({ type: 'turn_complete', timestamps }));
-    expect(result.current.hasFloor).toBe(true); // floor established after her first turn
-
-    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Сейчас…' }));
-    act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
-    act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
-    act(() => latestSocket().simulateMessage({ type: 'tts_chunk', sentenceIndex: 0, audioBase64: 'abc' }));
-    expect(result.current.phase).toBe('speaking');
-    expect(result.current.hasFloor).toBe(false);
-
-    act(() => result.current.holdOn());
-    expect(result.current.holding).toBe(false); // holdOn must be a no-op mid-speech
-  });
-
-  it('sends hold_start/hold_end over the wire and auto-releases after 45s', () => {
-    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
-    act(() => latestSocket().simulateOpen());
-    act(() => latestSocket().simulateMessage({ type: 'persona_filler', text: 'Ну…' }));
-    const timestamps = { t0TurnDetected: 0, t1SttFinal: 1, t2PersonaStart: 2, t3PersonaComplete: 3, t4StressAnnotated: 4, t5FirstAudio: 5 };
-    act(() => latestSocket().simulateMessage({ type: 'turn_complete', timestamps }));
-    expect(result.current.hasFloor).toBe(true);
-
-    act(() => result.current.holdOn());
-    expect(result.current.holding).toBe(true);
-    const sentAfterHoldOn = latestSocket().sent.map(raw => JSON.parse(raw));
-    expect(sentAfterHoldOn).toContainEqual({ type: 'hold_start' });
-
-    act(() => jest.advanceTimersByTime(45_000));
-    expect(result.current.holding).toBe(false);
-    const sentAfterAutoRelease = latestSocket().sent.map(raw => JSON.parse(raw));
-    expect(sentAfterAutoRelease).toContainEqual({ type: 'hold_end' });
-  });
-
-  it('ignores holdOn without the floor', () => {
+describe('useLiveConverseSession audio send (docs/adr/0026)', () => {
+  it('sends audio_chunk over the wire, with the commit flag ticket #40 uses as the turn boundary', () => {
     const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
 
-    act(() => result.current.holdOn());
-    expect(result.current.holding).toBe(false);
+    act(() => result.current.sendAudioChunk('cGNt', 16000, false));
+    act(() => result.current.sendAudioChunk('', 16000, true));
+    const sent = latestSocket().sent.map(raw => JSON.parse(raw));
+    expect(sent).toContainEqual({ type: 'audio_chunk', pcmBase64: 'cGNt', sampleRateHz: 16000, commit: false });
+    expect(sent).toContainEqual({ type: 'audio_chunk', pcmBase64: '', sampleRateHz: 16000, commit: true });
   });
+});
 
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession lifecycle', () => {
   it('disconnects the underlying connection on unmount', () => {
     const { unmount } = renderHook(() => useLiveConverseSession(OPTIONS));
     act(() => latestSocket().simulateOpen());
@@ -275,4 +241,20 @@ describe('useLiveConverseSession hold-to-think and lifecycle', () => {
     unmount();
     expect(socket.closeCallCount).toBe(1);
   });
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession translation (PRD §6.2 tap-to-reveal)', () => {
+  it(
+    'carries translation through onto the persona turn (UAT: "the text is no longer clickable to show translation. add it back")',
+    () => {
+      const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm', translation: 'Hello!' }));
+
+      expect(result.current.turns).toEqual([
+        { speaker: 'persona', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm', translation: 'Hello!' },
+      ]);
+    },
+  );
 });

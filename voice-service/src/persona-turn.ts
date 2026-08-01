@@ -93,7 +93,7 @@ export function buildPersonaTurnRequest(transcript: TranscriptTurn[], persona: P
  * per-persona fallback-affect table).
  */
 function buildFallbackTurn(): PersonaTurn {
-  return { comprehension: 'partial', affect: 'warm', text: FILLER_LINE };
+  return { comprehension: 'partial', affect: 'warm', text: FILLER_LINE, translation: 'Sorry, I got lost in thought...' };
 }
 
 export type GeneratePersonaTurnResult = {
