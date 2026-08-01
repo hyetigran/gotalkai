@@ -1,18 +1,14 @@
 /**
- * Connection manager for the voice service's persistent stream. Ticket
- * #11 built the skeleton (round-trip ping only); ticket #18 adds the real
- * pipeline messages. ARCHITECTURE.md §3.1: "Conversation screen is a
- * special case. Do not force React Query/axios onto the core loop. Own
- * connection manager for the stream." — this is that manager, independent
- * of React.
+ * Connection manager for the voice service's persistent stream, used for
+ * real by `use-live-converse-session.ts`. ARCHITECTURE.md §3.1:
+ * "Conversation screen is a special case. Do not force React Query/axios
+ * onto the core loop. Own connection manager for the stream." — this is
+ * that manager, independent of React.
  *
  * Auth: the token is passed in explicitly by the caller, never read from
- * a bundled env var — until the app service exists to issue real
- * per-session credentials (ARCHITECTURE.md §6), there is no source for a
- * token that's safe to bake into a shipped client bundle. See
- * `voice-service-debug-screen.tsx` for how this is exercised today (a
- * dev-only screen where the token is typed in by hand, not embedded in
- * source).
+ * a bundled env var — app-service mints a real per-session credential
+ * (`POST /sessions`'s `voiceServiceToken`, `server.ts`) and the token
+ * flows through from there, never baked into the shipped client bundle.
  *
  * `ServerMessage`/outbound message shapes are hand-mirrored from
  * `voice-service/src/messages.ts` — the two are independent npm projects
