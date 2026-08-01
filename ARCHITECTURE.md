@@ -94,12 +94,16 @@ Node/TypeScript. Owns:
 Node/TypeScript initially; realtime only. Owns:
 
 - Bidirectional stream with the client
-- Pipeline orchestration: VAD → STT → LLM → stress annotation → TTS
-- Hold-to-think override (see §5)
+- Pipeline orchestration: hold-to-talk (press/release) → STT → LLM → stress annotation → TTS
 - Stage timing instrumentation (six timestamps per turn)
 - **No mid-conversation database access** — receives frozen context at session start
 
-Split exists so turn detection can move to Python + Pipecat without touching the app service.
+Turn detection was originally VAD-based, with a hold-to-think override (see §5) and a split
+designed so detection could move to Python + Pipecat without touching the app service. Both are
+gone (ticket #40, PRD §7.9): a real-device echo/false-interruption failure with no acoustic echo
+cancellation on the open mic led to replacing VAD with the client's hold-to-talk button — press
+and hold to talk, release to send. See PRD §6.2/§7.9/§7.10 and risk 10 (§14) for the full
+reasoning and the tradeoff (backchanneling and barge-in no longer work).
 
 ### 3.4 Data store (planned)
 
@@ -122,7 +126,7 @@ Full DDL intended in `schema.sql` (not yet in repo). Load-bearing tables:
 ## 4. Voice pipeline
 
 ```
-VAD → streaming STT → persona LLM → stress annotation → sentence-chunked TTS
+hold-to-talk (press/release) → streaming STT → persona LLM → stress annotation → sentence-chunked TTS
 ```
 
 Speech-to-speech is rejected: it hides STT confidence (“she doesn’t understand you”), phoneme timings (visemes), and editable text (recasts, register, repair dial).
@@ -164,7 +168,7 @@ Build to **hard requirements**, not a locked SDK.
 **STT must:**
 
 - Word-level confidence + n-best (confidence mechanic + case errors before ASR repair)
-- Bill by **audio duration**, not connection time (VAD gating only helps then)
+- Bill by **audio duration**, not connection time (hold-to-talk naturally bounds this to the held duration — see §5)
 
 **TTS must:**
 
@@ -176,20 +180,24 @@ Build to **hard requirements**, not a locked SDK.
 
 ---
 
-## 5. Turn-taking and hold-to-think
+## 5. Turn-taking: hold-to-talk
 
-Hardest UX problem: B1 learners pause mid-sentence hunting for a word. Silence-threshold VAD cuts them off; that destroys trust.
+**Revised (ticket #40, PRD §7.9).** Originally open-mic + silence-threshold VAD, with a
+hold-to-think override ([ADR-0002](./docs/adr/0002-hold-to-think-requires-the-floor.md)) for B1
+learners pausing mid-sentence — VAD cutting them off destroyed trust, and per-level timeouts /
+Pipecat SmartTurnDetection were both being considered to soften that. Reversed after a real-device
+failure: with no acoustic echo cancellation on the open mic, her own TTS audio re-entering the mic
+read as a genuine interruption, cancelling her audio before it played and locking sessions into a
+silent fallback loop.
 
-- Patience timeout is a **per-level parameter** (repair dial in milliseconds)
-- Pipecat SmartTurnDetection stays an option if Node turn detection fails
-- Open mic for the whole session by default; push-to-talk is a setting with stated tradeoffs (kills backchanneling)
-
-**Hold-to-think** ([ADR-0002](./docs/adr/0002-hold-to-think-requires-the-floor.md)):
-
-- Meaning: *wait, I’m still going* — not “pause the session”
-- While held **and learner has the floor:** suspend turn detection + mute STT
-- During her turn, or before the learner has spoken: **no-op** (no queued-hold flag)
-- Auto-release timeout (~45s) still to specify before Phase 2
+- **Press and hold to talk; release to send.** Release is the turn boundary — no VAD, no
+  threshold, no hold-to-think (there's no open mic left to pause).
+- **Button disabled while she's speaking or generating a reply.**
+- **This also resolves the hesitant-learner problem by construction**, not mitigation — the
+  learner controls exactly how long they hold, so there's no threshold to cut them off early.
+- **Cost, stated plainly:** backchanneling and barge-in no longer work. See PRD §5.6/§7.10 and risk
+  10 (§14) — `react-native-webrtc`'s AEC path (already built for the scripted demo, not wired to
+  the live pipeline) is a possible way to bring the open mic back later.
 
 ---
 
@@ -220,7 +228,7 @@ Zod validates persona LLM JSON and public HTTP payloads. Streaming caveat: incre
 | --- | --- |
 | Eval | Golden set + mechanical assertions + judge; same Zod schema as production (`eval/` planned) |
 | Observability | Health (pages) vs quality (sampled, never pages); canary golden cases against live endpoint; one trace per session, span per turn |
-| Cost | TTS largest line; prompt caching; VAD-gated STT; short turns; **daily session cap** |
+| Cost | TTS largest line; prompt caching; hold-to-talk-bounded STT; short turns; **daily session cap** |
 | Safety | Out-of-character escape hatch before launch (distress + sexualisation); sample audio 2–5% with separate consent; memories never in logs |
 | Privacy | Deletion clears memories + audio + transcripts together; check biometric (e.g. BIPA) before storing voice |
 

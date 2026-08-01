@@ -5,11 +5,18 @@ import { z } from 'zod';
  * Client/server message schemas — the second of Zod's three boundaries
  * (PRD §7.8). Ticket #18 extends the ticket #11 skeleton (`ping` only)
  * with the real pipeline messages: audio in, transcript/persona-turn/
- * audio-chunk out, plus turn-lifecycle and hold-to-think control.
+ * audio-chunk out, plus turn lifecycle.
  *
  * Transport is chunked audio over this same WebSocket, not a WebRTC peer
  * connection — see docs/adr/0017 for why, and for the disclosed
  * consequence (no echo cancellation on the audio this carries).
+ *
+ * Ticket #40 (PRD §7.9): turn detection is now driven by the client's own
+ * hold-to-talk button, not server-side VAD — `commit` on `audio_chunk`
+ * *is* the turn boundary now (true on exactly the last chunk of a press,
+ * sent the moment the button is released). `hold_start`/`hold_end`
+ * (hold-to-think) are gone entirely, not just unused — under hold-to-talk
+ * there's no open mic to pause in the first place.
  */
 
 const audioChunkMessageSchema = z.object({
@@ -17,6 +24,8 @@ const audioChunkMessageSchema = z.object({
   /** Mono, 16-bit PCM, base64-encoded (mobile downmixes+encodes before sending — see pcm-encode.ts). */
   pcmBase64: z.string(),
   sampleRateHz: z.number().int().positive(),
+  /** True on exactly the chunk sent when the talk button is released — the turn boundary (see this file's own header comment). */
+  commit: z.boolean(),
 });
 
 const sessionStartMessageSchema = z.object({
@@ -25,18 +34,7 @@ const sessionStartMessageSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
-/**
- * Purely a clarity/instrumentation signal, not load-bearing for the "no
- * audio sent to STT while held" requirement (PRD §7.9) — the client
- * already achieves that by simply not sending `audio_chunk` messages
- * while held (see mobile's `use-live-converse-session.ts`). Sent anyway
- * so server-side turn state and the six-timestamp log can distinguish
- * "the learner is holding" from "the learner is just being quiet."
- */
-const holdStartMessageSchema = z.object({ type: z.literal('hold_start') });
-const holdEndMessageSchema = z.object({ type: z.literal('hold_end') });
-
-/** Ticket #32 (PRD §12.3): the text-input path — bypasses VAD/STT entirely, funnels into the same downstream pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */
+/** Ticket #32 (PRD §12.3): the text-input path — bypasses STT entirely, funnels into the same downstream pipeline as a voice turn (turn-orchestrator.ts's `submitTextInput`). */
 const textInputMessageSchema = z.object({
   type: z.literal('text_input'),
   text: z.string().min(1),
@@ -62,8 +60,6 @@ export const clientMessageSchema = z.union([
   }),
   audioChunkMessageSchema,
   sessionStartMessageSchema,
-  holdStartMessageSchema,
-  holdEndMessageSchema,
   textInputMessageSchema,
   beginConversationMessageSchema,
 ]);
@@ -76,7 +72,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
  * beyond the endpoints — this interpretation maps them to the pipeline's
  * own stage boundaries (VAD → STT → LLM → stress annotation → TTS),
  * documented here since it's a judgment call, not a literal PRD list:
- * - t0: turn detected (VAD signals end of learner speech)
+ * - t0: turn detected (the talk button is released)
  * - t1: STT final transcript received
  * - t2: persona LLM generation started
  * - t3: persona LLM generation complete

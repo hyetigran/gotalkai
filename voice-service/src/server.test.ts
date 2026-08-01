@@ -155,37 +155,23 @@ describe('voice service server', () => {
       expect(response).toMatchObject({ type: 'pong', requestId: 'still-alive' });
     }
 
-    // Silent (all-zero) PCM — VadGate never reaches 'speech', so no STT
-    // session opens and no real network call to ElevenLabs/Anthropic is
-    // attempted. Real-pipeline behavior (loud audio, a full turn) is
-    // exercised in turn-orchestrator.test.ts against fakes; this suite
-    // only proves server.ts's message routing itself doesn't crash —
-    // this environment has no real vendor credentials to test the full
-    // path end to end (docs/adr/0017).
-    function silentAudioChunkMessage(): string {
-      const silentSamples = new Int16Array(160); // all zeros
-      const pcmBase64 = Buffer.from(silentSamples.buffer).toString('base64');
-      return JSON.stringify({ type: 'audio_chunk', pcmBase64, sampleRateHz: 8000 });
-    }
-
-    it('accepts a well-formed audio_chunk message without erroring or crashing the connection', async () => {
-      const handle = await startServer(testEnv());
-      const ws = connect(handle.port, AUTH_TOKEN);
-      await once(ws, 'open');
-
-      ws.send(silentAudioChunkMessage());
-      await assertStillResponsive(ws);
-
-      ws.close();
-      await handle.close();
-    });
-
+    // Ticket #40 removed VAD: there is no longer an "inert" audio_chunk
+    // payload that avoids a real vendor call — every frame, silent or
+    // not, immediately opens a real STT session attempt (pushAudioFrame
+    // no longer makes any speech/silence judgement of its own; see its
+    // own comment in turn-orchestrator.ts). No happy-path test exists
+    // here for the same reason none exists for text_input just below —
+    // "any non-empty [payload] immediately reaches the real ... pipeline
+    // against this environment's fake vendor credentials." Real-pipeline
+    // behavior is exercised in turn-orchestrator.test.ts against fakes;
+    // this suite only proves server.ts's message routing/schema
+    // validation itself doesn't crash.
     it('rejects a malformed audio_chunk (missing sampleRateHz) the same way as any other unrecognized message', async () => {
       const handle = await startServer(testEnv());
       const ws = connect(handle.port, AUTH_TOKEN);
       await once(ws, 'open');
 
-      ws.send(JSON.stringify({ type: 'audio_chunk', pcmBase64: 'AAAA' }));
+      ws.send(JSON.stringify({ type: 'audio_chunk', pcmBase64: 'AAAA', commit: false }));
       const raw = await once<Buffer>(ws, 'message');
       expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
 
@@ -193,19 +179,23 @@ describe('voice service server', () => {
       await handle.close();
     });
 
-    it('accepts hold_start/hold_end without erroring, and audio sent while held produces no response at all', async () => {
+    it('rejects an audio_chunk missing the required commit flag', async () => {
       const handle = await startServer(testEnv());
       const ws = connect(handle.port, AUTH_TOKEN);
       await once(ws, 'open');
 
-      ws.send(JSON.stringify({ type: 'hold_start' }));
-      ws.send(silentAudioChunkMessage());
-      ws.send(JSON.stringify({ type: 'hold_end' }));
-      await assertStillResponsive(ws);
+      ws.send(JSON.stringify({ type: 'audio_chunk', pcmBase64: 'AAAA', sampleRateHz: 8000 }));
+      const raw = await once<Buffer>(ws, 'message');
+      expect(JSON.parse(raw.toString())).toMatchObject({ type: 'error' });
 
       ws.close();
       await handle.close();
     });
+
+    // hold_start/hold_end (hold-to-think) were removed entirely with VAD
+    // (ticket #40) — a client that still sends them now just gets the
+    // same generic "unrecognized message" rejection any unknown type
+    // does, already covered by this suite's other malformed-message tests.
 
     it('accepts a well-formed session_start message without erroring', async () => {
       const handle = await startServer(testEnv());
