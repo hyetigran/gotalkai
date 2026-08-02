@@ -1,7 +1,8 @@
 import type { CastMember, EntryStatus } from '../address-book-fixture';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import { shadows } from '@/components/ui/design-tokens';
+import { CAST_PORTRAITS } from '../../cast/cast-assets';
 import { CONVERSATIONS_PER_LEVEL, ADDRESS_BOOK_COPY as copy, REACHED_COUNT } from '../address-book-fixture';
 import { DifficultyDial } from './difficulty-dial';
 import { RegisterMeter } from './register-meter';
@@ -26,7 +27,15 @@ export function EntryExpandedBody({ member, status, onTalkPress }: EntryExpanded
   return (
     <View className="mt-[15px] border-t border-ink/8 pt-[15px]">
       <View className="flex-row items-start gap-[14px]">
-        <View className="h-[88px] w-[72px] rounded-[12px] bg-ink/5" />
+        <View className="h-[88px] w-[72px] overflow-hidden rounded-[12px] bg-ink/5">
+          <Image
+            source={CAST_PORTRAITS[member.castId]}
+            resizeMode="cover"
+            style={{ width: '100%', height: '100%' }}
+            accessibilityIgnoresInvertColors
+            accessibilityLabel={member.name}
+          />
+        </View>
         <Text className="flex-1 text-[14px] leading-[21px] text-ink/62">{member.trains}</Text>
       </View>
 

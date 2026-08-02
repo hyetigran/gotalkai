@@ -1,9 +1,9 @@
 import type { CastMember, EntryStatus } from '../address-book-fixture';
 import { AnimatePresence, MotiView } from 'moti';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
-import { colors, motion, shadows } from '@/components/ui/design-tokens';
-import { PortraitHatch } from '@/components/ui/portrait-hatch';
+import { motion, shadows } from '@/components/ui/design-tokens';
+import { CAST_PORTRAITS } from '../../cast/cast-assets';
 import { ADDRESS_BOOK_COPY as copy } from '../address-book-fixture';
 import { EntryExpandedBody } from './entry-expanded-body';
 
@@ -55,7 +55,7 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
       >
         <View className="flex-row items-center gap-[13px]">
           <View
-            className={`items-center justify-center overflow-hidden rounded-full ${
+            className={`overflow-hidden rounded-full ${
               reached
                 ? 'size-[52px] border-2 border-accent'
                 : next
@@ -63,16 +63,13 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
                   : 'size-[42px] border-[1.5px] border-ink/16'
             }`}
           >
-            <View className="absolute inset-0">
-              <PortraitHatch
-                stop1={reached ? colors.addressBookDiscHatch.stop1 : colors.addressBookDiscHatchLocked.stop1}
-                stop2={reached ? colors.addressBookDiscHatch.stop2 : colors.addressBookDiscHatchLocked.stop2}
-                stripeWidth={6}
-              />
-            </View>
-            <Text className={reached ? 'font-serif text-[18px] text-accent/90' : 'font-serif text-[15px] text-ink/38'}>
-              {member.initial}
-            </Text>
+            <Image
+              source={CAST_PORTRAITS[member.castId]}
+              resizeMode="cover"
+              style={{ width: '100%', height: '100%' }}
+              accessibilityIgnoresInvertColors
+              accessibilityLabel={member.name}
+            />
           </View>
 
           <View className="flex-1">
