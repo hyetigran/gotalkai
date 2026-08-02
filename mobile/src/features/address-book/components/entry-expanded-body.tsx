@@ -1,8 +1,7 @@
 import type { CastMember, EntryStatus } from '../address-book-fixture';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { shadows } from '@/components/ui/design-tokens';
-import { CAST_PORTRAITS } from '../../cast/cast-assets';
 import { CONVERSATIONS_PER_LEVEL, ADDRESS_BOOK_COPY as copy, REACHED_COUNT } from '../address-book-fixture';
 import { DifficultyDial } from './difficulty-dial';
 import { RegisterMeter } from './register-meter';
@@ -14,11 +13,15 @@ type EntryExpandedBodyProps = {
 };
 
 /**
- * The expanded body of an address-book entry: portrait slot + register
- * description, two register meters, three difficulty dials, the next-entry
- * requirement line, and the reached-entry "Talk to" button. Split out of
+ * The expanded body of an address-book entry: register description, two
+ * register meters, three difficulty dials, the next-entry requirement
+ * line, and the reached-entry "Talk to" button. Split out of
  * `AddressBookEntry` to keep that component under the repo's
  * max-lines-per-function limit.
+ *
+ * No portrait here — the collapsed row's disc (`AddressBookEntry`) already
+ * shows it; repeating it here just duplicated the same image within one
+ * card.
  */
 export function EntryExpandedBody({ member, status, onTalkPress }: EntryExpandedBodyProps) {
   const reached = status === 'reached';
@@ -26,18 +29,7 @@ export function EntryExpandedBody({ member, status, onTalkPress }: EntryExpanded
 
   return (
     <View className="mt-[15px] border-t border-ink/8 pt-[15px]">
-      <View className="flex-row items-start gap-[14px]">
-        <View className="h-[88px] w-[72px] overflow-hidden rounded-[12px] bg-ink/5">
-          <Image
-            source={CAST_PORTRAITS[member.castId]}
-            resizeMode="cover"
-            style={{ width: '100%', height: '100%' }}
-            accessibilityIgnoresInvertColors
-            accessibilityLabel={member.name}
-          />
-        </View>
-        <Text className="flex-1 text-[14px] leading-[21px] text-ink/62">{member.trains}</Text>
-      </View>
+      <Text className="text-[14px] leading-[21px] text-ink/62">{member.trains}</Text>
 
       <View className="mt-[16px] gap-[13px]">
         <RegisterMeter
