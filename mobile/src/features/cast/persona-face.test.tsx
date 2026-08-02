@@ -19,15 +19,15 @@ afterEach(cleanup);
 describe('persona face component', () => {
   it('renders with an accessibility label naming the current expression', () => {
     render(<PersonaFace expression="listening" />);
-    expect(screen.getByLabelText('Валентина, listening')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Valentina, listening')).toBeOnTheScreen();
   });
 
   it('updates the accessibility label when the expression prop changes', () => {
     const { rerender } = render(<PersonaFace expression="idle" />);
-    expect(screen.getByLabelText('Валентина, idle')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Valentina, idle')).toBeOnTheScreen();
 
     rerender(<PersonaFace expression="speaking" />);
-    expect(screen.getByLabelText('Валентина, speaking')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Valentina, speaking')).toBeOnTheScreen();
   });
 
   it('renders the 3D canvas inside the frame, for every expression', () => {
@@ -43,7 +43,7 @@ describe('persona face component', () => {
 
     render(<PersonaFace expression="idle" heightRatio={0.32} />);
 
-    const panel = screen.getByLabelText('Валентина, idle');
+    const panel = screen.getByLabelText('Valentina, idle');
     const style = Array.isArray(panel.props.style) ? Object.assign({}, ...panel.props.style) : panel.props.style;
     expect(style.height).toBe(Math.round(windowHeight * 0.32));
   });
@@ -51,15 +51,15 @@ describe('persona face component', () => {
   it('a larger heightRatio produces a proportionally taller panel', () => {
     const windowHeight = Dimensions.get('window').height;
     const { unmount } = render(<PersonaFace expression="idle" heightRatio={0.2} />);
-    const smallerStyle = Array.isArray(screen.getByLabelText('Валентина, idle').props.style)
-      ? Object.assign({}, ...screen.getByLabelText('Валентина, idle').props.style)
-      : screen.getByLabelText('Валентина, idle').props.style;
+    const smallerStyle = Array.isArray(screen.getByLabelText('Valentina, idle').props.style)
+      ? Object.assign({}, ...screen.getByLabelText('Valentina, idle').props.style)
+      : screen.getByLabelText('Valentina, idle').props.style;
     unmount();
 
     render(<PersonaFace expression="idle" heightRatio={0.4} />);
-    const largerStyle = Array.isArray(screen.getByLabelText('Валентина, idle').props.style)
-      ? Object.assign({}, ...screen.getByLabelText('Валентина, idle').props.style)
-      : screen.getByLabelText('Валентина, idle').props.style;
+    const largerStyle = Array.isArray(screen.getByLabelText('Valentina, idle').props.style)
+      ? Object.assign({}, ...screen.getByLabelText('Valentina, idle').props.style)
+      : screen.getByLabelText('Valentina, idle').props.style;
 
     expect(smallerStyle.height).toBe(Math.round(windowHeight * 0.2));
     expect(largerStyle.height).toBe(Math.round(windowHeight * 0.4));

@@ -18,7 +18,7 @@ export const DEBRIEF_FIXTURE = {
   patterns: [
     {
       index: '01',
-      /** Kept in Russian in both interface languages — only `body` translates. */
+      /** Kept in Russian (Cyrillic) in both interface languages — only `body` translates. */
       title: 'Мы иска́ли, not мы и́щем.',
       body: 'Past narration came up four times. Twice she had to ask what you meant.',
       tag: 'impeded communication · 2×',

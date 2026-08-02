@@ -40,8 +40,8 @@ export const CONVERSATIONS_PER_LEVEL = 12;
 
 export const CAST_FIXTURE: readonly CastMember[] = [
   {
-    name: 'Валентина',
-    initial: 'ВС',
+    name: 'Valentina',
+    initial: 'VS',
     castId: 'valentina',
     level: 'A2',
     role: 'Grandmother-in-law · retired librarian',
@@ -50,8 +50,8 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 22, transactionalRelationalPercent: 64 },
   },
   {
-    name: 'Елена Николаевна',
-    initial: 'ЕН',
+    name: 'Elena Nikolaevna',
+    initial: 'EN',
     castId: 'elena',
     level: 'B1',
     role: 'Mother-in-law · school administrator',
@@ -60,8 +60,8 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 50, transactionalRelationalPercent: 71 },
   },
   {
-    name: 'Маша',
-    initial: 'М',
+    name: 'Masha',
+    initial: 'M',
     castId: 'masha',
     level: 'B1',
     role: 'Cousin-in-law · barista, 26',
@@ -70,8 +70,8 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 73, transactionalRelationalPercent: 48 },
   },
   {
-    name: 'Дима',
-    initial: 'Д',
+    name: 'Dima',
+    initial: 'D',
     castId: 'dima',
     level: 'B2',
     role: 'Taxi driver · Yaroslavl',
@@ -80,8 +80,8 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 63, transactionalRelationalPercent: 24 },
   },
   {
-    name: 'Ирина В.',
-    initial: 'ИВ',
+    name: 'Irina V.',
+    initial: 'IV',
     castId: 'irina',
     level: 'B2',
     role: 'Clinic receptionist',

@@ -18,7 +18,7 @@ export const SETTINGS_COPY = {
 
 export const LANGUAGE_CHOICES = [
   { id: 'en', label: 'English' },
-  { id: 'ru', label: 'Ру́сский' },
+  { id: 'ru', label: 'Russian' },
 ] as const;
 
 export type LanguageId = (typeof LANGUAGE_CHOICES)[number]['id'];

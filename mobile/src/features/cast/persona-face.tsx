@@ -52,7 +52,7 @@ export function PersonaFace({ expression, heightRatio = DEFAULT_HEIGHT_RATIO }: 
       className="w-full overflow-hidden rounded-[28px] border border-ink/10 bg-white"
       style={{ height: panelHeight }}
       accessibilityRole="image"
-      accessibilityLabel={`Валентина, ${expression}`}
+      accessibilityLabel={`Valentina, ${expression}`}
     >
       {/*
         R3F's native canvas defaults `antialias` to false (see its
