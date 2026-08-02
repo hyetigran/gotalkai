@@ -1,12 +1,7 @@
-import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+import { Icon, Label, NativeTabs, VectorIcon } from 'expo-router/unstable-native-tabs';
 
 import { colors } from '@/components/ui/design-tokens';
-
-// `design-tokens.ts`'s own `fontFamily` map isn't exported (only the
-// derived `typography` roles are) — same literal it resolves `serif` to,
-// not a new source of truth.
-const SERIF_FONT_FAMILY = 'PTSerif-Regular';
 
 /**
  * Three-tab shell for the daily-loop screens that live outside a single
@@ -25,51 +20,31 @@ const SERIF_FONT_FAMILY = 'PTSerif-Regular';
  * anywhere. Reappears the same way once the loop replaces back to
  * `/open`, since that route re-enters this group.
  *
- * No icons: every other screen in this app is pure typography (no
- * iconography anywhere in the mockup-driven design), so the tab bar
- * matches that instead of introducing icons that would be new to the
- * product's visual language.
+ * `NativeTabs` (expo-router/unstable-native-tabs) renders a real
+ * UITabBarController on iOS / native bottom nav on Android instead of a
+ * JS-drawn bar — on iOS 26 that's what gets the system's floating
+ * "Liquid Glass" tab bar for free, no custom blur view to build or
+ * maintain. `blurEffect="systemMaterial"` is the explicit ask for that
+ * translucent look pre-26 too (adapts to light/dark automatically); it's
+ * a no-op label-only hint on Android. Trade-off vs. the old `Tabs`: this
+ * is a native control, so styling goes through these typed props, not
+ * arbitrary NativeWind classes.
  */
 export default function TabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: `${colors.ink}66`,
-        tabBarStyle: {
-          backgroundColor: colors.paper,
-          borderTopColor: `${colors.ink}1A`,
-          height: Platform.OS === 'ios' ? 84 : 64,
-          paddingTop: 8,
-        },
-        tabBarLabelStyle: {
-          fontFamily: SERIF_FONT_FAMILY,
-          fontSize: 12,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="address-book"
-        options={{
-          title: 'Home',
-          tabBarButtonTestID: 'home-tab',
-        }}
-      />
-      <Tabs.Screen
-        name="open"
-        options={{
-          title: 'Talk',
-          tabBarButtonTestID: 'talk-tab',
-        }}
-      />
-      <Tabs.Screen
-        name="debrief-history"
-        options={{
-          title: 'History',
-          tabBarButtonTestID: 'history-tab',
-        }}
-      />
-    </Tabs>
+    <NativeTabs blurEffect="systemMaterial" iconColor={`${colors.ink}66`} tintColor={colors.accent}>
+      <NativeTabs.Trigger name="address-book">
+        <Label>Home</Label>
+        <Icon src={<VectorIcon family={Feather} name="book-open" />} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="open">
+        <Label>Talk</Label>
+        <Icon src={<VectorIcon family={Feather} name="phone-call" />} />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="debrief-history">
+        <Label>History</Label>
+        <Icon src={<VectorIcon family={Feather} name="clock" />} />
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
