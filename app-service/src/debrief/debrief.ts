@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 
+import { detectAndRecordAvoidance } from './avoidance-detection';
 import { computeObservationScore, computeReadiness } from './debrief-ranking';
 
 /**
@@ -46,6 +47,25 @@ export async function recordObservations(
       ids.push(row.id);
   }
   return ids;
+}
+
+/**
+ * The full post-observations pipeline (ticket #23): writes the given
+ * observations, checks/records avoidance against them, then ranks and
+ * promotes the top `DEBRIEF_ITEM_COUNT` into `debrief_items`. Shared by
+ * the `POST /sessions/:id/observations` endpoint (server.ts, originally
+ * a test harness's own entry point) and the post-session analyser's own
+ * finish-session flow (`POST /sessions/:id/end`) — same three-call
+ * sequence, same ordering `detectAndRecordAvoidance`'s own comment
+ * documents (avoidance-detection.ts): after `recordObservations` so
+ * "was the target attempted" can be checked against this session's real
+ * data, before `rankAndPromoteDebrief` so a detected avoidance is
+ * itself eligible for promotion into the debrief.
+ */
+export async function writeAndRankObservations(pool: Pool, sessionId: string, learnerId: string, observations: ObservationInput[]): Promise<DebriefItemView[]> {
+  await recordObservations(pool, sessionId, learnerId, observations);
+  await detectAndRecordAvoidance(pool, sessionId, learnerId);
+  return rankAndPromoteDebrief(pool, sessionId, learnerId);
 }
 
 type ObservationRow = {

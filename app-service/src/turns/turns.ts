@@ -2,6 +2,16 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 
 /**
+ * Mirrors voice-service/src/pipeline/persona.ts's own
+ * `PERSONA_COMPREHENSION_VALUES` — duplicated, not imported, same
+ * no-workspace-linking constraint `timings` below already documents.
+ * Only ever meaningful on a 'persona' row (it describes whether *she*
+ * understood the learner's immediately preceding turn).
+ */
+export const TURN_COMPREHENSION_VALUES = ['understood', 'partial', 'not_understood'] as const;
+export type TurnComprehension = (typeof TURN_COMPREHENSION_VALUES)[number];
+
+/**
  * Ticket #29 / docs/adr/0022: the write path `turns` never had. Voice
  * service posts one artefact per turn "after turns or at session end"
  * (ARCHITECTURE.md §3's own sequence) — this is that endpoint's request
@@ -17,6 +27,8 @@ export const recordTurnRequestSchema = z.object({
   personaRegister: z.string().optional(),
   learnerRegister: z.string().optional(),
   revealed: z.boolean().optional(),
+  /** Persists the live `persona_turn` message's own `comprehension` field (mobile's `ConverseTurn.comprehension`) — real-time-only until now, per docs/adr/0022's own disclosed gap. */
+  comprehension: z.enum(TURN_COMPREHENSION_VALUES).optional(),
   timings: z.object({
     t0TurnDetected: z.number(),
     t1SttFinal: z.number(),
@@ -40,8 +52,8 @@ export type RecordInterruptionRequest = z.infer<typeof recordInterruptionRequest
 /** Writes one `turns` row. Returns the new row's id. */
 export async function recordTurn(pool: Pool, sessionId: string, data: RecordTurnRequest): Promise<string> {
   const result = await pool.query<{ id: string }>(
-    `INSERT INTO turns (session_id, speaker, content, persona_register, learner_register, revealed, timings, cost_usd)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO turns (session_id, speaker, content, persona_register, learner_register, revealed, comprehension, timings, cost_usd)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
     [
       sessionId,
@@ -50,6 +62,7 @@ export async function recordTurn(pool: Pool, sessionId: string, data: RecordTurn
       data.personaRegister ?? null,
       data.learnerRegister ?? null,
       data.revealed ?? false,
+      data.comprehension ?? null,
       data.timings ? JSON.stringify(data.timings) : null,
       data.costUsd ?? null,
     ],
@@ -58,6 +71,31 @@ export async function recordTurn(pool: Pool, sessionId: string, data: RecordTurn
   if (!row)
     throw new Error('insert did not return a row');
   return row.id;
+}
+
+export type SessionTurnRow = {
+  speaker: 'persona' | 'learner';
+  content: string;
+  revealed: boolean;
+  comprehension: TurnComprehension | null;
+};
+
+/**
+ * Every turn for a session, oldest first — the shared read this session's
+ * both the post-session analyser (analyser.ts, needs the raw transcript
+ * text) and `session-summary.ts` (needs the aggregate counts) build on.
+ * One query, aggregated in JS rather than two separate SQL shapes,
+ * matching `rankAndPromoteDebrief`'s own precedent (debrief.ts) of
+ * fetching raw rows and grouping/scoring them in JS — a session's turn
+ * count is small enough (tens, not thousands) that this isn't a real
+ * cost.
+ */
+export async function getTurnsForSession(pool: Pool, sessionId: string): Promise<SessionTurnRow[]> {
+  const result = await pool.query<SessionTurnRow>(
+    'SELECT speaker, content, revealed, comprehension FROM turns WHERE session_id = $1 ORDER BY created_at ASC',
+    [sessionId],
+  );
+  return result.rows;
 }
 
 /**
