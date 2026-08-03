@@ -2,9 +2,36 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
-import { useSessionDebrief } from './api';
+import { useSessionDebrief, useSessionSummary } from './api';
 import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
+import { formatSessionMeta } from './format-session-meta';
 import { mapDebriefItemToPattern } from './map-debrief-item';
+
+type SummaryFigures = {
+  understoodCount: number;
+  totalTurns: number;
+  understoodWithoutHelp: number;
+  sessionMetaText: string;
+};
+
+/** The top section's three lines — split out purely to keep `DebriefScreen` itself under this repo's max-lines-per-function budget, same reasoning `use-native-pcm-capture.ts`/`use-live-converse-session.ts` already document for their own extracted sub-hooks. */
+function SessionSummaryHeader({ figures }: { figures: SummaryFigures }) {
+  return (
+    <>
+      <Text className="mt-[16px] font-serif text-[27px] leading-[35px] text-ink">
+        {'She understood you '}
+        <Text className="text-accent">{`${figures.understoodCount} times of ${figures.totalTurns}`}</Text>
+        .
+      </Text>
+      <Text className="mt-[10px] font-serif text-[19px] leading-[26px] text-ink/62">
+        {`You understood her without help ${figures.understoodWithoutHelp} of ${figures.totalTurns}.`}
+      </Text>
+      <Text className="mt-[12px] font-mono text-[12px] leading-[18px] text-ink/50">
+        {figures.sessionMetaText}
+      </Text>
+    </>
+  );
+}
 
 /**
  * The Debrief screen. Layout and copy per
@@ -38,27 +65,41 @@ export function DebriefScreen() {
     variables: { sessionId: sessionId ?? '' },
     enabled: hasRealSession,
   });
+  const { data: summary, isLoading: summaryLoading, isError: summaryError } = useSessionSummary({
+    variables: { sessionId: sessionId ?? '' },
+    enabled: hasRealSession,
+  });
   const patterns = hasRealSession
     ? (debriefItems ?? []).map(mapDebriefItemToPattern)
     : fixture.patterns;
-  const understoodWithoutHelp = fixture.totalTurns - fixture.revealedTurnCount;
+  const summaryFigures: SummaryFigures | null = hasRealSession
+    ? (summary
+        ? {
+            understoodCount: summary.understoodCount,
+            totalTurns: summary.totalTurns,
+            understoodWithoutHelp: summary.personaTurns - summary.revealedCount,
+            sessionMetaText: formatSessionMeta(summary),
+          }
+        : null)
+    : {
+        understoodCount: fixture.understoodCount,
+        totalTurns: fixture.totalTurns,
+        understoodWithoutHelp: fixture.totalTurns - fixture.revealedTurnCount,
+        sessionMetaText: fixture.sessionMeta,
+      };
 
   return (
     <ScrollView className="flex-1 bg-paper px-[22px] pt-[66px]" contentContainerClassName="pb-[44px]">
       <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
         After the conversation
       </Text>
-      <Text className="mt-[16px] font-serif text-[27px] leading-[35px] text-ink">
-        {'She understood you '}
-        <Text className="text-accent">{`${fixture.understoodCount} times of ${fixture.totalTurns}`}</Text>
-        .
-      </Text>
-      <Text className="mt-[10px] font-serif text-[19px] leading-[26px] text-ink/62">
-        {`You understood her without help ${understoodWithoutHelp} of ${fixture.totalTurns}.`}
-      </Text>
-      <Text className="mt-[12px] font-mono text-[12px] leading-[18px] text-ink/50">
-        {fixture.sessionMeta}
-      </Text>
+      {hasRealSession && summaryLoading && (
+        <Text className="mt-[16px] text-[13px] text-ink/55">Loading your summary…</Text>
+      )}
+      {hasRealSession && summaryError && (
+        <Text className="mt-[16px] text-[13px] text-ink/55">Couldn't load your summary — check your connection and try again.</Text>
+      )}
+      {summaryFigures && <SessionSummaryHeader figures={summaryFigures} />}
 
       <View className="mt-[26px] gap-[10px]">
         {hasRealSession && isLoading && (
@@ -83,14 +124,27 @@ export function DebriefScreen() {
         ))}
       </View>
 
-      <View className="mt-[20px] rounded-[16px] border border-dashed border-accent/45 bg-accent/5 p-[17px]">
-        <Text className="font-mono-medium text-[10px] tracking-widest text-accent uppercase">
-          {fixture.avoidance.heading}
-        </Text>
-        <Text className="mt-[9px] font-serif text-[16px] leading-[23px] text-ink">
-          {fixture.avoidance.body}
-        </Text>
-      </View>
+      {/*
+        Fixture-only: a real detected avoidance isn't a separate summary
+        field at all — app-service's detectAndRecordAvoidance writes it
+        as a regular `observations` row (kind: 'avoidance', tag: "you
+        steered around this"), so it already renders inline above as a
+        normal, distinctly-tagged pattern card once promoted
+        (map-debrief-item.ts reads `detail.tag` verbatim). This dashed
+        box exists only to give the scripted/no-session fixture path the
+        same "there's something to call out" affordance real data gets
+        for free through the tag.
+      */}
+      {!hasRealSession && (
+        <View className="mt-[20px] rounded-[16px] border border-dashed border-accent/45 bg-accent/5 p-[17px]">
+          <Text className="font-mono-medium text-[10px] tracking-widest text-accent uppercase">
+            {fixture.avoidance.heading}
+          </Text>
+          <Text className="mt-[9px] font-serif text-[16px] leading-[23px] text-ink">
+            {fixture.avoidance.body}
+          </Text>
+        </View>
+      )}
 
       <Pressable
         onPress={() => router.replace(realParamsOrBarePath('/tomorrow', { sessionId, learnerId }))}

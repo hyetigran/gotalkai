@@ -22,6 +22,30 @@ export const useSessionDebrief = createQuery<DebriefItem[], SessionDebriefVariab
       .then(response => response.data.debriefItems),
 });
 
+export type SessionSummary = {
+  totalTurns: number;
+  personaTurns: number;
+  learnerTurns: number;
+  /** Persona turns the learner tapped to reveal a translation for — "you understood her without help" is `personaTurns - revealedCount`. */
+  revealedCount: number;
+  /** Persona turns where the live pipeline's own comprehension check came back 'understood' — "she understood you X of Y." */
+  understoodCount: number;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+type SessionSummaryResponse = { summary: SessionSummary };
+type SessionSummaryVariables = { sessionId: string };
+
+/** `GET /sessions/:id/summary` (app-service, session-summary.ts) — the real figures behind the Debrief screen's top section (turn counts, comprehension, duration), the counterpart to `useSessionDebrief`'s pattern cards. */
+export const useSessionSummary = createQuery<SessionSummary, SessionSummaryVariables, AxiosError>({
+  queryKey: ['session-summary'],
+  fetcher: variables =>
+    appServiceClient
+      .get<SessionSummaryResponse>(`sessions/${variables.sessionId}/summary`)
+      .then(response => response.data.summary),
+});
+
 export type SessionHistoryEntry = {
   id: string;
   startedAt: string;

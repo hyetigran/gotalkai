@@ -1,5 +1,21 @@
 import { act, renderHook } from '@testing-library/react-native';
 
+/**
+ * `useTurnPersistence` (this hook's own turn-persistence side effect)
+ * calls these two react-query-kit mutations, which need a real
+ * `QueryClientProvider` ancestor to render at all — out of scope for
+ * this file's own tests (they exercise the connection/reducer state
+ * machine, not persistence, same reasoning `expo-audio`/`expo-file-system`
+ * below are mocked rather than wrapped in a real provider). Dedicated
+ * coverage for the persistence side effect itself lives in the
+ * "turn persistence" describe block further down, against these same
+ * jest.fn() mocks.
+ */
+jest.mock('./api', () => ({
+  useRecordTurn: jest.fn(),
+  useMarkTurnRevealed: jest.fn(),
+}));
+
 /** use-tts-playback.ts's own real-player behavior is covered by use-tts-playback.test.ts; this hook only needs a harmless stand-in so enqueue/stopAndClear don't touch a real native module. */
 jest.mock('expo-audio', () => ({
   createAudioPlayer: jest.fn(() => ({
@@ -33,6 +49,8 @@ jest.mock('expo-file-system', () => ({
 
 // eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
 import { setAudioModeAsync } from 'expo-audio';
+// eslint-disable-next-line import/first -- must follow jest.mock('./api', ...) above
+import { useMarkTurnRevealed, useRecordTurn } from './api';
 // eslint-disable-next-line import/first -- must follow jest.mock('expo-audio', ...) above
 import { useLiveConverseSession } from './use-live-converse-session';
 
@@ -74,12 +92,24 @@ function latestSocket(): FakeWebSocket {
   return socket;
 }
 
+/** Fires `onSuccess` synchronously with an incrementing fake id, mirroring a resolved `POST /sessions/:id/turns` closely enough for `markRevealed`'s own id-lookup to be exercised without a real network layer. */
+let nextFakeTurnId = 0;
+const recordTurnMutate = jest.fn((_variables: unknown, options?: { onSuccess?: (result: { id: string }) => void }) => {
+  options?.onSuccess?.({ id: `turn-${nextFakeTurnId++}` });
+});
+const markTurnRevealedMutate = jest.fn();
+
 beforeEach(() => {
   FakeWebSocket.instances = [];
   // @ts-expect-error test double standing in for the ambient WebSocket global
   globalThis.WebSocket = FakeWebSocket;
   jest.useFakeTimers();
   (setAudioModeAsync as jest.Mock).mockClear();
+  nextFakeTurnId = 0;
+  recordTurnMutate.mockClear();
+  markTurnRevealedMutate.mockClear();
+  (useRecordTurn as unknown as jest.Mock).mockReturnValue({ mutate: recordTurnMutate });
+  (useMarkTurnRevealed as unknown as jest.Mock).mockReturnValue({ mutate: markTurnRevealedMutate });
 });
 
 afterEach(() => {
@@ -257,4 +287,64 @@ describe('useLiveConverseSession translation (PRD §6.2 tap-to-reveal)', () => {
       ]);
     },
   );
+});
+
+// Sibling describe, not nested — keeps each describe callback under the max-lines-per-function limit.
+describe('useLiveConverseSession turn persistence (ticket #29 / docs/adr/0022)', () => {
+  it('persists a learner turn and a persona turn (with comprehension) as they land, in order', () => {
+    renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+
+    act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
+    act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
+
+    expect(recordTurnMutate).toHaveBeenNthCalledWith(
+      1,
+      { sessionId: 'session-1', speaker: 'learner', content: 'Привет', comprehension: undefined },
+      expect.anything(),
+    );
+    expect(recordTurnMutate).toHaveBeenNthCalledWith(
+      2,
+      { sessionId: 'session-1', speaker: 'persona', content: 'Здравствуй!', comprehension: 'understood' },
+      expect.anything(),
+    );
+  });
+
+  it('never persists a "system" turn — turns.speaker has no matching value for it', () => {
+    renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+
+    act(() => latestSocket().simulateMessage({ type: 'safety_response', category: 'distress', text: 'Safety text' }));
+
+    expect(recordTurnMutate).not.toHaveBeenCalled();
+  });
+
+  it('does not re-persist a turn already sent on an earlier render', () => {
+    const { rerender } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateMessage({ type: 'transcript_final', text: 'Привет' }));
+    expect(recordTurnMutate).toHaveBeenCalledTimes(1);
+
+    rerender(undefined);
+    expect(recordTurnMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('markRevealed looks up the real turn id from recordTurn\'s own onSuccess and marks it revealed', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateMessage({ type: 'persona_turn', text: 'Здравствуй!', comprehension: 'understood', affect: 'warm' }));
+
+    act(() => result.current.markRevealed(0));
+
+    expect(markTurnRevealedMutate).toHaveBeenCalledWith({ turnId: 'turn-0' });
+  });
+
+  it('markRevealed is a no-op for an index whose recordTurn call has not resolved (or does not exist)', () => {
+    const { result } = renderHook(() => useLiveConverseSession(OPTIONS));
+    act(() => latestSocket().simulateOpen());
+
+    act(() => result.current.markRevealed(0));
+
+    expect(markTurnRevealedMutate).not.toHaveBeenCalled();
+  });
 });
