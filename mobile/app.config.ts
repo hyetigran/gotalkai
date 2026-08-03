@@ -97,7 +97,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: 'obytesapp',
   version: Env.EXPO_PUBLIC_VERSION.toString(),
   orientation: 'portrait',
-  icon: './assets/icon.png',
+  icon: './assets/logo.png',
   userInterfaceStyle: 'automatic',
   newArchEnabled: true,
   updates: {
@@ -130,8 +130,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-splash-screen',
       {
         backgroundColor: '#2E3C4B',
-        image: './assets/splash-icon.png',
-        imageWidth: 150,
+        image: './assets/splash.png',
+        // Full-bleed portrait artwork (853x1844, close to a phone's own aspect
+        // ratio) meant to fill the screen, not a small centered mark —
+        // 'cover' instead of the default 'contain', and no imageWidth (that
+        // option only makes sense for a partial-width centered image).
+        resizeMode: 'cover',
       },
     ],
     expoFontPluginConfig,
