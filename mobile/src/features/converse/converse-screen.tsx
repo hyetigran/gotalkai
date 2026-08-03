@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { acquireLocalAudioStream, releaseLocalAudioStream } from '@/lib/audio/webrtc-local-audio-stream';
 import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
-import { useEndSession, useLearner } from './api';
+import { useLearner } from './api';
 import { FrequencyBackground } from './components/frequency-background';
 import { HoldToTalkButton } from './components/hold-to-talk-button';
 import { HoldToThinkButton } from './components/hold-to-think-button';
@@ -95,8 +95,6 @@ type ConverseHeaderProps = {
   clock: string;
   onBack: () => void;
   onEnd: () => void;
-  /** Live screen only: true while `POST /sessions/:id/end` (a real analyser call) is in flight, so a second tap can't fire it twice. Undefined/false for the scripted demo, which has nothing to await. */
-  endDisabled?: boolean;
 };
 
 /**
@@ -107,7 +105,7 @@ type ConverseHeaderProps = {
  * alongside the clock, out of `ConverseFooterRow` — see that component's
  * own comment for what's left there.
  */
-function ConverseHeader({ clock, onBack, onEnd, endDisabled }: ConverseHeaderProps) {
+function ConverseHeader({ clock, onBack, onEnd }: ConverseHeaderProps) {
   return (
     <View className="flex-row items-center justify-between px-[22px] pt-[60px] pb-[12px]">
       {/* Visually just the "‹" glyph (~15px) — same "raise the hit area, keep the visual
@@ -126,8 +124,8 @@ function ConverseHeader({ clock, onBack, onEnd, endDisabled }: ConverseHeaderPro
       <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
       <View className="flex-row items-center gap-[12px]">
         <Text className="font-mono-medium text-[10px] text-ink/40">{clock}</Text>
-        <Pressable onPress={onEnd} disabled={endDisabled} hitSlop={{ top: 20, bottom: 20, left: 12, right: 20 }} accessibilityRole="button" accessibilityLabel="end">
-          <Text className="text-[13px] text-ink/50" style={endDisabled ? { opacity: 0.4 } : undefined}>End</Text>
+        <Pressable onPress={onEnd} hitSlop={{ top: 20, bottom: 20, left: 12, right: 20 }} accessibilityRole="button" accessibilityLabel="end">
+          <Text className="text-[13px] text-ink/50">End</Text>
         </Pressable>
       </View>
     </View>
@@ -283,31 +281,17 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
     sendAudioChunk: live.sendAudioChunk,
   });
 
-  const endSession = useEndSession();
-
   /**
-   * Awaits `POST /sessions/:id/end` before navigating — same `mutate` →
-   * callback → `router.replace` shape `use-open-screen.ts`'s
-   * `useOpenAnswerHandler` already establishes for `useStartSession`,
-   * but keyed on `onSettled` rather than `onSuccess`: that request runs
-   * the post-session analyser server-side (a real LLM call) before
-   * responding, and navigating immediately instead would race Debrief's
-   * own one-shot `/debrief`/`/summary` reads against an analysis that
-   * hasn't finished writing yet (neither query polls for data that
-   * arrives later). A failed end-session call still has to reach
-   * Debrief, though — getting stuck on Converse because one HTTP call
-   * failed would be worse than a Debrief screen with no real patterns
-   * this time. `endDisabled` below guards the button itself against a
-   * second tap firing this twice while the first is still in flight
-   * (`endSession`, app-service, is itself idempotent, but there's no
-   * reason to pay for a second real LLM call).
+   * Navigates immediately — `POST /sessions/:id/end` (a real LLM call,
+   * not a quick "mark ended") is triggered by the Debrief screen itself
+   * once it lands and sees `summary.endedAt: null`, not awaited here.
+   * Debrief is what shows the resulting "analysing…" state, so it's the
+   * one that should own starting the wait, not Converse blocking on a
+   * call with nothing on this screen to show for it.
    */
   const goToDebrief = React.useCallback(() => {
-    endSession.mutate(
-      { sessionId },
-      { onSettled: () => router.replace(realParamsOrBarePath('/debrief', { sessionId, learnerId })) },
-    );
-  }, [endSession, router, sessionId, learnerId]);
+    router.replace(realParamsOrBarePath('/debrief', { sessionId, learnerId }));
+  }, [router, sessionId, learnerId]);
 
   const goBackToOpen = React.useCallback(() => {
     router.replace(realParamsOrBarePath('/open', { learnerId }));
@@ -317,7 +301,7 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
 
   return (
     <View className="flex-1 bg-paper">
-      <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} endDisabled={endSession.isPending} />
+      <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} />
 
       <View className="px-[22px]">
         <PersonaPortrait3D background={<FrequencyBackground active={live.phase === 'speaking'} />} />

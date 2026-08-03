@@ -45,20 +45,3 @@ type MarkTurnRevealedVariables = { turnId: string };
 export const useMarkTurnRevealed = createMutation<void, MarkTurnRevealedVariables, AxiosError>({
   mutationFn: ({ turnId }) => appServiceClient.patch(`turns/${turnId}/reveal`).then(() => undefined),
 });
-
-type EndSessionVariables = { sessionId: string };
-
-/**
- * `POST /sessions/:id/end` (app-service) — marks the session ended and
- * runs the post-session analyser against its real turns server-side
- * before responding, so the Debrief screen's subsequent `/debrief` and
- * `/summary` reads see finished data rather than a race against an
- * in-flight analysis. That's real API latency (a real LLM call), not a
- * quick "mark ended" — callers should await this (and show a pending
- * state) before navigating to Debrief, the same `mutate` → `onSuccess` →
- * `router.replace` pattern `use-open-screen.ts`'s `useOpenAnswerHandler`
- * already establishes for `useStartSession`.
- */
-export const useEndSession = createMutation<void, EndSessionVariables, AxiosError>({
-  mutationFn: ({ sessionId }) => appServiceClient.post(`sessions/${sessionId}/end`).then(() => undefined),
-});

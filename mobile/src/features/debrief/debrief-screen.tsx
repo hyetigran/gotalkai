@@ -1,8 +1,10 @@
+import type { SessionSummary } from './api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
-import { useSessionDebrief, useSessionSummary } from './api';
+import { useEndSession, useSessionDebrief, useSessionSummary } from './api';
 import { DEBRIEF_FIXTURE as fixture } from './debrief-fixture';
 import { formatSessionMeta } from './format-session-meta';
 import { mapDebriefItemToPattern } from './map-debrief-item';
@@ -13,6 +15,35 @@ type SummaryFigures = {
   understoodWithoutHelp: number;
   sessionMetaText: string;
 };
+
+/**
+ * Fires `POST /sessions/:id/end` (the post-session analyser) exactly
+ * once, the moment a real, loaded `summary` comes back with
+ * `endedAt: null` — never for `summary === undefined` (not yet loaded),
+ * which is not the same thing as "not ended." Returns whether the
+ * caller should still be showing a "finishing up" state: true from the
+ * moment `endedAt: null` is seen until the post-mutation refetch comes
+ * back with a real `endedAt`. Split out purely to keep `DebriefScreen`
+ * itself under this repo's max-lines-per-function budget, same
+ * reasoning `use-native-pcm-capture.ts`/`use-live-converse-session.ts`
+ * already document for their own extracted sub-hooks.
+ */
+function useFinishSessionIfNeeded(sessionId: string | undefined, summary: SessionSummary | undefined, refetchSummary: () => Promise<unknown>): boolean {
+  const needsFinishing = Boolean(sessionId) && summary !== undefined && summary.endedAt === null;
+  const endSession = useEndSession();
+  const triggered = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!needsFinishing || triggered.current)
+      return;
+    triggered.current = true;
+    endSession.mutate({ sessionId: sessionId as string }, {
+      onSettled: () => void refetchSummary(),
+    });
+  }, [needsFinishing, sessionId, endSession, refetchSummary]);
+
+  return needsFinishing;
+}
 
 /** The top section's three lines — split out purely to keep `DebriefScreen` itself under this repo's max-lines-per-function budget, same reasoning `use-native-pcm-capture.ts`/`use-live-converse-session.ts` already document for their own extracted sub-hooks. */
 function SessionSummaryHeader({ figures }: { figures: SummaryFigures }) {
@@ -45,15 +76,21 @@ function SessionSummaryHeader({ figures }: { figures: SummaryFigures }) {
  *
  * Patterns render real, ranked `debrief_items` (PRD §5.4, ticket #20) when
  * a `sessionId` route param is present — falls back to fixture patterns
- * only when there's no `sessionId` at all, since the live Converse
- * pipeline that would produce a real `sessionId` here doesn't exist yet
- * (blocked on ticket #18). Once a `sessionId` is present, this never
- * silently substitutes fixture content for a loading, errored, or
- * genuinely-empty real result — that would misrepresent the real-data
- * path's state as fixture data instead of surfacing it. The other
- * figures (turn counts, avoidance) stay fixture-driven regardless — real
- * `turns`/avoidance-detection data is later ticket work (#18, #23), not
- * this ticket's scope.
+ * only when there's no `sessionId` at all. Once a `sessionId` is present,
+ * this never silently substitutes fixture content for a loading, errored,
+ * or genuinely-empty real result — that would misrepresent the real-data
+ * path's state as fixture data instead of surfacing it.
+ *
+ * Converse's "End" navigates here immediately, without waiting on the
+ * post-session analyser (a real LLM call) first — this screen is what
+ * owns that wait instead, via `summary.endedAt`: `null` means the
+ * session hasn't been finalized yet, so `POST /sessions/:id/end` fires
+ * from here (once, guarded by a ref) and a "finishing up" state shows
+ * until a refetched summary comes back with a real `endedAt`, at which
+ * point the patterns query (previously held disabled) fires for the
+ * first time. Converse showing nothing for that wait — just a static
+ * disabled button — was the previous shape; this screen already has a
+ * loading state to reuse for the same wait.
  */
 export function DebriefScreen() {
   const router = useRouter();
@@ -61,13 +98,15 @@ export function DebriefScreen() {
   // (and from there back to Open) so the loop doesn't lose track of who the learner is.
   const { sessionId, learnerId } = useLocalSearchParams<{ sessionId?: string; learnerId?: string }>();
   const hasRealSession = Boolean(sessionId);
-  const { data: debriefItems, isLoading, isError } = useSessionDebrief({
+  const { data: summary, isLoading: summaryLoading, isError: summaryError, refetch: refetchSummary } = useSessionSummary({
     variables: { sessionId: sessionId ?? '' },
     enabled: hasRealSession,
   });
-  const { data: summary, isLoading: summaryLoading, isError: summaryError } = useSessionSummary({
+  const needsFinishing = useFinishSessionIfNeeded(sessionId, summary, refetchSummary);
+
+  const { data: debriefItems, isLoading, isError } = useSessionDebrief({
     variables: { sessionId: sessionId ?? '' },
-    enabled: hasRealSession,
+    enabled: hasRealSession && !needsFinishing,
   });
   const patterns = hasRealSession
     ? (debriefItems ?? []).map(mapDebriefItemToPattern)
@@ -102,13 +141,16 @@ export function DebriefScreen() {
       {summaryFigures && <SessionSummaryHeader figures={summaryFigures} />}
 
       <View className="mt-[26px] gap-[10px]">
-        {hasRealSession && isLoading && (
+        {hasRealSession && needsFinishing && (
+          <Text className="text-[13px] text-ink/55">Finishing up your analysis…</Text>
+        )}
+        {hasRealSession && !needsFinishing && isLoading && (
           <Text className="text-[13px] text-ink/55">Loading your patterns…</Text>
         )}
-        {hasRealSession && isError && (
+        {hasRealSession && !needsFinishing && isError && (
           <Text className="text-[13px] text-ink/55">Couldn't load your patterns — check your connection and try again.</Text>
         )}
-        {(!hasRealSession || (!isLoading && !isError)) && patterns.map(pattern => (
+        {(!hasRealSession || (!needsFinishing && !isLoading && !isError)) && patterns.map(pattern => (
           <View key={pattern.index} className="rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]">
             <View className="flex-row items-baseline gap-[10px]">
               <Text className="font-mono-medium text-[10px] text-ink/40">{pattern.index}</Text>
