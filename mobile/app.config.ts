@@ -13,8 +13,8 @@ import { fontManifest } from './src/components/ui/font-manifest';
 // eslint-disable-next-line perfectionist/sort-imports
 import Env from './env';
 
-const EXPO_ACCOUNT_OWNER = 'obytes';
-const EAS_PROJECT_ID = 'c3e1075b-6fe7-4686-aa49-35b46a229044';
+const EXPO_ACCOUNT_OWNER = 'hyetigran';
+const EAS_PROJECT_ID = '388df1ba-f3ec-4240-acb9-d0506196bb99';
 
 const appIconBadgeConfig: AppIconBadgeConfig = {
   enabled: Env.EXPO_PUBLIC_APP_ENV !== 'production',
