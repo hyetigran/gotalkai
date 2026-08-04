@@ -18,9 +18,9 @@ export function BenchmarkItemCard({ item, selectedChoiceIndex, onPlayClip, onSel
         accessibilityLabel="Play clip"
         className="mb-[14px] items-center rounded-[13px] border border-ink/16 py-[13px]"
       >
-        <Text className="font-serif text-[15px] text-ink">▸ Play clip</Text>
+        <Text className="font-sans-medium text-[15px] text-ink">▸ Play clip</Text>
       </Pressable>
-      <Text className="mb-[12px] font-serif text-[16px] leading-[22px] text-ink">{item.question}</Text>
+      <Text className="font-cyrillic-medium mb-[12px] text-[16px] leading-[22px] text-ink">{item.question}</Text>
       {item.choices.map((choice, choiceIndex) => {
         const isSelected = selectedChoiceIndex === choiceIndex;
         return (
@@ -33,7 +33,7 @@ export function BenchmarkItemCard({ item, selectedChoiceIndex, onPlayClip, onSel
               isSelected ? 'bg-accent' : 'border border-ink/16 bg-white'
             }`}
           >
-            <Text className={`font-serif text-[15px] ${isSelected ? 'text-paper' : 'text-ink/70'}`}>{choice}</Text>
+            <Text className={`font-cyrillic-medium text-[15px] ${isSelected ? 'text-page' : 'text-ink/70'}`}>{choice}</Text>
           </Pressable>
         );
       })}

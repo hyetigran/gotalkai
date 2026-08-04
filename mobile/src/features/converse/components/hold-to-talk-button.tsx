@@ -103,7 +103,7 @@ function FrequencyBars({ live, amplitude, colorClassName }: { live: boolean; amp
  * the hold — no separate cancel/leave handling needed.
  */
 export function HoldToTalkButton({ pressed, disabled, amplitude, onPressIn, onPressOut }: HoldToTalkButtonProps) {
-  const barColorClassName = disabled ? 'bg-ink/15' : pressed ? 'bg-paper' : 'bg-accent/50';
+  const barColorClassName = disabled ? 'bg-ink/15' : pressed ? 'bg-page' : 'bg-accent/50';
 
   return (
     <Pressable
@@ -120,7 +120,7 @@ export function HoldToTalkButton({ pressed, disabled, amplitude, onPressIn, onPr
       style={disabled || pressed ? undefined : shadows.holdToThinkRest}
     >
       <FrequencyBars live={pressed} amplitude={amplitude} colorClassName={barColorClassName} />
-      <Text className={`font-serif text-[18px] ${disabled ? 'text-ink/35' : pressed ? 'text-paper' : 'text-ink'}`}>
+      <Text className={`font-sans-semibold text-[18px] ${disabled ? 'text-ink/35' : pressed ? 'text-page' : 'text-ink'}`}>
         hold to talk
       </Text>
     </Pressable>

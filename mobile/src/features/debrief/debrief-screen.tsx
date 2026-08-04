@@ -49,12 +49,12 @@ function useFinishSessionIfNeeded(sessionId: string | undefined, summary: Sessio
 function SessionSummaryHeader({ figures }: { figures: SummaryFigures }) {
   return (
     <>
-      <Text className="mt-[16px] font-serif text-[27px] leading-[35px] text-ink">
+      <Text className="font-sans-semibold mt-[16px] text-[27px] leading-[35px] tracking-[-0.27px] text-ink">
         {'She understood you '}
         <Text className="text-accent">{`${figures.understoodCount} times of ${figures.totalTurns}`}</Text>
         .
       </Text>
-      <Text className="mt-[10px] font-serif text-[19px] leading-[26px] text-ink/62">
+      <Text className="font-sans-semibold mt-[10px] text-[19px] leading-[24px] tracking-[-0.19px] text-ink/62">
         {`You understood her without help ${figures.understoodWithoutHelp} of ${figures.totalTurns}.`}
       </Text>
       <Text className="mt-[12px] font-mono text-[12px] leading-[18px] text-ink/50">
@@ -128,7 +128,7 @@ export function DebriefScreen() {
       };
 
   return (
-    <ScrollView className="flex-1 bg-paper px-[22px] pt-[66px]" contentContainerClassName="pb-[44px]">
+    <ScrollView className="flex-1 bg-page px-[22px] pt-[66px]" contentContainerClassName="pb-[44px]">
       <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
         After the conversation
       </Text>
@@ -155,7 +155,7 @@ export function DebriefScreen() {
             <View className="flex-row items-baseline gap-[10px]">
               <Text className="font-mono-medium text-[10px] text-ink/40">{pattern.index}</Text>
               <View className="flex-1">
-                <Text className="font-serif text-[17px] leading-[24px] text-ink">{pattern.title}</Text>
+                <Text className="font-sans-semibold text-[17px] leading-[24px] text-ink">{pattern.title}</Text>
                 <Text className="mt-[7px] text-[13px] leading-[19px] text-ink/55">{pattern.body}</Text>
                 {pattern.tag && (
                   <Text className="font-mono-medium mt-[9px] text-[10px] text-accent">{pattern.tag}</Text>
@@ -182,7 +182,7 @@ export function DebriefScreen() {
           <Text className="font-mono-medium text-[10px] tracking-widest text-accent uppercase">
             {fixture.avoidance.heading}
           </Text>
-          <Text className="mt-[9px] font-serif text-[16px] leading-[23px] text-ink">
+          <Text className="font-sans-medium mt-[9px] text-[16px] leading-[25px] text-ink">
             {fixture.avoidance.body}
           </Text>
         </View>
@@ -194,7 +194,7 @@ export function DebriefScreen() {
         accessibilityLabel="Tomorrow"
         className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"
       >
-        <Text className="font-serif text-[18px] text-paper">Tomorrow</Text>
+        <Text className="font-sans-semibold text-[18px] text-page">Tomorrow</Text>
       </Pressable>
     </ScrollView>
   );

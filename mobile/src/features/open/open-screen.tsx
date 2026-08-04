@@ -32,7 +32,7 @@ export function OpenScreen() {
   const { handleAnswer, isPending, isUnexpectedError } = useOpenAnswerHandler({ learnerId, isFirstSession, setIsFirstSession });
 
   return (
-    <View className="flex-1 bg-paper px-[22px] pt-[66px] pb-[44px]">
+    <View className="flex-1 bg-page px-[22px] pt-[66px] pb-[44px]">
       {/* UAT: tabs restructuring — "who else" used to push to Address book from here; now that it's the Home tab (src/app/(tabs)/_layout.tsx), the tab bar already provides that navigation, so the in-header link was just a redundant second path to the same place. */}
       <View className="flex-row items-baseline justify-between gap-[12px]">
         <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
@@ -59,10 +59,10 @@ export function OpenScreen() {
             )}
           />
           <View className="px-[20px] pt-[20px] pb-[22px]">
-            <Text className="font-serif text-[21px] text-ink">{openData.personaName}</Text>
+            <Text className="font-sans-semibold text-[19px] tracking-[-0.19px] text-ink">{openData.personaName}</Text>
             <Text className="mt-[6px] font-mono text-[12px] text-ink/50">{openData.personaMeta}</Text>
             <View className="mt-[18px] border-t border-ink/9 pt-[18px]">
-              <Text className="font-serif text-[19px] leading-[27px] text-ink">
+              <Text className="font-cyrillic-medium text-[17px] leading-[25.5px] text-ink">
                 {callbackLine ?? callbackLineStatusText}
               </Text>
             </View>
@@ -75,12 +75,12 @@ export function OpenScreen() {
           {openData.scenarioLine}
         </Text>
         {isFirstSession && (
-          <Text className="mb-[16px] font-serif text-[15px] leading-[22px] text-ink/62">
+          <Text className="font-sans-medium mb-[16px] text-[15px] leading-[23px] text-ink/62">
             {openData.openMicLine}
           </Text>
         )}
         {isUnexpectedError && (
-          <Text className="mb-[16px] font-serif text-[15px] leading-[22px] text-ink/62">
+          <Text className="font-sans-medium mb-[16px] text-[15px] leading-[23px] text-ink/62">
             Could not start a session — check your connection and try again.
           </Text>
         )}
@@ -91,7 +91,7 @@ export function OpenScreen() {
           disabled={isPending}
           className="items-center rounded-[16px] bg-accent py-[19px] disabled:opacity-50"
         >
-          <Text className="font-serif text-[18px] text-paper">{openData.answer}</Text>
+          <Text className="font-sans-semibold text-[18px] text-page">{openData.answer}</Text>
         </Pressable>
       </View>
     </View>

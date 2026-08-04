@@ -1,6 +1,5 @@
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
-import { Button } from '@/components/ui';
 import { useSessionZeroAnswerHandler } from './use-session-zero-screen';
 
 /**
@@ -25,8 +24,8 @@ export function SessionZeroScreen() {
   const { handleAnswer, isPending, isError } = useSessionZeroAnswerHandler();
 
   return (
-    <View className="flex-1 items-center justify-center bg-paper px-[28px]">
-      <Text className="text-center font-serif text-[24px] leading-[32px] text-ink">
+    <View className="flex-1 items-center justify-center bg-page px-[28px]">
+      <Text className="font-sans-semibold text-center text-[24px] leading-[30px] tracking-[-0.24px] text-ink">
         Do you read Cyrillic?
       </Text>
       <Text className="mt-[10px] text-center text-[15px] leading-[22px] text-ink/60">
@@ -34,8 +33,24 @@ export function SessionZeroScreen() {
       </Text>
 
       <View className="mt-[26px] w-full gap-[12px]">
-        <Button label="Yes, I read Cyrillic" onPress={() => handleAnswer(true)} disabled={isPending} />
-        <Button label="Not yet" onPress={() => handleAnswer(false)} disabled={isPending} variant="secondary" />
+        <Pressable
+          onPress={() => handleAnswer(true)}
+          disabled={isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Yes, I read Cyrillic"
+          className="items-center rounded-[16px] bg-accent py-[19px] disabled:opacity-50"
+        >
+          <Text className="font-sans-semibold text-[17px] text-page">Yes, I read Cyrillic</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => handleAnswer(false)}
+          disabled={isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Not yet"
+          className="items-center rounded-[16px] border border-ink/22 py-[19px] disabled:opacity-50"
+        >
+          <Text className="font-sans-semibold text-[17px] text-ink">Not yet</Text>
+        </Pressable>
       </View>
 
       {isError && (

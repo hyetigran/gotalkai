@@ -43,7 +43,7 @@ export function TextInputBar({ onSubmit, disabled }: TextInputBarProps) {
         editable={!disabled}
         multiline
         accessibilityLabel="Type your message"
-        className="max-h-[110px] flex-1 rounded-[16px] border border-ink/16 bg-white px-[14px] py-[11px] font-serif text-[15px] text-ink"
+        className="font-cyrillic-medium max-h-[110px] flex-1 rounded-[16px] border border-ink/16 bg-white px-[14px] py-[11px] text-[15px] text-ink"
       />
       <Pressable
         onPress={handleSubmit}
@@ -52,7 +52,7 @@ export function TextInputBar({ onSubmit, disabled }: TextInputBarProps) {
         accessibilityLabel="Send"
         className={`items-center justify-center rounded-[16px] px-[16px] py-[13px] ${canSubmit ? 'bg-accent' : 'border border-ink/22'}`}
       >
-        <Text className={`font-serif text-[15px] ${canSubmit ? 'text-paper' : 'text-ink/40'}`}>Send</Text>
+        <Text className={`font-sans-semibold text-[15px] ${canSubmit ? 'text-page' : 'text-ink/40'}`}>Send</Text>
       </Pressable>
     </View>
   );

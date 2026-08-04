@@ -53,7 +53,7 @@ export function EntryExpandedBody({ member, status, onTalkPress }: EntryExpanded
       </View>
 
       {next && (
-        <Text className="font-mono-medium mt-[15px] text-[10px] leading-[15px] text-accent">
+        <Text className="font-sans-semibold mt-[15px] text-[10px] leading-[15px] text-accent">
           {copy.requirement(CONVERSATIONS_PER_LEVEL * REACHED_COUNT)}
         </Text>
       )}
@@ -61,10 +61,10 @@ export function EntryExpandedBody({ member, status, onTalkPress }: EntryExpanded
       {reached && (
         <Pressable
           onPress={onTalkPress}
-          className="mt-[16px] items-center rounded-[13px] bg-accent py-[15px]"
-          style={shadows.button}
+          className="mt-[16px] items-center rounded-[20px] bg-accent py-[15px]"
+          style={shadows.brandButton}
         >
-          <Text className="font-serif text-[16px] text-paper">
+          <Text className="font-sans-semibold text-[16px] text-page">
             {copy.talkToPrefix}
             {member.name}
           </Text>

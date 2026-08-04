@@ -8,8 +8,8 @@ import { TOMORROW_FIXTURE as fixture } from './tomorrow-fixture';
 /**
  * The Tomorrow screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
- * ("4. Tomorrow"). `bg-paper-stepped` is the one background change in the
- * product, marking "session over" — every other screen uses `bg-paper`.
+ * ("4. Tomorrow"). `bg-band` is the one background change in the
+ * product, marking "session over" — every other screen uses `bg-page`.
  *
  * The scenario title/intro/ladder/currentStepIndex render real, selected
  * scenario data (PRD §5.3, ticket #21) when a `sessionId` route param is
@@ -43,11 +43,11 @@ export function TomorrowScreen() {
         : null);
 
   return (
-    <View className="flex-1 bg-paper-stepped px-[22px] pt-[66px] pb-[44px]">
+    <View className="flex-1 bg-band px-[22px] pt-[66px] pb-[44px]">
       <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
         {fixture.eyebrow}
       </Text>
-      <Text className="mt-[16px] font-serif text-[27px] leading-[35px] text-ink">
+      <Text className="font-sans-semibold mt-[16px] text-[27px] leading-[35px] tracking-[-0.27px] text-ink">
         {content ? content.title : (isLoading ? 'Loading…' : 'Couldn\'t load tomorrow\'s scenario')}
       </Text>
       <Text className="mt-[12px] text-[16px] leading-[24px] text-ink/60">
@@ -75,7 +75,7 @@ export function TomorrowScreen() {
                     : 'size-[8px] rounded-full border-[1.5px] border-ink/28'
                 }
               />
-              <Text className={`font-serif text-[16px] leading-[22px] ${isCurrent ? 'text-ink' : 'text-ink/42'}`}>
+              <Text className={`font-sans-medium text-[16px] leading-[25px] ${isCurrent ? 'text-ink' : 'text-ink/42'}`}>
                 {label}
               </Text>
             </View>
@@ -95,7 +95,7 @@ export function TomorrowScreen() {
         accessibilityLabel={fixture.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"
       >
-        <Text className="font-serif text-[17px] text-ink">{fixture.close}</Text>
+        <Text className="font-sans-semibold text-[17px] text-ink">{fixture.close}</Text>
       </Pressable>
     </View>
   );

@@ -24,7 +24,7 @@ function SessionRow({ session, onPress }: { session: SessionHistoryEntry; onPres
       className="rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]"
     >
       <View className="flex-row items-baseline justify-between">
-        <Text className="font-serif text-[17px] text-ink">{formatSessionDate(session.startedAt)}</Text>
+        <Text className="font-sans-semibold text-[17px] text-ink">{formatSessionDate(session.startedAt)}</Text>
         <Text className="font-mono-medium text-[10px] text-ink/40">
           {session.turnCount}
           {' turns'}
@@ -40,7 +40,7 @@ function SessionRow({ session, onPress }: { session: SessionHistoryEntry; onPres
 function HistoryHeader() {
   return (
     <View className="pb-[20px]">
-      <Text className="font-serif text-[22px] text-ink">Your history</Text>
+      <Text className="font-sans-semibold text-[22px] text-ink">Your history</Text>
       <Text className="font-mono-medium mt-[7px] text-[10px] tracking-[0.03em] text-ink/45">
         Past conversations, most recent first
       </Text>
@@ -93,7 +93,7 @@ export function DebriefHistoryScreen() {
 
   return (
     <FlatList
-      className="flex-1 bg-paper px-[22px] pt-[60px]"
+      className="flex-1 bg-page px-[22px] pt-[60px]"
       contentContainerClassName="gap-[10px] pb-[44px]"
       data={sessions}
       keyExtractor={session => session.id}
@@ -111,7 +111,7 @@ export function DebriefHistoryScreen() {
           )}
           {!isLoading && !isError && (
             <>
-              <Text className="font-serif text-[19px] text-ink/70">
+              <Text className="font-sans-semibold text-[19px] text-ink/70">
                 Your past conversations will show up here.
               </Text>
               <Text className="mt-[2px] text-[13px] leading-[19px] text-ink/50">

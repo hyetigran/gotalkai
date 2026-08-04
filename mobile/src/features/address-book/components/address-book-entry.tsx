@@ -41,14 +41,14 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
       <View className="w-[14px] items-center pt-[2px]">
         <View className={`w-[2px] flex-1 ${railColor}`} style={isFirst ? { minHeight: 10 } : undefined} />
         {reached && <View className="size-[13px] rounded-full bg-accent" />}
-        {next && <View className="size-[9px] rounded-full border-2 border-dashed border-accent/60 bg-paper" />}
-        {sealed && <View className="size-[9px] rounded-full border-[1.5px] border-ink/20 bg-paper" />}
+        {next && <View className="size-[9px] rounded-full border-2 border-dashed border-accent/60 bg-page" />}
+        {sealed && <View className="size-[9px] rounded-full border-[1.5px] border-ink/20 bg-page" />}
         <View className={`w-[2px] flex-1 ${isLast ? 'bg-transparent' : railColor}`} />
       </View>
 
       <Pressable
         onPress={onToggle}
-        className={`flex-1 rounded-[18px] bg-white px-[16px] py-[14px] ${
+        className={`flex-1 rounded-[20px] bg-white px-[16px] py-[14px] ${
           next ? 'border border-dashed border-accent/50' : 'border border-ink/11'
         }`}
         style={reached ? shadows.reachedEntry : undefined}
@@ -75,17 +75,17 @@ export function AddressBookEntry({ member, status, expanded, onToggle, onTalkPre
           <View className="flex-1">
             <View className="flex-row items-baseline justify-between gap-[10px]">
               <Text
-                className={`font-serif ${reached ? 'text-[20px]' : 'text-[17px]'} ${sealed ? 'text-ink/60' : 'text-ink'}`}
+                className={`font-sans-semibold ${reached ? 'text-[19px] tracking-[-0.19px]' : 'text-[17px]'} ${sealed ? 'text-ink/60' : 'text-ink'}`}
               >
                 {member.name}
               </Text>
               <Text className="font-mono-medium text-[9px] tracking-[0.06em] text-ink/40">{member.level}</Text>
             </View>
-            <Text className="font-serif-italic mt-[4px] text-[13px] leading-[18px] text-ink/62">
+            <Text className="font-sans-medium mt-[4px] text-[14px] leading-[20px] text-ink/62">
               {member.role}
             </Text>
             <Text
-              className={`font-mono-medium mt-[6px] text-[9px] tracking-[0.08em] uppercase ${
+              className={`font-sans-semibold mt-[6px] text-[9px] tracking-[0.09em] uppercase ${
                 sealed ? 'text-ink/38' : 'text-accent'
               }`}
             >
