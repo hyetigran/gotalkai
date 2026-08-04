@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, shadows } from '@/components/ui/design-tokens';
+import { colorsDark, shadows, tabBarClearance } from '@/components/ui/design-tokens';
 import { PortraitHatch } from '@/components/ui/portrait-hatch';
-import { useIsFirstSession } from '@/lib/hooks/use-is-first-session';
 import { PersonaPortrait3D } from '../converse/components/persona-portrait-3d';
 import { SCRIPTED_OPEN_DATA as openData } from './scripted-open-data';
 import { useOpenAnswerHandler, useOpenCallbackLine } from './use-open-screen';
@@ -26,13 +26,16 @@ import { useOpenAnswerHandler, useOpenCallbackLine } from './use-open-screen';
  */
 export function OpenScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { learnerId } = useLocalSearchParams<{ learnerId?: string }>();
   const { callbackLine, callbackLineStatusText } = useOpenCallbackLine(learnerId);
-  const [isFirstSession, setIsFirstSession] = useIsFirstSession();
-  const { handleAnswer, isPending, isUnexpectedError } = useOpenAnswerHandler({ learnerId, isFirstSession, setIsFirstSession });
+  const { handleAnswer, isPending, isUnexpectedError } = useOpenAnswerHandler({ learnerId });
 
   return (
-    <View className="flex-1 bg-page px-[22px] pt-[66px] pb-[44px]">
+    <View
+      className="flex-1 bg-page px-[22px] pt-[66px]"
+      style={{ paddingBottom: insets.bottom + tabBarClearance }}
+    >
       {/* UAT: tabs restructuring — "who else" used to push to Address book from here; now that it's the Home tab (src/app/(tabs)/_layout.tsx), the tab bar already provides that navigation, so the in-header link was just a redundant second path to the same place. */}
       <View className="flex-row items-baseline justify-between gap-[12px]">
         <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
@@ -46,13 +49,18 @@ export function OpenScreen() {
       {/* Shadow on this outer wrapper, clipping on the inner one — RN/iOS
           clips shadows when overflow:hidden and a shadow share one view. */}
       <View className="mt-[26px] rounded-[20px]" style={shadows.card}>
-        <View className="overflow-hidden rounded-[20px] border border-ink/10 bg-white">
+        <View className="overflow-hidden rounded-[20px] border border-ink/10 bg-card">
           <PersonaPortrait3D
             background={(
               <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                {/* `colorsDark`, not `colors` — `PortraitHatch`'s stops are a
+                    raw prop, not a Tailwind class, so they don't theme-swap
+                    on their own (same reasoning `app/(tabs)/_layout.tsx`'s
+                    `iconColor` documents); the old cream `colors.portraitHatch`
+                    pair visibly clashed against this card's purple redesign. */}
                 <PortraitHatch
-                  stop1={colors.portraitHatch.stop1}
-                  stop2={colors.portraitHatch.stop2}
+                  stop1={colorsDark.portraitHatch.stop1}
+                  stop2={colorsDark.portraitHatch.stop2}
                   stripeWidth={7}
                 />
               </View>
@@ -70,15 +78,7 @@ export function OpenScreen() {
         </View>
       </View>
 
-      <View className="mt-auto pt-[26px]">
-        <Text className="mb-[10px] font-mono text-[12px] leading-[18px] text-ink/50">
-          {openData.scenarioLine}
-        </Text>
-        {isFirstSession && (
-          <Text className="font-sans-medium mb-[16px] text-[15px] leading-[23px] text-ink/62">
-            {openData.openMicLine}
-          </Text>
-        )}
+      <View className="mt-[26px]">
         {isUnexpectedError && (
           <Text className="font-sans-medium mb-[16px] text-[15px] leading-[23px] text-ink/62">
             Could not start a session — check your connection and try again.

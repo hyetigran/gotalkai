@@ -16,9 +16,18 @@ import { DEFAULT_PERSONA_ID } from './personas';
  * Елена is sealed until B1, and seeding memories for a persona no
  * session can reference yet would be dead data.
  */
+/**
+ * English, not Russian (UAT: a real callback line rendering in Russian
+ * on the Open screen — before the learner has said a word in the
+ * actual chat session — read as broken/regressed, especially for a
+ * learner who hasn't been asked whether they read Cyrillic; Session
+ * Zero currently auto-skips that question, see mobile's
+ * `session-zero-screen.tsx`). Target-language dialogue stays reserved
+ * for the live conversation transcript itself.
+ */
 const STARTER_MEMORIES: string[] = [
-  'Она рада, что вы наконец решили начать заниматься.',
-  'Она уже предвкушает, о чём с вами поговорит.',
+  'She’s glad you finally decided to start practicing.',
+  'She’s already looking forward to what she’ll tell you about.',
 ];
 
 export async function seedStarterMemories(pool: Pool | PoolClient, learnerId: string): Promise<void> {

@@ -1,20 +1,55 @@
 import type { ConverseTurn } from '../use-live-converse-session';
 import * as React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { LearnerTurn, ThinkingFiller } from './transcript';
+import { motion } from '@/components/ui/design-tokens';
+
+function LearnerTurn({ ru }: { ru: string }) {
+  return (
+    <View className="flex-row justify-end">
+      <Text className="font-cyrillic-medium max-w-[78%] text-right text-[16px] leading-[24.8px] text-ink/52">
+        {ru}
+      </Text>
+    </View>
+  );
+}
 
 /**
- * Her turn, live-pipeline version. PRD §6.2 tap-to-reveal, real-pipeline
- * counterpart to `Transcript.tsx`'s `HerTurn` — `persona_turn` now
+ * The thinking-indicator ellipsis — visible only while her reply is
+ * generating. UAT: previously the Cyrillic «ну…» ("well…") — legible as
+ * Cyrillic, but at a glance reads like the Latin "hy..." to someone not
+ * parsing it as Cyrillic, which is confusing rather than in-character.
+ * Plain "…" avoids that entirely without losing the thinking cue.
+ */
+function ThinkingFiller() {
+  const opacity = React.useRef(new Animated.Value(0.25)).current;
+
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.9, duration: motion.fillerBlinkMs / 2, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.25, duration: motion.fillerBlinkMs / 2, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.Text className="font-cyrillic-medium text-[17px] leading-[25.5px] text-ink/35" style={{ opacity }}>
+      …
+    </Animated.Text>
+  );
+}
+
+/**
+ * Her turn, live-pipeline version. PRD §6.2 tap-to-reveal — `persona_turn`
  * carries a real `translation` (turn-orchestrator.ts generates one
  * alongside every reply; persona.ts's schema, not fabricated
- * client-side), so this can use the same dotted-underline affordance
- * `HerTurn` does. No transliteration slot here (unlike `HerTurn`,
- * which switches between `en`/`translit`): translit is real-learner-only
- * data (ticket #30) the live pipeline's `persona_turn` message doesn't
- * carry — English-only reveal for now, not a regression, a narrower
- * scope than the scripted demo's.
+ * client-side), rendered behind the same dotted-underline reveal
+ * affordance. No transliteration slot: translit is real-learner-only data
+ * (ticket #30) the live pipeline's `persona_turn` message doesn't carry —
+ * English-only reveal for now.
  */
 function LivePersonaTurn({ text, translation, revealed, onToggleReveal }: {
   text: string;
@@ -58,20 +93,18 @@ function SystemTurn({ text }: { text: string }) {
 
 type LiveTranscriptProps = {
   turns: ConverseTurn[];
-  /** Her reply is generating — filler visible. Same signal `Transcript.tsx` uses, different phase enum (`LiveConversePhase` vs `ConversePhase`) — the screen maps it, this component just takes the boolean. */
+  /** Her reply is generating — filler visible. */
   thinking: boolean;
   /** `use-live-converse-session.ts`'s `markRevealed` — persists the real "you understood her without help" signal (ticket #29 AC #3) server-side. Optional so this component still works with no backing session; fired only on the false→true transition, never to un-reveal (the server-side flag is one-way). */
   onReveal?: (index: number) => void;
 };
 
 /**
- * Live-pipeline counterpart to `Transcript.tsx` — same scroll-to-end
- * behavior and per-speaker layout, but over `ConverseTurn[]`
- * (`use-live-converse-session.ts`'s real turn shape) instead of the
- * scripted demo's `ScriptedTurn[]`. Turns only ever append here (the
- * reducer in `use-live-converse-session.ts` never reorders or removes
- * one), so the array index is a stable, correct list key, same
- * justification as `Transcript.tsx`'s own.
+ * Renders `ConverseTurn[]` (`use-live-converse-session.ts`'s real turn
+ * shape), scrolling to the end as new turns arrive. Turns only ever
+ * append here (the reducer in `use-live-converse-session.ts` never
+ * reorders or removes one), so the array index is a stable, correct list
+ * key.
  */
 export function LiveTranscript({ turns, thinking, onReveal }: LiveTranscriptProps) {
   const scrollRef = React.useRef<ScrollView>(null);

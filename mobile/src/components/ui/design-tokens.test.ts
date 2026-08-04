@@ -12,7 +12,6 @@ import { TextDecoder, TextEncoder } from 'node:util';
 
 import {
   brandColors,
-  chipOpacityLadder,
   colors,
   inkAlphaFloors,
   radii,
@@ -41,10 +40,6 @@ describe('design-tokens', () => {
     expect(brandColors.violet600).toBe(colors.accent);
     expect(brandColors.yellow).toBe('#FFC857');
     expect(brandColors.green).toBe('#4CD964');
-  });
-
-  it('exposes the suggestion-chip decay ladder in index order', () => {
-    expect(chipOpacityLadder).toEqual([1, 0.6, 0.36, 0.2]);
   });
 
   it('never lets a learner-must-read floor regress below the mockup accessibility review', () => {

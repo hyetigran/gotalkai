@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Icon, Label, NativeTabs, VectorIcon } from 'expo-router/unstable-native-tabs';
 
-import { colors } from '@/components/ui/design-tokens';
+import { colorsDark } from '@/components/ui/design-tokens';
 
 /**
  * Three-tab shell for the daily-loop screens that live outside a single
@@ -31,18 +31,47 @@ import { colors } from '@/components/ui/design-tokens';
  * arbitrary NativeWind classes.
  */
 export default function TabsLayout() {
+  // `NativeTabs`' color props are resolved `ColorValue`s, not CSS
+  // variables — they don't theme-swap on their own the way `bg-page`-style
+  // Tailwind classes do. Hardcoded to `colorsDark`, not picked via
+  // `useUniwind()`/`useColorScheme()`: verified on-device (2026-08-04)
+  // that both report `'light'` even though every `bg-page`/`text-ink`
+  // Tailwind-class screen in this build renders dark regardless — a
+  // build-vs-runtime `prefers-color-scheme` mismatch upstream of this
+  // file (see memory `project-uniwind-theme-signal-mismatch`), not
+  // something to work around per-call-site. `nav` (solid, not an
+  // alpha-modified `ink`) as the unselected color and `accent` as the
+  // selected one gives icons a real color *change* on selection, not
+  // just a small opacity bump.
+  const palette = colorsDark;
+
   return (
-    <NativeTabs blurEffect="systemMaterial" iconColor={`${colors.ink}66`} tintColor={colors.accent}>
+    <NativeTabs
+      blurEffect="systemMaterial"
+      iconColor={{ default: palette.nav, selected: palette.accent }}
+      tintColor={palette.accent}
+      backgroundColor={palette.card}
+      // `systemMaterial`'s blur tracks the OS-level (native) light/dark
+      // trait, not this app's own custom Uniwind theme — the two can
+      // disagree. At rest that's masked by blurring our own dark content
+      // behind it, but the default "become transparent when scrolled to
+      // the edge" behavior (e.g. History's `FlatList` scrolled toward the
+      // bottom) swaps to a starker system-default tint, which read as a
+      // stray light/white bar. Disabling that keeps the explicit
+      // `backgroundColor`/`iconColor` above in effect regardless of scroll
+      // position.
+      disableTransparentOnScrollEdge
+    >
       <NativeTabs.Trigger name="address-book">
-        <Label>Home</Label>
+        <Label hidden>Home</Label>
         <Icon src={<VectorIcon family={Feather} name="book-open" />} />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="open">
-        <Label>Talk</Label>
+        <Label hidden>Talk</Label>
         <Icon src={<VectorIcon family={Feather} name="phone-call" />} />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="debrief-history">
-        <Label>History</Label>
+        <Label hidden>History</Label>
         <Icon src={<VectorIcon family={Feather} name="clock" />} />
       </NativeTabs.Trigger>
     </NativeTabs>

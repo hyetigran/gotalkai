@@ -3,9 +3,11 @@ import { useRouter } from 'expo-router';
 import * as React from 'react';
 
 import { FlatList, Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tabBarClearance } from '@/components/ui/design-tokens';
 import { useLearnerId } from '@/lib/hooks/use-learner-id';
-import { realParamsOrBarePath } from '@/lib/navigation/loop-nav-params';
 import { useSessionHistory } from './api';
+import { SESSION_HISTORY_FIXTURE } from './debrief-history-fixture';
 import { derivePatternTitle } from './map-debrief-item';
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -21,7 +23,7 @@ function SessionRow({ session, onPress }: { session: SessionHistoryEntry; onPres
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`session from ${formatSessionDate(session.startedAt)}`}
-      className="rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]"
+      className="rounded-[16px] border border-ink/10 bg-card px-[17px] py-[16px]"
     >
       <View className="flex-row items-baseline justify-between">
         <Text className="font-sans-semibold text-[17px] text-ink">{formatSessionDate(session.startedAt)}</Text>
@@ -62,10 +64,18 @@ function HistoryHeader() {
  * `learnerId` comes from `useLearnerId()`, not a route param — this is a
  * tab root reached by switching tabs, not pushed into with params like
  * the daily-loop screens (`loop-nav-params.ts`'s own header comment).
+ *
+ * Falls back to `SESSION_HISTORY_FIXTURE` only when there's no
+ * `learnerId` at all — same convention as the Open/Debrief screens (see
+ * their own doc comments). Once a real `learnerId` is present, this
+ * never silently substitutes fixture content for a loading, errored, or
+ * genuinely-empty real result.
  */
 export function DebriefHistoryScreen() {
   const router = useRouter();
   const [learnerId] = useLearnerId();
+  const hasLearner = Boolean(learnerId);
+  const insets = useSafeAreaInsets();
   const {
     data,
     isLoading,
@@ -75,9 +85,10 @@ export function DebriefHistoryScreen() {
     isFetchingNextPage,
   } = useSessionHistory({
     variables: { learnerId: learnerId ?? '' },
-    enabled: Boolean(learnerId),
+    enabled: hasLearner,
   });
-  const sessions = React.useMemo(() => data?.pages.flatMap(page => page.sessions) ?? [], [data]);
+  const realSessions = React.useMemo(() => data?.pages.flatMap(page => page.sessions) ?? [], [data]);
+  const sessions = hasLearner ? realSessions : SESSION_HISTORY_FIXTURE;
 
   const handleEndReached = React.useCallback(() => {
     if (hasNextPage && !isFetchingNextPage)
@@ -87,14 +98,28 @@ export function DebriefHistoryScreen() {
   const renderItem = React.useCallback(({ item }: { item: SessionHistoryEntry }) => (
     <SessionRow
       session={item}
-      onPress={() => router.push(realParamsOrBarePath('/debrief', { sessionId: item.id, learnerId: learnerId ?? undefined }))}
+      // Fixture rows have no real `sessionId` the app-service knows about —
+      // route to Debrief's own fixture fallback rather than a sessionId
+      // that would 404, matching `hasRealSession` there.
+      // `viewedFromHistory` (always set from this call site, unlike
+      // `sessionId`/`learnerId`) is how Debrief tells "reached by
+      // browsing old sessions" apart from "landed here straight off the
+      // daily loop" — it shows a back button and hides "Tomorrow" only
+      // for the former; see debrief-screen.tsx's own doc comment.
+      onPress={() => router.push({
+        pathname: '/debrief',
+        params: hasLearner
+          ? { sessionId: item.id, learnerId: learnerId ?? undefined, viewedFromHistory: 'true' }
+          : { viewedFromHistory: 'true' },
+      })}
     />
-  ), [router, learnerId]);
+  ), [router, learnerId, hasLearner]);
 
   return (
     <FlatList
       className="flex-1 bg-page px-[22px] pt-[60px]"
-      contentContainerClassName="gap-[10px] pb-[44px]"
+      contentContainerClassName="gap-[10px]"
+      contentContainerStyle={{ paddingBottom: insets.bottom + tabBarClearance }}
       data={sessions}
       keyExtractor={session => session.id}
       renderItem={renderItem}
@@ -103,13 +128,13 @@ export function DebriefHistoryScreen() {
       onEndReachedThreshold={0.5}
       ListEmptyComponent={() => (
         <>
-          {isLoading && (
+          {hasLearner && isLoading && (
             <Text className="text-[13px] text-ink/55">Loading your history…</Text>
           )}
-          {isError && (
+          {hasLearner && isError && (
             <Text className="text-[13px] text-ink/55">Couldn't load your history — check your connection and try again.</Text>
           )}
-          {!isLoading && !isError && (
+          {hasLearner && !isLoading && !isError && (
             <>
               <Text className="font-sans-semibold text-[19px] text-ink/70">
                 Your past conversations will show up here.

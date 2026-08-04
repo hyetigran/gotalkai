@@ -31,9 +31,27 @@ const personaModelModule = require('../../../../assets/valentina.png-optimized-2
 
 function GrandmaModel({ uri }: { uri: string }) {
   const { scene } = useGLTF(uri);
-  // Untuned: verified rendering on-device, but the exact scale/origin/
-  // framing hasn't been dialed in yet. Starting guess, not a measured fit.
-  return <primitive object={scene} scale={1} position={[0, -1, 0]} />;
+  // Bounding box measured on-device: ~1.41×1.80×1.19, local-space center
+  // ~(0, 0.9, 0). This re-centers the bust to the world origin so it
+  // sits inside the camera's frame (the old `[0, -1, 0]` guess put nearly
+  // the whole mesh below the vertical FOV).
+  //
+  // KNOWN ISSUE, unresolved: even with this framing corrected, the mesh
+  // does not visibly render on-device (iOS Simulator / EXGL) — confirmed
+  // via `Box3.setFromObject` reporting a correct, in-frame bounding box,
+  // and confirmed the Canvas/camera/renderer pipeline itself is healthy
+  // (a plain `<mesh><boxGeometry/></mesh>` in the same `<Canvas>` renders
+  // fine). Ruled out by direct on-device testing: texture load, PBR
+  // material/lighting (swapping to an unlit `MeshBasicMaterial` didn't
+  // help), frustum culling, GPU skinning (rebuilding as a plain unskinned
+  // `Mesh` from the same geometry didn't help), and the 32-bit index
+  // buffer needing `OES_element_index_uint` (downcasting to `Uint16Array`
+  // didn't help either). That leaves something in how this specific
+  // GLB's binary buffer views get parsed on this platform — needs an
+  // actual GPU frame capture (Xcode's Metal/GL debugger) to pin down,
+  // which isn't available from this environment. Until fixed, this
+  // renders the hatch/frequency `background` prop only.
+  return <primitive object={scene} scale={1} position={[0, -0.9, 0]} />;
 }
 
 /**
@@ -91,7 +109,7 @@ export function PersonaPortrait3D({ background }: PersonaPortrait3DProps) {
       {uri && (
         // `gl={{ alpha: true }}`: without it three.js clears to opaque
         // black each frame, hiding the `background` prop underneath.
-        <Canvas style={{ flex: 1 }} gl={{ alpha: true }} camera={{ position: [0, 0, 3], fov: 40 }}>
+        <Canvas style={{ flex: 1 }} gl={{ alpha: true }} camera={{ position: [0, 0, 3.6], fov: 40 }}>
           <ambientLight intensity={0.7} />
           <directionalLight position={[2, 2, 2]} intensity={1} />
           <React.Suspense fallback={null}>

@@ -9,9 +9,9 @@ describe('buildAnalyserRequest', () => {
     expect(request.output_config?.format?.type).toBe('json_schema');
   });
 
-  it('enables thinking, unlike persona-turn.ts\'s dialogue generation', () => {
+  it('enables adaptive thinking, unlike persona-turn.ts\'s dialogue generation', () => {
     const request = buildAnalyserRequest([{ speaker: 'persona', content: 'Привет!' }]);
-    expect(request.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
+    expect(request.thinking).toEqual({ type: 'adaptive' });
   });
 
   it('formats the transcript as labeled Persona/Learner lines', () => {
