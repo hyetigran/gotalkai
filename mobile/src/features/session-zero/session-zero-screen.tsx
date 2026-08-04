@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { useSessionZeroAnswerHandler } from './use-session-zero-screen';
@@ -19,44 +20,45 @@ import { useSessionZeroAnswerHandler } from './use-session-zero-screen';
  * (scenario-selector.ts's `computeNextComplicationLevel`, ticket #21) —
  * there is nothing here to add for that half of the AC, only something
  * to confirm doesn't exist.
+ *
+ * TEMPORARILY HIDDEN (revert by deleting the effect below and the
+ * `triggered` ref): auto-submits `cyrillicLiterate: true` on mount
+ * instead of waiting for a tap, so new learners skip straight to Open.
+ * `handleAnswer` still calls the real `useCreateLearner` API and
+ * persists a real `learnerId` — this only skips the visible question,
+ * not the backend learner-creation this screen exists to do.
  */
 export function SessionZeroScreen() {
   const { handleAnswer, isPending, isError } = useSessionZeroAnswerHandler();
+  const triggered = React.useRef(false);
+
+  React.useEffect(() => {
+    if (triggered.current)
+      return;
+    triggered.current = true;
+    handleAnswer(true);
+  }, [handleAnswer]);
 
   return (
     <View className="flex-1 items-center justify-center bg-page px-[28px]">
-      <Text className="font-sans-semibold text-center text-[24px] leading-[30px] tracking-[-0.24px] text-ink">
-        Do you read Cyrillic?
-      </Text>
-      <Text className="mt-[10px] text-center text-[15px] leading-[22px] text-ink/60">
-        We'll show a phonetic version of her lines instead of a translation if not — you can change this later.
-      </Text>
-
-      <View className="mt-[26px] w-full gap-[12px]">
-        <Pressable
-          onPress={() => handleAnswer(true)}
-          disabled={isPending}
-          accessibilityRole="button"
-          accessibilityLabel="Yes, I read Cyrillic"
-          className="items-center rounded-[16px] bg-accent py-[19px] disabled:opacity-50"
-        >
-          <Text className="font-sans-semibold text-[17px] text-page">Yes, I read Cyrillic</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => handleAnswer(false)}
-          disabled={isPending}
-          accessibilityRole="button"
-          accessibilityLabel="Not yet"
-          className="items-center rounded-[16px] border border-ink/22 py-[19px] disabled:opacity-50"
-        >
-          <Text className="font-sans-semibold text-[17px] text-ink">Not yet</Text>
-        </Pressable>
-      </View>
-
       {isError && (
-        <Text className="mt-[16px] text-center text-[13px] text-ink/55">
-          Could not save your answer — check your connection and try again.
-        </Text>
+        <>
+          <Text className="font-sans-semibold text-center text-[17px] text-ink">
+            Could not start your session
+          </Text>
+          <Text className="mt-[10px] text-center text-[15px] leading-[22px] text-ink/60">
+            Check your connection and try again.
+          </Text>
+          <Pressable
+            onPress={() => handleAnswer(true)}
+            disabled={isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Retry"
+            className="mt-[26px] items-center rounded-[16px] bg-accent px-[26px] py-[19px] disabled:opacity-50"
+          >
+            <Text className="font-sans-semibold text-[17px] text-page">Retry</Text>
+          </Pressable>
+        </>
       )}
     </View>
   );
