@@ -4,28 +4,74 @@
 
 /* Define your theme in CSS (replaces tailwind.config.js) */
 @theme {
-  /* Font families */
-  --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Font families. `sans` is Poppins (default body weight); the app also
+     registers explicit weight-named families below since these are
+     statically-linked TTFs (not a variable font) — RN doesn't reliably
+     synthesize font-weight on a single custom family, so each weight is
+     its own exact-style family, same approach the old PT Serif/IBM Plex
+     Mono setup used. `mono` is JetBrains Mono, kept for genuine
+     code/value-display contexts (see design-tokens-debug screen) — the
+     app's real UI text (including former "system-reported" mono roles
+     like eyebrows and meta captions) now renders in Poppins per the
+     design spec's "Poppins only, four weights" rule for the type scale. */
+  --font-family-sans: 'Poppins-Regular', ui-sans-serif, system-ui, sans-serif;
+  --font-family-sans-medium: 'Poppins-Medium';
+  --font-family-sans-semibold: 'Poppins-SemiBold';
+  --font-family-sans-bold: 'Poppins-Bold';
+  --font-family-mono: 'JetBrainsMono-Regular';
+  --font-family-mono-medium: 'JetBrainsMono-Medium';
+  /* Poppins ships with zero Cyrillic glyphs (see design-tokens.ts's
+     `fontFamily.cyrillicMedium` doc comment) — target-language dialogue
+     text uses this Inter weight instead of `font-sans-medium`. */
+  --font-family-cyrillic-medium: 'Inter-Medium';
 
-  /* Persona voice + system-reported text. Registered as exact-style
-     families in app.config.ts (not weight-grouped), so there is no
-     platform-dependent font-weight resolution to get wrong. */
-  --font-family-serif: 'PTSerif-Regular';
-  --font-family-serif-italic: 'PTSerif-Italic';
-  --font-family-mono: 'IBMPlexMono-Regular';
-  --font-family-mono-medium: 'IBMPlexMono-Medium';
+  /* LingoAI design system v2 (purple/Poppins reskin).
+     Source: `mobile/Design Spec Sheet.dc.html` ("LingoAI mobile — design
+     spec", ported from the marketing site redesign). Light values live
+     here; dark values override the same custom properties further down
+     this file — see the comment above that block for why it's declared
+     twice (@media + `.dark` class selector).
+     Token NAMES are kept from the prior cream/terracotta system where a
+     semantic match exists (`ink`, `card`, `accent`) so existing
+     `text-ink/62`-style Tailwind classes across screens keep working
+     unchanged; `paper`→`page` and `paper-stepped`→`band` are renamed to
+     match the spec's own semantic names (mechanically replaced at every
+     call site). New tokens (`tint`, `line`, `body`, `muted`, `nav`,
+     `accent-deep`) are additions the old system didn't have.
+     Alpha variants (hairline, divider, ink levels) are still opacity
+     modifiers on `ink` / `accent` (e.g. `text-ink/62`) — see
+     `src/components/ui/design-tokens.ts` for the documented alpha scale. */
+  --color-page: #ffffff;
+  --color-band: #f7f6fe;
+  --color-card: #ffffff;
+  --color-tint: #f3f0ff;
+  --color-line: #edeafb;
+  --color-ink: #2a1f62;
+  --color-body: #7a739a;
+  --color-muted: #8b84a8;
+  --color-nav: #5b5478;
+  --color-accent: #6c5ce7;
+  --color-accent-deep: #4a3fa8;
+  --color-shadow: rgba(60, 45, 140, 0.45);
 
-  /* LingoAI design system (persona voice + Address-book mockup tokens).
-     Source: `Initial mockup request/design_handoff_conversation_loop/README.md`.
-     Alpha variants (hairline, divider, ink levels) are opacity modifiers on
-     `ink` / `accent` (e.g. `text-ink/62`, `border-ink/10`), not separate
-     tokens — see `src/components/ui/design-tokens.ts` for the documented
-     alpha scale and the non-Tailwind (raw RN style) values. */
-  --color-paper: #fbf6ec;
-  --color-paper-stepped: #f3ecde;
-  --color-ink: #231f18;
-  --color-accent: #a0543a;
-  --color-accent-pressed: #8e4831;
+  /* Brand colors — identical in both themes (spec §02). `accent` above is
+     the same hex as Violet 600 here; the two exist separately because
+     `accent` is theme-aware (lightens in dark mode) while a solid-fill
+     brand button must not: "never put #6C5CE7 text on a dark surface",
+     the inverse case for a violet *background*, which stays this exact
+     violet regardless of theme. */
+  --color-violet-700: #5546c8;
+  --color-violet-500: #8a5ce7;
+  --color-yellow: #ffc857;
+  --color-yellow-pressed: #f5b935;
+  --color-green: #4cd964;
+  --color-blue: #4490e2;
+  --color-cyan: #26c6da;
+  --color-pink: #ff6b9d;
+  --color-on-yellow: #3b2e00;
+  --color-on-green: #0c3d1b;
+  --color-meter-dim: #c9c2f5;
+
   --color-portrait-hatch-1: #efe7d9;
   --color-portrait-hatch-2: #e6dcca;
 
@@ -107,15 +153,14 @@
   --color-danger-800: #991B1B;
   --color-danger-900: #7F1D1D;
 
-  /* Semantic colors - using primary for main brand color */
+  /* Semantic colors - using primary for main brand color.
+     `card`/`muted` were removed from here (Aug 2026 reskin) — they
+     collided with the new design-system tokens above (same names, spec
+     values) and grep confirmed zero consumers of `bg-card`/`text-muted*`
+     as Tailwind classes anywhere in the scaffold primitives, so the new
+     spec-driven `card`/`muted` values now apply everywhere unopposed. */
   --color-background: #ffffff;
   --color-foreground: #0a0a0a;
-
-  --color-card: #ffffff;
-  --color-card-foreground: #0a0a0a;
-
-  --color-muted: #f5f5f5;
-  --color-muted-foreground: #737373;
 
   --color-border: #e5e5e5;
   --color-input: #e5e5e5;
@@ -131,15 +176,55 @@
     --color-background: #0a0a0a;
     --color-foreground: #fafafa;
 
-    --color-card: #171717;
-    --color-card-foreground: #fafafa;
-
-    --color-muted: #262626;
-    --color-muted-foreground: #a3a3a3;
-
     --color-border: #404040;
     --color-input: #404040;
   }
+}
+
+/* LingoAI design system v2 dark overrides — mirrors the light values
+   declared in the main @theme block above. Declared twice deliberately:
+   under `@media (prefers-color-scheme: dark)` (proven pattern already used
+   for the scaffold tokens above, follows OS/device setting — covers the
+   app's 'system' theme option) AND under a plain `.dark` class selector
+   (matches `theme.dark ? 'dark' : undefined` in src/app/_layout.tsx, for
+   the app's own manual light/dark override via Uniwind.setTheme). Kept
+   both since this repo hasn't previously proven which mechanism Uniwind's
+   compiler actually honors for swapping a *plain* utility's underlying
+   CSS variable (as opposed to an explicit `dark:`-prefixed utility, which
+   is separately confirmed working elsewhere in this codebase) — verify
+   both light and dark render correctly on-device after this change. */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-page: #131129;
+    --color-band: #191634;
+    --color-card: #211e40;
+    --color-tint: #2a2650;
+    --color-line: #332e5f;
+    --color-ink: #f2f0ff;
+    --color-body: #ada6cc;
+    --color-muted: #928bb4;
+    --color-nav: #b7b1d4;
+    --color-accent: #a99bff;
+    --color-accent-deep: #c9beff;
+    --color-shadow: rgba(0, 0, 0, 0.55);
+    --color-meter-dim: #4a3fa8;
+  }
+}
+
+.dark {
+  --color-page: #131129;
+  --color-band: #191634;
+  --color-card: #211e40;
+  --color-tint: #2a2650;
+  --color-line: #332e5f;
+  --color-ink: #f2f0ff;
+  --color-body: #ada6cc;
+  --color-muted: #928bb4;
+  --color-nav: #b7b1d4;
+  --color-accent: #a99bff;
+  --color-accent-deep: #c9beff;
+  --color-shadow: rgba(0, 0, 0, 0.55);
+  --color-meter-dim: #4a3fa8;
 }
 
 /* Custom utilities (if needed) */

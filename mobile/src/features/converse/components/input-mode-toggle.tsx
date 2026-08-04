@@ -26,7 +26,7 @@ export function InputModeToggle({ mode, onChange }: InputModeToggleProps) {
         accessibilityState={{ selected: mode === 'voice' }}
         className={`rounded-full px-[14px] py-[8px] ${mode === 'voice' ? 'bg-accent' : 'border border-ink/18 bg-white'}`}
       >
-        <Text className={`font-mono-medium text-[11px] ${mode === 'voice' ? 'text-paper' : 'text-ink/60'}`}>Voice</Text>
+        <Text className={`font-sans-semibold text-[11px] ${mode === 'voice' ? 'text-page' : 'text-ink/60'}`}>Voice</Text>
       </Pressable>
       <Pressable
         onPress={() => onChange('text')}
@@ -35,7 +35,7 @@ export function InputModeToggle({ mode, onChange }: InputModeToggleProps) {
         accessibilityState={{ selected: mode === 'text' }}
         className={`rounded-full px-[14px] py-[8px] ${mode === 'text' ? 'bg-accent' : 'border border-ink/18 bg-white'}`}
       >
-        <Text className={`font-mono-medium text-[11px] ${mode === 'text' ? 'text-paper' : 'text-ink/60'}`}>Text</Text>
+        <Text className={`font-sans-semibold text-[11px] ${mode === 'text' ? 'text-page' : 'text-ink/60'}`}>Text</Text>
       </Pressable>
     </View>
   );

@@ -8,7 +8,7 @@ import { SETTINGS_COPY as copy, LANGUAGE_CHOICES } from './settings-copy';
 /**
  * The Settings screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
- * ("6. Settings"). `bg-paper-stepped` matches the Tomorrow screen's
+ * ("6. Settings"). `bg-band` matches the Tomorrow screen's
  * background — both are outside the daily loop.
  *
  * Language selection is local component state only for this ticket — real
@@ -21,12 +21,12 @@ export function SettingsScreen() {
   const [selectedLanguage, setSelectedLanguage] = React.useState<LanguageId>('en');
 
   return (
-    <View className="flex-1 bg-paper-stepped px-[22px] pt-[60px] pb-[44px]">
+    <View className="flex-1 bg-band px-[22px] pt-[60px] pb-[44px]">
       <View className="flex-row items-center justify-between">
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="back">
           <Text className="text-[15px] text-accent">‹</Text>
         </Pressable>
-        <Text className="font-serif text-[13px] text-ink/60">{copy.settingsHead}</Text>
+        <Text className="font-sans-semibold text-[13px] text-ink/60">{copy.settingsHead}</Text>
         <View className="w-[12px]" />
       </View>
 
@@ -46,7 +46,7 @@ export function SettingsScreen() {
                 isSelected ? 'bg-accent' : 'border border-ink/16 bg-white'
               }`}
             >
-              <Text className={`font-serif text-[17px] ${isSelected ? 'text-paper' : 'text-ink/70'}`}>
+              <Text className={`font-sans-semibold text-[17px] ${isSelected ? 'text-page' : 'text-ink/70'}`}>
                 {choice.label}
               </Text>
             </Pressable>
@@ -68,7 +68,7 @@ export function SettingsScreen() {
               index === copy.rows.length - 1 ? '' : 'border-b border-ink/7'
             }`}
           >
-            <Text className="font-serif text-[16px] text-ink">{row}</Text>
+            <Text className="font-sans-medium text-[16px] text-ink">{row}</Text>
             <Text className="text-[14px] text-ink/30">›</Text>
           </View>
         ))}
@@ -84,7 +84,7 @@ export function SettingsScreen() {
         accessibilityLabel="Monthly benchmark"
         className="mt-[12px] flex-row items-center justify-between gap-[10px] rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]"
       >
-        <Text className="font-serif text-[16px] text-ink">Monthly benchmark</Text>
+        <Text className="font-sans-medium text-[16px] text-ink">Monthly benchmark</Text>
         <Text className="text-[14px] text-ink/30">›</Text>
       </Pressable>
 
@@ -94,7 +94,7 @@ export function SettingsScreen() {
         accessibilityLabel={copy.close}
         className="mt-auto items-center rounded-[16px] border border-ink/22 py-[18px]"
       >
-        <Text className="font-serif text-[17px] text-ink">{copy.close}</Text>
+        <Text className="font-sans-semibold text-[17px] text-ink">{copy.close}</Text>
       </Pressable>
     </View>
   );

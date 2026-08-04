@@ -121,7 +121,7 @@ function ConverseHeader({ clock, onBack, onEnd }: ConverseHeaderProps) {
       >
         <Text className="text-[15px] text-accent">‹</Text>
       </Pressable>
-      <Text className="font-serif text-[13px] text-ink/60">Valentina Sergeevna</Text>
+      <Text className="font-sans-semibold text-[13px] text-ink/60">Valentina Sergeevna</Text>
       <View className="flex-row items-center gap-[12px]">
         <Text className="font-mono-medium text-[10px] text-ink/40">{clock}</Text>
         <Pressable onPress={onEnd} hitSlop={{ top: 20, bottom: 20, left: 12, right: 20 }} accessibilityRole="button" accessibilityLabel="end">
@@ -203,7 +203,7 @@ function ScriptedConverseScreen({ learnerId, sessionId }: ScriptedConverseScreen
   }, [scriptExhausted, goToDebrief]);
 
   return (
-    <View className="flex-1 bg-paper">
+    <View className="flex-1 bg-page">
       <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} />
 
       <View className="px-[22px]">
@@ -300,7 +300,7 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
   const insets = useSafeAreaInsets();
 
   return (
-    <View className="flex-1 bg-paper">
+    <View className="flex-1 bg-page">
       <ConverseHeader clock={clock} onBack={goBackToOpen} onEnd={goToDebrief} />
 
       <View className="px-[22px]">

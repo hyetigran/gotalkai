@@ -14,6 +14,12 @@ importers:
       '@expo-google-fonts/inter':
         specifier: ^0.4.2
         version: 0.4.2
+      '@expo-google-fonts/jetbrains-mono':
+        specifier: ^0.4.1
+        version: 0.4.1
+      '@expo-google-fonts/poppins':
+        specifier: ^0.4.1
+        version: 0.4.1
       '@expo-google-fonts/pt-serif':
         specifier: ^0.4.1
         version: 0.4.1
@@ -1307,6 +1313,12 @@ packages:
 
   '@expo-google-fonts/inter@0.4.2':
     resolution: {integrity: sha512-syfiImMaDmq7cFi0of+waE2M4uSCyd16zgyWxdPOY7fN2VBmSLKEzkfbZgeOjJq61kSqPBNNtXjggiQiSD6gMQ==}
+
+  '@expo-google-fonts/jetbrains-mono@0.4.1':
+    resolution: {integrity: sha512-CslACrtMOcRwoWXCO7OMEI+9w3fukWSoBtvNz46OqPoogEuuoY0tkDY1O8sFumk8t0pC6Cx0Xr95O0TOQhpkug==}
+
+  '@expo-google-fonts/poppins@0.4.1':
+    resolution: {integrity: sha512-LiX5oEryJqDt3UmWwr4oqf11hGMz/JEffkkNcZ3UtGwyoMFzXmBmTwcrAWrEttxypxmLNmPykDg+CY2VjKve9A==}
 
   '@expo-google-fonts/pt-serif@0.4.1':
     resolution: {integrity: sha512-XziSzDDcyNvNehbsGMFw06SfC46GQf5Or4nH4XX8PEVTl+HI3xKKDmgGeatL37LAdEeEJ8xg2TTYKFE8FdPcOQ==}
@@ -9717,6 +9729,10 @@ snapshots:
   '@expo-google-fonts/ibm-plex-mono@0.4.1': {}
 
   '@expo-google-fonts/inter@0.4.2': {}
+
+  '@expo-google-fonts/jetbrains-mono@0.4.1': {}
+
+  '@expo-google-fonts/poppins@0.4.1': {}
 
   '@expo-google-fonts/pt-serif@0.4.1': {}
 

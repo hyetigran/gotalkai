@@ -25,11 +25,11 @@ function LivePersonaTurn({ text, translation, revealed, onToggleReveal }: {
   return (
     <Pressable onPress={onToggleReveal} accessibilityRole="button" accessibilityLabel="toggle translation">
       <Text
-        className="font-serif text-[20px] leading-[30px] text-ink"
+        className="font-cyrillic-medium text-[17px] leading-[25.5px] text-ink"
         style={{
           textDecorationLine: 'underline',
           textDecorationStyle: 'dotted',
-          textDecorationColor: 'rgba(160,84,58,0.4)',
+          textDecorationColor: 'rgba(108,92,231,0.4)',
         }}
       >
         {text}

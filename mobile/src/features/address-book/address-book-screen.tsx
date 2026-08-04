@@ -39,14 +39,14 @@ export function AddressBookScreen() {
   }, []);
 
   return (
-    <View className="flex-1 bg-paper px-[22px] pt-[60px] pb-[44px]">
+    <View className="flex-1 bg-page px-[22px] pt-[60px] pb-[44px]">
       {/* UAT: tabs restructuring — this is now the Home tab's root screen (src/app/(tabs)/_layout.tsx), reached by switching tabs, not pushed onto a stack, so there's no "back" screen for router.back() to return to any more. */}
       <View className="items-center">
-        <Text className="font-serif text-[13px] text-ink/60">{copy.castHead}</Text>
+        <Text className="font-sans-semibold text-[13px] text-ink/60">{copy.castHead}</Text>
       </View>
 
       <View className="mt-[16px]">
-        <Text className="font-serif text-[22px] text-ink">{copy.bookHead}</Text>
+        <Text className="font-sans-semibold text-[22px] text-ink">{copy.bookHead}</Text>
         <Text className="font-mono-medium mt-[7px] text-[10px] tracking-[0.03em] text-ink/45">
           {copy.trail(REACHED_COUNT, CAST_FIXTURE.length, CAST_FIXTURE[REACHED_COUNT].level)}
         </Text>

@@ -14,7 +14,7 @@ type BenchmarkResultProps = {
 export function BenchmarkResult({ correctCount, totalCount, trendEntries, isTrendLoading }: BenchmarkResultProps) {
   return (
     <View>
-      <Text className="mb-[8px] font-serif text-[27px] leading-[35px] text-ink">
+      <Text className="font-sans-semibold mb-[8px] text-[27px] leading-[35px] tracking-[-0.27px] text-ink">
         {correctCount}
         {' of '}
         {totalCount}

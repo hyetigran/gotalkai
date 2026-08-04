@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Poppins,system-ui,sans-serif;color:#2A1F62;-webkit-font-smoothing:antialiased}
+a{color:#6C5CE7;text-decoration:none}a:hover{color:#5546C8}
+doc-page:not(:defined){visibility:hidden}
+@keyframes lg-bar{0%,100%{transform:scaleY(.22)}50%{transform:scaleY(1)}}
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+
+<doc-page margin="0.6in">
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;border-bottom:2px solid #2A1F62;padding-bottom:18px">
+    <div>
+      <div style="font:600 10px/1 Poppins,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#8B84A8">Design handoff · v1</div>
+      <h1 style="font:700 32px/1.1 Poppins,sans-serif;letter-spacing:-.03em;margin:10px 0 0;color:#2A1F62">LingoAI mobile — design spec</h1>
+      <p style="font:400 13px/1.6 Poppins,sans-serif;color:#7A739A;margin:8px 0 0;max-width:520px">Ported from the marketing site. Machine-readable tokens in <span style="font-family:'JetBrains Mono',monospace;font-size:12px;background:#F3F0FF;padding:2px 5px;border-radius:4px">design_handoff_mobile/tokens.json</span>; full prose spec in <span style="font-family:'JetBrains Mono',monospace;font-size:12px;background:#F3F0FF;padding:2px 5px;border-radius:4px">DESIGN-SPEC.md</span>.</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex:none">
+      <img src="./assets/lingo-icon.png" alt="LingoAI" style="width:38px;height:38px;border-radius:10px;display:block">
+      <div style="font:700 19px/1 Poppins,sans-serif;letter-spacing:-.02em">LingoAI</div>
+    </div>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">01 · Semantic color</h2>
+  <p style="font:400 13px/1.6 Poppins,sans-serif;color:#7A739A;margin:8px 0 0">Every surface and text color resolves through these. Follow the OS theme by default; store the override under <span style="font-family:'JetBrains Mono',monospace;font-size:12px">lingoai-theme</span>. Accent <strong style="font-weight:600">lightens</strong> on dark — never put <span style="font-family:'JetBrains Mono',monospace;font-size:12px">#6C5CE7</span> text on a dark surface.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:16px;break-inside:avoid">
+    <sc-for list="{{ semantic }}" as="s" hint-placeholder-count="12">
+      <div style="display:flex;align-items:center;gap:11px;border:1px solid #EDEAFB;border-radius:10px;padding:9px 11px">
+        <div style="display:flex;flex:none;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(60,45,140,.14)">
+          <div style="{{ s.lightChip }}"></div>
+          <div style="{{ s.darkChip }}"></div>
+        </div>
+        <div style="min-width:0;flex:1">
+          <div style="font:500 13px/1.2 'JetBrains Mono',monospace;color:#2A1F62">{{ s.name }}</div>
+          <div style="font:400 10px/1.4 'JetBrains Mono',monospace;color:#8B84A8;margin-top:3px">{{ s.pair }}</div>
+        </div>
+        <div style="font:400 10px/1.4 Poppins,sans-serif;color:#7A739A;text-align:right;max-width:96px;flex:none">{{ s.use }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">02 · Brand color</h2>
+  <p style="font:400 13px/1.6 Poppins,sans-serif;color:#7A739A;margin:8px 0 0">Identical in both themes. Text on yellow and green is always the dark on-color, never white.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-top:16px;break-inside:avoid">
+    <sc-for list="{{ brand }}" as="b" hint-placeholder-count="12">
+      <div style="border:1px solid #EDEAFB;border-radius:10px;overflow:hidden">
+        <div style="{{ b.swatch }}">{{ b.sample }}</div>
+        <div style="padding:7px 8px 9px">
+          <div style="font:500 10px/1.3 Poppins,sans-serif;color:#2A1F62">{{ b.name }}</div>
+          <div style="font:400 9px/1.4 'JetBrains Mono',monospace;color:#8B84A8;margin-top:2px">{{ b.hex }}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:flex;gap:14px;margin-top:16px;break-inside:avoid">
+    <div style="flex:1;border-radius:14px;padding:18px;background:radial-gradient(420px 240px at 88% 8%,rgba(160,120,255,.55),rgba(160,120,255,0) 62%),radial-gradient(300px 200px at 4% 96%,rgba(72,196,255,.32),rgba(72,196,255,0) 60%),linear-gradient(150deg,#7B5FE8 0%,#5B62D8 42%,#3F51BE 100%)">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.72)">Immersive surface</div>
+      <div style="font:600 15px/1.3 Poppins,sans-serif;color:#fff;margin-top:8px">Conversation screen</div>
+      <div style="font:400 11px/1.5 Poppins,sans-serif;color:rgba(255,255,255,.84);margin-top:5px">Two radial glows over a 150° violet gradient. Does not change between themes.</div>
+      <div style="display:flex;gap:6px;margin-top:12px">
+        <div style="font:500 9px/1 'JetBrains Mono',monospace;color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.26);padding:6px 8px;border-radius:100px">#7B5FE8</div>
+        <div style="font:500 9px/1 'JetBrains Mono',monospace;color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.26);padding:6px 8px;border-radius:100px">#5B62D8</div>
+        <div style="font:500 9px/1 'JetBrains Mono',monospace;color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.26);padding:6px 8px;border-radius:100px">#3F51BE</div>
+      </div>
+    </div>
+    <div style="width:210px;flex:none;border:1px solid #EDEAFB;border-radius:14px;padding:18px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Step sequence</div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px">
+        <sc-for list="{{ steps }}" as="p" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:9px">
+            <div style="{{ p.dot }}">{{ p.n }}</div>
+            <div style="font:400 10px/1.4 'JetBrains Mono',monospace;color:#7A739A">{{ p.hex }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">03 · Type scale</h2>
+  <p style="font:400 13px/1.6 Poppins,sans-serif;color:#7A739A;margin:8px 0 0">Poppins only, four weights. Mobile scale below — the web scale runs larger. Negative tracking on display sizes is not optional; Poppins looks wrong without it.</p>
+
+  <div style="margin-top:16px;border:1px solid #EDEAFB;border-radius:14px;overflow:hidden">
+    <sc-for list="{{ typeScale }}" as="t" hint-placeholder-count="10">
+      <div style="display:flex;align-items:baseline;gap:18px;padding:13px 16px;border-bottom:1px solid #F3F0FF">
+        <div style="width:112px;flex:none;font:500 10px/1.4 'JetBrains Mono',monospace;color:#8B84A8">{{ t.spec }}</div>
+        <div style="width:96px;flex:none;font:600 10px/1.4 Poppins,sans-serif;color:#6C5CE7">{{ t.name }}</div>
+        <div style="{{ t.sample }}">{{ t.text }}</div>
+      </div>
+    </sc-for>
+    <div style="display:flex;align-items:baseline;gap:18px;padding:13px 16px;background:#F7F6FE">
+      <div style="width:112px;flex:none;font:500 10px/1.4 'JetBrains Mono',monospace;color:#8B84A8">+1 step · 500</div>
+      <div style="width:96px;flex:none;font:600 10px/1.4 Poppins,sans-serif;color:#6C5CE7">Target language</div>
+      <div style="font:500 17px/1.5 Poppins,sans-serif;color:#2A1F62">Ну наконе́ц-то! Соба́ка убежа́ла — нашли́?</div>
+    </div>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">04 · Shape, elevation, spacing</h2>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;break-inside:avoid">
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Radius</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:11px">
+        <sc-for list="{{ radii }}" as="r" hint-placeholder-count="7">
+          <div style="display:flex;justify-content:space-between;gap:8px;font:400 11px/1.5 Poppins,sans-serif;color:#7A739A"><span>{{ r.name }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#2A1F62">{{ r.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Elevation</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:11px">
+        <sc-for list="{{ shadows }}" as="e" hint-placeholder-count="4">
+          <div style="font:400 11px/1.5 Poppins,sans-serif;color:#7A739A"><span style="color:#2A1F62;font-weight:500">{{ e.name }}</span> · <span style="font-family:'JetBrains Mono',monospace;font-size:10px">{{ e.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="font:400 10px/1.5 Poppins,sans-serif;color:#8B84A8;margin-top:9px">Cards carry border <em>and</em> shadow.</div>
+    </div>
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Layout</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:11px">
+        <sc-for list="{{ layout }}" as="l" hint-placeholder-count="6">
+          <div style="display:flex;justify-content:space-between;gap:8px;font:400 11px/1.5 Poppins,sans-serif;color:#7A739A"><span>{{ l.name }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#2A1F62">{{ l.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px/1.5 Poppins,sans-serif;color:#6C5CE7;margin-top:9px">Scale: 4·6·9·13·16·20·26·34·44·56</div>
+    </div>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">05 · Components</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;break-inside:avoid">
+
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Buttons &amp; pills</div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-top:13px">
+        <div style="background:#FFC857;color:#3B2E00;font:600 14px/1 Poppins,sans-serif;padding:15px 24px;border-radius:100px;box-shadow:0 12px 28px -8px rgba(255,200,87,.8),0 0 0 5px rgba(255,200,87,.14)">Start speaking free</div>
+        <div style="background:#6C5CE7;color:#fff;font:600 13px/1 Poppins,sans-serif;padding:13px 20px;border-radius:100px;box-shadow:0 6px 18px -6px rgba(108,92,231,.6)">Start free</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:13px">
+        <div style="font:600 10px/1 Poppins,sans-serif;letter-spacing:.09em;text-transform:uppercase;background:#4CD964;color:#0C3D1B;padding:8px 12px;border-radius:100px">Open now</div>
+        <div style="font:600 10px/1 Poppins,sans-serif;letter-spacing:.09em;text-transform:uppercase;background:#FFC857;color:#3B2E00;padding:8px 12px;border-radius:100px">Next up</div>
+        <div style="font:600 10px/1 Poppins,sans-serif;letter-spacing:.09em;text-transform:uppercase;background:rgba(42,31,98,.82);color:#fff;padding:8px 12px;border-radius:100px">At B1</div>
+      </div>
+      <div style="font:400 11px/1.55 Poppins,sans-serif;color:#7A739A;margin-top:13px">Pill height 32, padding 8/12, label 11·600·.09em uppercase. Every tappable target is at least 44×44 regardless of visual size.</div>
+    </div>
+
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Character card</div>
+      <div style="background:#fff;border:1.5px solid #EDEAFB;border-radius:20px;padding:16px;margin-top:13px;box-shadow:0 12px 30px -20px rgba(60,45,140,.45)">
+        <div style="display:flex;align-items:center;gap:13px">
+          <div style="width:56px;height:56px;border-radius:100px;overflow:hidden;flex:none;background:#F3F0FF;box-shadow:0 0 0 3px #EDEAFB">
+            <img src="./assets/lingo-head-3c.png" alt="Valentina" style="width:56px;height:56px;display:block;object-fit:cover">
+          </div>
+          <div>
+            <div style="font:600 17px/1.2 Poppins,sans-serif;letter-spacing:-.01em">Valentina</div>
+            <div style="display:inline-flex;margin-top:6px;font:600 9px/1 Poppins,sans-serif;letter-spacing:.09em;text-transform:uppercase;background:#4CD964;color:#0C3D1B;padding:7px 10px;border-radius:100px">Open now</div>
+          </div>
+        </div>
+        <div style="font:500 12px/1.45 Poppins,sans-serif;color:#6C5CE7;margin-top:13px">Grandmother · 78, and slightly deaf</div>
+        <p style="font:400 12px/1.55 Poppins,sans-serif;color:#7A739A;margin:6px 0 0">Asks you to speak up, tells long stories about her cat, and remembers everything.</p>
+      </div>
+      <div style="font:400 11px/1.55 Poppins,sans-serif;color:#7A739A;margin-top:11px">Cards in a row are equal height on one baseline. Progression reads from the status pill — never from a vertical offset.</div>
+    </div>
+
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Level meter</div>
+      <div style="display:flex;align-items:center;gap:13px;margin-top:13px">
+        <div style="display:flex;align-items:center;justify-content:center;padding:0 13px;height:38px;background:#F3F0FF;border-radius:100px">{{ meter }}</div>
+        <div style="font:500 11px/1.3 Poppins,sans-serif;color:#7A739A">hold to talk</div>
+      </div>
+      <div style="font:400 11px/1.55 Poppins,sans-serif;color:#7A739A;margin-top:13px">3px bars, 2px radius, 26px tall, 4px gap. Every third bar uses accent, the rest <span style="font-family:'JetBrains Mono',monospace;font-size:10px">#C9C2F5</span> / <span style="font-family:'JetBrains Mono',monospace;font-size:10px">#4A427F</span>. Duration <span style="font-family:'JetBrains Mono',monospace;font-size:10px">0.62 + (i%4)×0.16s</span>, delay <span style="font-family:'JetBrains Mono',monospace;font-size:10px">i×0.07s</span>.</div>
+      <div style="font:500 11px/1.55 Poppins,sans-serif;color:#2A1F62;margin-top:9px">The mic is always open — the meter is a state display, not a button. The only control is <em>hold to think</em>, which mutes while held.</div>
+    </div>
+
+    <div style="border:1px solid #EDEAFB;border-radius:14px;padding:16px">
+      <div style="font:600 9px/1 Poppins,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8B84A8">Transcript</div>
+      <div style="margin-top:13px;display:flex;flex-direction:column;gap:9px">
+        <div style="align-self:flex-start;max-width:84%;background:#F3F0FF;border-radius:20px 20px 20px 6px;padding:11px 13px;font:500 12px/1.45 Poppins,sans-serif;color:#2A1F62">«Два дня иска́ли! И кто её нашёл?»</div>
+        <div style="align-self:flex-end;max-width:84%;background:#6C5CE7;border-radius:20px 20px 6px 20px;padding:11px 13px;font:500 12px/1.45 Poppins,sans-serif;color:#fff">Сосе́д нашёл её в гараже́.</div>
+      </div>
+      <div style="font:400 11px/1.55 Poppins,sans-serif;color:#7A739A;margin-top:13px">Fixed-height turn window, turns anchored to the bottom, top fade mask over 26px. Fixed height is required — wrapping must not resize the container between turns.</div>
+    </div>
+  </div>
+
+  <h2 style="font:600 11px/1 Poppins,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6C5CE7;margin:30px 0 0">06 · Product rules with visual consequences</h2>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin-top:14px;break-inside:avoid">
+    <sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+      <div style="border-left:3px solid #FF6B9D;background:#F7F6FE;border-radius:0 10px 10px 0;padding:12px 14px">
+        <div style="font:600 12px/1.35 Poppins,sans-serif;color:#2A1F62">{{ r.title }}</div>
+        <div style="font:400 11px/1.55 Poppins,sans-serif;color:#7A739A;margin-top:4px">{{ r.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top:26px;border-top:1px solid #EDEAFB;padding-top:14px;display:flex;justify-content:space-between;gap:20px">
+    <div style="font:400 10px/1.6 Poppins,sans-serif;color:#8B84A8;max-width:60%">Characters ship as <strong style="font-weight:600">Rive</strong> (idle · blink · listening · speaking · surprised · smile). PNG portraits in <span style="font-family:'JetBrains Mono',monospace;font-size:10px">assets/</span> are ≤288px — request higher-resolution exports before shipping; they will not hold at 3×.</div>
+    <div style="font:400 10px/1.6 Poppins,sans-serif;color:#8B84A8;text-align:right">LingoAI · design handoff v1<br>Source: Landing Page - LingoAI</div>
+  </div>
+
+</doc-page>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const SEMANTIC = [
+  ['page', '#FFFFFF', '#131129', 'App background'],
+  ['band', '#F7F6FE', '#191634', 'Grouped sections'],
+  ['card', '#FFFFFF', '#211E40', 'Cards, sheets, rows'],
+  ['tint', '#F3F0FF', '#2A2650', 'Chips, avatar rings'],
+  ['line', '#EDEAFB', '#332E5F', 'Borders, dividers'],
+  ['ink', '#2A1F62', '#F2F0FF', 'Headings'],
+  ['body', '#7A739A', '#ADA6CC', 'Body copy'],
+  ['muted', '#8B84A8', '#928BB4', 'Captions, meta'],
+  ['nav', '#5B5478', '#B7B1D4', 'Tabs, icon strokes'],
+  ['accent', '#6C5CE7', '#A99BFF', 'Brand, active'],
+  ['accentDeep', '#4A3FA8', '#C9BEFF', 'Accent on tint'],
+  ['shadow', 'rgba(60,45,140,.45)', 'rgba(0,0,0,.55)', 'Elevation color'],
+];
+
+const BRAND = [
+  ['Violet 600', '#6C5CE7', '#fff', 'Aa'],
+  ['Violet 700', '#5546C8', '#fff', 'Aa'],
+  ['Violet 500', '#8A5CE7', '#fff', 'Aa'],
+  ['Yellow', '#FFC857', '#3B2E00', 'Aa'],
+  ['Yellow pressed', '#F5B935', '#3B2E00', 'Aa'],
+  ['Green', '#4CD964', '#0C3D1B', 'Aa'],
+  ['Blue', '#4490E2', '#fff', 'Aa'],
+  ['Cyan', '#26C6DA', '#0C3D1B', 'Aa'],
+  ['Pink', '#FF6B9D', '#fff', 'Aa'],
+  ['On-yellow', '#3B2E00', '#FFC857', 'Aa'],
+  ['On-green', '#0C3D1B', '#4CD964', 'Aa'],
+  ['Meter dim', '#C9C2F5', '#4A3FA8', 'Aa'],
+];
+
+const TYPE = [
+  ['34 / 1.08 · 700', '-0.035em', 'Display', 'Open the world.', 34, 1.08, 700, '-0.035em'],
+  ['27 / 1.15 · 700', '-0.03em', 'Screen title', 'Who you\u2019ll meet', 27, 1.15, 700, '-0.03em'],
+  ['21 / 1.2 · 600', '-0.01em', 'Section', 'Today\u2019s conversation', 21, 1.2, 600, '-0.01em'],
+  ['19 / 1.25 · 600', '-0.01em', 'Card title', 'Valentina', 19, 1.25, 600, '-0.01em'],
+  ['16 / 1.6 · 400', '0', 'Body', 'Eight minutes a day with someone who remembers you.', 16, 1.6, 400, '0'],
+  ['16 / 1.55 · 500', '0', 'Body emphasis', 'She asked about your dog again.', 16, 1.55, 500, '0'],
+  ['14 / 1.45 · 500', '0', 'Role / meta', 'Grandmother \u00b7 78, and slightly deaf', 14, 1.45, 500, '0'],
+  ['13 / 1.55 · 400', '0', 'Caption', 'First week free \u00b7 no streaks \u00b7 cancel in two taps', 13, 1.55, 400, '0'],
+  ['11 / 1 · 600 \u00b7 .09em', 'UPPER', 'Eyebrow', 'WHO YOU\u2019LL MEET', 11, 1, 600, '0.09em'],
+  ['11 / 1.3 · 500', '0', 'Micro', 'hold to talk', 11, 1.3, 500, '0'],
+];
+
+const BARS = [.34,.62,.28,1,.46,.74,.36,.9,.52,.3,.68,.42];
+
+class Component extends DCLogic {
+  renderVals() {
+    const ce = React.createElement;
+    const chip = (bg, radius) => ({ width: '17px', height: '30px', background: bg, borderRadius: radius });
+
+    return {
+      semantic: SEMANTIC.map(([name, l, d, use]) => ({
+        name, use, pair: l + ' / ' + d,
+        lightChip: chip(l, '7px 0 0 7px'),
+        darkChip: chip(d, '0 7px 7px 0'),
+      })),
+
+      brand: BRAND.map(([name, hex, fg, sample]) => ({
+        name, hex, sample,
+        swatch: { height: '46px', background: hex, color: fg, display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          font: '600 15px/1 Poppins, sans-serif' },
+      })),
+
+      steps: ['#6C5CE7', '#4490E2', '#26C6DA', '#4CD964'].map((hex, i) => ({
+        hex, n: i + 1,
+        dot: { width: '22px', height: '22px', borderRadius: '100px', background: hex, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none',
+          font: '600 11px/1 Poppins, sans-serif' },
+      })),
+
+      typeScale: TYPE.map(([spec, tr, name, text, size, lh, w, ls]) => ({
+        spec: spec + (tr === 'UPPER' ? '' : tr === '0' ? '' : ' ' + tr),
+        name, text,
+        sample: { font: w + ' ' + size + 'px/' + lh + ' Poppins, sans-serif', letterSpacing: ls,
+          color: '#2A1F62', flex: 1, minWidth: 0,
+          textTransform: tr === 'UPPER' ? 'uppercase' : 'none' },
+      })),
+
+      radii: [
+        { name: 'Pill / button', v: '999px' },
+        { name: 'Card', v: '20px' },
+        { name: 'Sheet', v: '28px top' },
+        { name: 'Immersive panel', v: '26px' },
+        { name: 'Media', v: '14px' },
+        { name: 'App icon tile', v: '11px' },
+        { name: 'Bubble (them)', v: '20/20/20/6' },
+        { name: 'Bubble (you)', v: '20/20/6/20' },
+      ],
+
+      shadows: [
+        { name: 'Card rest', v: '0 12px 30px -20px {shadow}' },
+        { name: 'Card raised', v: '0 18px 44px -22px {shadow}' },
+        { name: 'CTA', v: '0 12px 28px -8px rgba(255,200,87,.8)' },
+        { name: 'Brand button', v: '0 6px 18px -6px rgba(108,92,231,.6)' },
+      ],
+
+      layout: [
+        { name: 'Screen padding', v: '20px' },
+        { name: 'Section rhythm', v: '34px' },
+        { name: 'Band gap', v: '56px' },
+        { name: 'Card padding', v: '20/18' },
+        { name: 'List gap', v: '13px' },
+        { name: 'Min touch target', v: '44px' },
+        { name: 'Avatars', v: '96 / 56 / 40' },
+      ],
+
+      rules: [
+        { title: 'No streaks, no scores, no XP', body: 'Never add a counter, ring or bar that implies a grade. Progression shows only as which characters are unlocked.' },
+        { title: 'She remembers', body: 'Callbacks to earlier sessions are a first-class UI element, not a nicety.' },
+        { title: 'Imperfect hearing is a feature', body: '\u201cSpeak up\u201d and \u201csay that again\u201d are normal states needing real designs \u2014 not error styling.' },
+        { title: 'Two-tap cancel', body: 'Any subscription surface must reach cancellation in two taps.' },
+      ],
+
+      meter: ce('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', height: '26px' } },
+        BARS.map((h, i) => ce('div', { key: i, style: {
+          width: '3px', borderRadius: '2px', flex: 'none', height: Math.round(26 * h) + 'px',
+          background: i % 3 === 0 ? '#6C5CE7' : '#C9C2F5',
+          animation: 'lg-bar ' + (0.62 + (i % 4) * 0.16).toFixed(2) + 's ease-in-out ' + (i * 0.07).toFixed(2) + 's infinite',
+        } }))),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

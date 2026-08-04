@@ -46,7 +46,7 @@ export function BenchmarkTrend({ entries, isLoading }: BenchmarkTrendProps) {
             index === entries.length - 1 ? '' : 'border-b border-ink/7'
           }`}
         >
-          <Text className="font-serif text-[15px] text-ink/70">{formatMonthKey(entry.monthKey)}</Text>
+          <Text className="font-sans-medium text-[15px] text-ink/70">{formatMonthKey(entry.monthKey)}</Text>
           <Text className="font-mono-medium text-[13px] text-ink">
             {entry.correctCount}
             {' / '}

@@ -29,7 +29,7 @@ export function SuggestionChips({ onPress }: SuggestionChipsProps) {
           style={{ opacity: chipOpacityLadder[index] }}
           className="rounded-full border border-ink/18 bg-white px-[14px] py-[9px]"
         >
-          <Text className="font-serif text-[15px] text-ink">{label}</Text>
+          <Text className="font-cyrillic-medium text-[15px] text-ink">{label}</Text>
         </Pressable>
       ))}
     </View>

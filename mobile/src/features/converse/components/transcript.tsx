@@ -25,11 +25,11 @@ export function HerTurn({ ru, en, translit, translitEnabled, revealed, onToggleR
   return (
     <Pressable onPress={onToggleReveal} accessibilityRole="button" accessibilityLabel="toggle translation">
       <Text
-        className="font-serif text-[20px] leading-[30px] text-ink"
+        className="font-cyrillic-medium text-[17px] leading-[25.5px] text-ink"
         style={{
           textDecorationLine: 'underline',
           textDecorationStyle: 'dotted',
-          textDecorationColor: 'rgba(160,84,58,0.4)',
+          textDecorationColor: 'rgba(108,92,231,0.4)',
         }}
       >
         {ru}
@@ -44,7 +44,7 @@ export function HerTurn({ ru, en, translit, translitEnabled, revealed, onToggleR
 export function LearnerTurn({ ru }: { ru: string }) {
   return (
     <View className="flex-row justify-end">
-      <Text className="max-w-[78%] text-right font-serif text-[16px] leading-[23px] text-ink/52">
+      <Text className="font-cyrillic-medium max-w-[78%] text-right text-[16px] leading-[24.8px] text-ink/52">
         {ru}
       </Text>
     </View>
@@ -73,7 +73,7 @@ export function ThinkingFiller() {
   }, [opacity]);
 
   return (
-    <Animated.Text className="font-serif text-[20px] leading-[30px] text-ink/35" style={{ opacity }}>
+    <Animated.Text className="font-cyrillic-medium text-[17px] leading-[25.5px] text-ink/35" style={{ opacity }}>
       …
     </Animated.Text>
   );

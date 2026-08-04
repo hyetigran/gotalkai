@@ -67,7 +67,7 @@ export function FrequencyBackground({ active }: { active: boolean }) {
   return (
     <View
       pointerEvents="none"
-      className="items-center justify-center overflow-hidden bg-paper"
+      className="items-center justify-center overflow-hidden bg-page"
       style={StyleSheet.absoluteFillObject}
     >
       <View className="flex-row items-center gap-[4px]">

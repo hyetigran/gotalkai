@@ -46,7 +46,7 @@ export function HoldToThinkButton({ holding, onHoldOn, onHoldOff }: HoldToThinkB
         }`}
         style={holding ? undefined : shadows.holdToThinkRest}
       >
-        <Text className={`font-serif text-[16px] ${holding ? 'text-paper' : 'text-ink/75'}`}>
+        <Text className={`font-sans-semibold text-[16px] ${holding ? 'text-page' : 'text-ink/75'}`}>
           hold to think
         </Text>
       </Pressable>

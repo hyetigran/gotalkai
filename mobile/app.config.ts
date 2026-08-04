@@ -32,10 +32,11 @@ const appIconBadgeConfig: AppIconBadgeConfig = {
   ],
 };
 
-// Registered as one family per exact style (not weight-grouped) so the iOS
-// PostScript name and the Android fontFamily name are identical strings —
-// no per-platform font-weight resolution to get wrong. Cyrillic + stress-mark
-// (U+0301) coverage verified against the source .ttf files — see
+// Registered as one family per exact weight (not weight-grouped for the
+// LingoAI-added fonts) so the iOS PostScript name and the Android
+// fontFamily name are identical strings — no per-platform font-weight
+// resolution to get wrong. Cyrillic + stress-mark (U+0301) coverage
+// verified against the source .ttf files — see
 // src/components/ui/design-tokens.test.ts. File paths come from
 // `fontManifest`, the single source of truth also used by that test.
 const expoFontPluginConfig: [string, Record<string, unknown>] = [

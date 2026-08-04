@@ -65,7 +65,7 @@ export function BenchmarkTakingFlow({
         accessibilityLabel="Submit"
         className={`items-center rounded-[16px] py-[18px] ${allAnswered ? 'bg-accent' : 'border border-ink/22'}`}
       >
-        <Text className={`font-serif text-[17px] ${allAnswered ? 'text-paper' : 'text-ink/40'}`}>
+        <Text className={`font-sans-semibold text-[17px] ${allAnswered ? 'text-page' : 'text-ink/40'}`}>
           {isSubmitPending ? 'Submitting…' : 'Submit'}
         </Text>
       </Pressable>

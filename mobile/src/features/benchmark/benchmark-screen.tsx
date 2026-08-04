@@ -14,7 +14,7 @@ import { BenchmarkTrend } from './components/benchmark-trend';
  * The monthly comprehension benchmark screen (ticket #35, PRD §6.3) — no
  * mockup exists for this ("not designed yet" per the ticket), so layout
  * follows the design tokens/visual language established elsewhere
- * (`bg-paper-stepped` for "outside the daily loop", matching
+ * (`bg-band` for "outside the daily loop", matching
  * Settings/Tomorrow) rather than a specific handoff. See docs/adr/0018
  * for the design reasoning (multiple-choice scoring, no chart, why the
  * seeded content is a disclosed placeholder rather than real "authentic"
@@ -75,12 +75,12 @@ export function BenchmarkScreen() {
   }, [benchmarkSet, learnerId, allAnswered, answers, submitAttempt]);
 
   return (
-    <View className="flex-1 bg-paper-stepped px-[22px] pt-[60px] pb-[44px]">
+    <View className="flex-1 bg-band px-[22px] pt-[60px] pb-[44px]">
       <View className="flex-row items-center justify-between">
         <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="back">
           <Text className="text-[15px] text-accent">‹</Text>
         </Pressable>
-        <Text className="font-serif text-[13px] text-ink/60">Monthly benchmark</Text>
+        <Text className="font-sans-semibold text-[13px] text-ink/60">Monthly benchmark</Text>
         <Pressable
           onPress={() => setViewMode(mode => (mode === 'take' ? 'history' : 'take'))}
           accessibilityRole="button"
