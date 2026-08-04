@@ -2,106 +2,79 @@ import Image from "next/image";
 
 const CAST = [
   {
-    name: "Валентина",
-    role: "Grandmother-in-law · retired librarian",
-    badge: "open now",
-    badgeTone: "open" as const,
-    image: "/assets/cast-rosa.png",
-    bg: "#F0E4E4",
-    border: "solid",
-    mute: false,
+    name: "Valentina",
+    image: "/assets/lingo-head-3c.png",
+    badge: "Open now",
+    badgeBg: "#4CD964",
+    badgeColor: "#0C3D1B",
+    tagline: "Grandmother · 78, and slightly deaf",
+    body: "Asks you to speak up, tells long stories about her cat, and remembers every single thing you’ve told her.",
   },
   {
-    name: "Елена Николаевна",
-    role: "Mother-in-law · school administrator",
-    badge: "next up",
-    badgeTone: "locked" as const,
-    image: "/assets/cast-maria.png",
-    bg: "#DDE5DC",
-    border: "dashed",
-    mute: false,
+    name: "Elena",
+    image: "/assets/lingo-head-1c.png",
+    badge: "Next up",
+    badgeBg: "#FFC857",
+    badgeColor: "#3B2E00",
+    tagline: "Barista · warm, patient, nosy",
+    body: "Talks a little faster and repeats herself less. Unlocks once Valentina stops having to ask twice.",
   },
   {
-    name: "Маша",
-    role: "Cousin-in-law · barista, 26",
-    badge: "at B1",
-    badgeTone: "locked" as const,
-    image: "/assets/cast-sofia.png",
-    bg: "#F4DCC4",
-    border: "solid",
-    mute: true,
-  },
-  {
-    name: "Дима",
-    role: "Taxi driver · Ярославль",
-    badge: "at B2",
-    badgeTone: "locked" as const,
-    image: "/assets/cast-marco.png",
-    bg: "#F5DFA8",
-    border: "solid",
-    mute: true,
-  },
-  {
-    name: "Ирина В.",
-    role: "Clinic receptionist · formal, in a hurry",
-    badge: "at B2",
-    badgeTone: "locked" as const,
-    image: "/assets/cast-maya.png",
-    bg: "#CFE2E6",
-    border: "solid",
-    mute: true,
+    name: "Marco",
+    image: "/assets/lingo-head-2c.png",
+    badge: "At B1",
+    badgeBg: "rgba(42,31,98,0.82)",
+    badgeColor: "#ffffff",
+    tagline: "Taxi driver · fast, funny, no repeats",
+    body: "Talks at traffic speed with the meter running, and will not slow down for anybody.",
   },
 ] as const;
 
 export function Cast() {
   return (
-    <section id="cast" className="bg-paper-stepped">
+    <section id="cast" className="bg-band py-[76px] md:py-[84px]">
       <div className="mx-auto max-w-[1280px] px-5 md:px-14">
-        <div className="pt-14 pb-6 md:pt-16 md:pb-8">
-          <p className="font-mono text-[11px] font-medium tracking-[0.16em] text-ink/64 uppercase">
-            Who you&apos;ll meet
-          </p>
-          <h2 className="mt-5 max-w-[780px] text-balance font-serif text-[34px] leading-[1.12] tracking-[-0.02em] md:text-[46px]">
-            A whole family, opening one at a time as you get better.
-          </h2>
-        </div>
+        <p className="font-sans text-[11px] font-semibold tracking-[0.14em] text-accent uppercase">
+          Who you&apos;ll meet
+        </p>
+        <h2 className="mt-[18px] max-w-[660px] text-balance font-sans text-[34px] leading-[1.15] font-bold tracking-[-0.03em] md:text-[42px]">
+          A whole cast, unlocking one at a time as you get better.
+        </h2>
 
-        <div className="grid gap-[18px] pb-14 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 md:pb-16">
+        <div className="mt-10 grid items-stretch gap-[22px] sm:grid-cols-2 lg:grid-cols-3">
           {CAST.map((person) => (
             <article
               key={person.name}
-              className={`overflow-hidden rounded-[20px] bg-card ${
-                person.border === "dashed"
-                  ? "border border-dashed border-accent/50"
-                  : "border border-ink/11 shadow-[0_12px_30px_-18px_rgba(35,31,24,0.28)]"
-              }`}
+              className="flex flex-col rounded-[26px] border-[1.5px] border-line bg-card px-[26px] pt-7 pb-[30px] shadow-[0_18px_44px_-26px_var(--sh)]"
             >
-              <div className="relative" style={{ background: person.bg }}>
-                <Image
-                  src={person.image}
-                  alt={person.name}
-                  width={480}
-                  height={600}
-                  className={`h-auto w-full ${person.mute ? "saturate-[0.6]" : ""}`}
-                />
-                <span
-                  className={`absolute bottom-3 left-3 rounded-full px-[10px] py-[7px] font-mono text-[9px] font-medium tracking-[0.1em] uppercase ${
-                    person.badgeTone === "open"
-                      ? "bg-accent text-paper"
-                      : "bg-ink/78 text-paper"
-                  }`}
-                >
-                  {person.badge}
-                </span>
+              <div className="flex items-center gap-4">
+                <div className="size-24 shrink-0 overflow-hidden rounded-full bg-tint shadow-[0_0_0_3px_var(--line)]">
+                  <Image
+                    src={person.image}
+                    alt={person.name}
+                    width={96}
+                    height={96}
+                    className="size-24 object-cover"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-sans text-[21px] leading-[1.2] font-semibold tracking-[-0.01em]">
+                    {person.name}
+                  </p>
+                  <span
+                    className="mt-[9px] inline-flex rounded-full px-3 py-2 font-sans text-[10px] font-semibold tracking-[0.09em] uppercase"
+                    style={{ background: person.badgeBg, color: person.badgeColor }}
+                  >
+                    {person.badge}
+                  </span>
+                </div>
               </div>
-              <div className="px-[18px] pt-5 pb-[22px]">
-                <h3 className="font-serif text-[19px] leading-[1.25]">
-                  {person.name}
-                </h3>
-                <p className="mt-[6px] text-pretty font-serif text-[14px] leading-[1.4] text-ink/64 italic">
-                  {person.role}
-                </p>
-              </div>
+              <p className="mt-5 font-sans text-[14px] leading-[1.45] font-medium text-accent">
+                {person.tagline}
+              </p>
+              <p className="mt-[9px] text-pretty font-sans text-[14px] leading-[1.6] text-body">
+                {person.body}
+              </p>
             </article>
           ))}
         </div>

@@ -1,8 +1,8 @@
 import { Cast } from "@/components/cast";
-import { Expressions } from "@/components/expressions";
 import { Hero } from "@/components/hero";
 import { HowItWorks } from "@/components/how-it-works";
 import { Languages } from "@/components/languages";
+import { OneRealDecision } from "@/components/one-real-decision";
 import { Pillars } from "@/components/pillars";
 import { Pricing } from "@/components/pricing";
 import { SiteFooter } from "@/components/site-footer";
@@ -12,7 +12,7 @@ import { Wall } from "@/components/wall";
 export default function HomePage() {
   return (
     <div id="top">
-      <div className="mx-auto max-w-[1280px] px-5 md:px-14">
+      <div className="mx-auto max-w-[1240px] px-5 md:px-12">
         <SiteHeader />
         <Hero />
         <Languages />
@@ -20,10 +20,10 @@ export default function HomePage() {
       </div>
 
       <Cast />
-      <Expressions />
-      <HowItWorks />
 
-      <div className="mx-auto max-w-[1280px]">
+      <div className="mx-auto max-w-[1240px] px-5 md:px-12">
+        <OneRealDecision />
+        <HowItWorks />
         <Pillars />
         <Pricing />
         <SiteFooter />

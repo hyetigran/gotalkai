@@ -1,38 +1,43 @@
+import Image from "next/image";
+import { DisabledCta } from "./disabled-cta";
+import { ThemeToggle } from "./theme-toggle";
+
 export function SiteHeader() {
   return (
-    <header className="flex items-center justify-between pt-[28px] md:pt-[34px]">
-      <a href="#top" className="font-serif text-[20px] tracking-[-0.01em] text-ink">
-        Talk AI<span className="text-accent">.</span>
+    <header className="flex items-center justify-between py-[26px] md:py-[34px]">
+      <a href="#top" className="flex items-center gap-[11px]">
+        <Image
+          src="/assets/lingo-icon.png"
+          alt="LingoAI"
+          width={40}
+          height={40}
+          className="rounded-[11px]"
+        />
+        <span className="font-sans text-[22px] font-bold tracking-[-0.02em] text-ink">
+          LingoAI
+        </span>
       </a>
       <nav className="hidden items-center gap-8 md:flex">
-        <a href="#cast" className="font-sans text-[14px] text-ink/64 hover:text-accent">
+        <a href="#cast" className="font-sans text-[15px] font-medium text-nav hover:text-accent">
           Who you&apos;ll meet
         </a>
-        <a href="#how" className="font-sans text-[14px] text-ink/64 hover:text-accent">
+        <a href="#how" className="font-sans text-[15px] font-medium text-nav hover:text-accent">
           How it works
         </a>
-        <a href="#price" className="font-sans text-[14px] text-ink/64 hover:text-accent">
-          Price
+        <a href="#price" className="font-sans text-[15px] font-medium text-nav hover:text-accent">
+          Pricing
         </a>
-        <button
-          type="button"
-          disabled
-          aria-disabled="true"
-          title="Coming soon"
-          className="cursor-not-allowed rounded-xl bg-accent px-5 py-[13px] font-serif text-[15px] text-paper opacity-55 shadow-[0_2px_0_rgba(35,31,24,0.14)]"
-        >
+        <ThemeToggle />
+        <DisabledCta className="px-5 py-[13px] text-[15px]">
           Start free
-        </button>
+        </DisabledCta>
       </nav>
-      <button
-        type="button"
-        disabled
-        aria-disabled="true"
-        title="Coming soon"
-        className="cursor-not-allowed rounded-xl bg-accent px-4 py-3 font-serif text-[14px] text-paper opacity-55 md:hidden"
-      >
-        Start free
-      </button>
+      <div className="flex items-center gap-3 md:hidden">
+        <ThemeToggle />
+        <DisabledCta className="px-4 py-3 text-[14px]">
+          Start free
+        </DisabledCta>
+      </div>
     </header>
   );
 }

@@ -1,19 +1,11 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, PT_Serif } from "next/font/google";
+import { Poppins } from "next/font/google";
 import "./globals.css";
 
-const ptSerif = PT_Serif({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-pt-serif",
-  display: "swap",
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500"],
-  variable: "--font-ibm-plex-mono",
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-poppins",
   display: "swap",
 });
 
@@ -23,29 +15,44 @@ const siteUrl =
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default:
-      "Talk AI — for people who already have the words and still can't speak",
-    template: "%s · Talk AI",
+    default: "LingoAI — learn languages. Open the world.",
+    template: "%s · LingoAI",
   },
   description:
-    "Eight minutes a day on the phone with someone who remembers you. Russian speaking practice with a persistent conversation partner — not flashcards, not streaks.",
+    "Eight minutes a day on the phone with someone who remembers you. Real speaking practice with a persistent conversation partner — not flashcards, not streaks.",
   openGraph: {
     type: "website",
     locale: "en_US",
     url: siteUrl,
-    siteName: "Talk AI",
-    title: "Talk AI — say something out loud",
+    siteName: "LingoAI",
+    title: "LingoAI — learn languages. Open the world.",
     description:
-      "For people who already have the words and still can't speak. Voice conversation with Валентина Сергеевна — a patient partner who remembers you.",
+      "Eight minutes a day on the phone with someone who remembers you. Real speaking practice with a persistent conversation partner — not flashcards, not streaks.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Talk AI — say something out loud",
+    title: "LingoAI — learn languages. Open the world.",
     description:
-      "For people who already have the words and still can't speak. Russian speaking practice with a real conversation partner.",
+      "Eight minutes a day on the phone with someone who remembers you. Real speaking practice with a persistent conversation partner — not flashcards, not streaks.",
   },
   robots: { index: true, follow: true },
 };
+
+/**
+ * Runs before paint, outside React — sets `data-theme` from a saved
+ * preference or `prefers-color-scheme` so the page never flashes the
+ * wrong theme on load. `ThemeToggle` (client component) reads this same
+ * attribute on mount rather than defaulting to light itself.
+ */
+const themeInitScript = `
+(function () {
+  try {
+    var saved = localStorage.getItem('lingoai-theme');
+    var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (dark) document.documentElement.dataset.theme = 'dark';
+  } catch (e) {}
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -55,9 +62,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${ptSerif.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${poppins.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full bg-paper text-ink">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="min-h-full bg-page text-ink">{children}</body>
     </html>
   );
 }
