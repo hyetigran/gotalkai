@@ -14,9 +14,9 @@ type PortraitHatchProps = {
  * stripeWidth stripeWidth*2)`). "Replace with the persona portrait image"
  * per the mockup — this is deliberately a placeholder, not final art.
  *
- * Shared between the Open screen's portrait area (`colors.portraitHatch`,
- * 7px) and the Address book's discs (`colors.addressBookDiscHatch`, 6px,
- * plus a faint neutral variant for next/sealed entries).
+ * Used by the Open screen's portrait area (`colors.portraitHatch`, 7px).
+ * The Address book's discs used a 6px variant of this same texture before
+ * they had real portraits (`CAST_PORTRAITS`, cast-assets.ts) to show.
  */
 export function PortraitHatch({ stop1, stop2, stripeWidth }: PortraitHatchProps) {
   const tile = stripeWidth * 2 * Math.SQRT2;

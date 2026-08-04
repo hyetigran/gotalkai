@@ -22,7 +22,21 @@ function statusFor(index: number): EntryStatus {
  */
 export function AddressBookScreen() {
   const router = useRouter();
-  const [expandedIndex, setExpandedIndex] = React.useState<number | null>(REACHED_COUNT - 1);
+  // A set, not a single `number | null` — expanding one entry used to
+  // collapse whichever other one was open, so both animated at once and
+  // the list visibly jumped. Each entry now expands/collapses on its own.
+  const [expandedIndices, setExpandedIndices] = React.useState<ReadonlySet<number>>(() => new Set([REACHED_COUNT - 1]));
+
+  const toggleExpanded = React.useCallback((index: number) => {
+    setExpandedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index))
+        next.delete(index);
+      else
+        next.add(index);
+      return next;
+    });
+  }, []);
 
   return (
     <View className="flex-1 bg-paper px-[22px] pt-[60px] pb-[44px]">
@@ -44,8 +58,8 @@ export function AddressBookScreen() {
             key={member.name}
             member={member}
             status={statusFor(index)}
-            expanded={expandedIndex === index}
-            onToggle={() => setExpandedIndex(prev => (prev === index ? null : index))}
+            expanded={expandedIndices.has(index)}
+            onToggle={() => toggleExpanded(index)}
             onTalkPress={() => router.push('/converse')}
             isFirst={index === 0}
             isLast={index === CAST_FIXTURE.length - 1}

@@ -11,11 +11,15 @@
  * unless the field names say what they mean.
  */
 
+import type { CastId } from '../cast/cast-assets';
+
 export type EntryStatus = 'reached' | 'next' | 'sealed';
 
 export type CastMember = {
   name: string;
   initial: string;
+  /** Keys into `CAST_PORTRAITS` (cast-assets.ts) for this member's real flat portrait. */
+  castId: CastId;
   level: string;
   role: string;
   /** The register description shown in the expanded body's portrait-slot row. */
@@ -36,8 +40,9 @@ export const CONVERSATIONS_PER_LEVEL = 12;
 
 export const CAST_FIXTURE: readonly CastMember[] = [
   {
-    name: 'Валентина',
-    initial: 'ВС',
+    name: 'Valentina',
+    initial: 'VS',
+    castId: 'valentina',
     level: 'A2',
     role: 'Grandmother-in-law · retired librarian',
     trains: 'ты from her, вы from you. Storytelling, backchanneling, domestic register.',
@@ -45,8 +50,9 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 22, transactionalRelationalPercent: 64 },
   },
   {
-    name: 'Елена Николаевна',
-    initial: 'ЕН',
+    name: 'Elena Nikolaevna',
+    initial: 'EN',
+    castId: 'elena',
     level: 'B1',
     role: 'Mother-in-law · school administrator',
     trains: 'A younger relative who talks fast and does not slow down for you. Idiom, elision.',
@@ -54,8 +60,9 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 50, transactionalRelationalPercent: 71 },
   },
   {
-    name: 'Маша',
-    initial: 'М',
+    name: 'Masha',
+    initial: 'M',
+    castId: 'masha',
     level: 'B1',
     role: 'Cousin-in-law · barista, 26',
     trains: 'Partner’s cousin, your age. Slang, teasing, texting register spoken aloud.',
@@ -63,8 +70,9 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 73, transactionalRelationalPercent: 48 },
   },
   {
-    name: 'Дима',
-    initial: 'Д',
+    name: 'Dima',
+    initial: 'D',
+    castId: 'dima',
     level: 'B2',
     role: 'Taxi driver · Yaroslavl',
     trains: 'Taxi driver. ты both ways, transactional pressure, numbers and directions under time.',
@@ -72,8 +80,9 @@ export const CAST_FIXTURE: readonly CastMember[] = [
     registerAxes: { formalCasualPercent: 63, transactionalRelationalPercent: 24 },
   },
   {
-    name: 'Ирина В.',
-    initial: 'ИВ',
+    name: 'Irina V.',
+    initial: 'IV',
+    castId: 'irina',
     level: 'B2',
     role: 'Clinic receptionist',
     trains: 'Clinic receptionist. вы both ways, forms and appointments, no patience for hesitation.',

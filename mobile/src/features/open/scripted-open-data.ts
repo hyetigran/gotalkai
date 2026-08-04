@@ -11,7 +11,7 @@
 export const SCRIPTED_OPEN_DATA = {
   openDay: 'Tuesday · 8 min',
   settingsLink: 'Settings',
-  personaName: 'Валентина Сергеевна',
+  personaName: 'Valentina Sergeevna',
   personaMeta: '78 · Yaroslavl · retired librarian',
   callbackLine: '«Ну наконе́ц-то ты позвони́л! Сади́сь, я чай поста́вила. Как вы́ходные?»',
   scenarioLine: 'Tea on the porch · she’ll ask how your weekend was',

@@ -121,7 +121,7 @@ function ConverseHeader({ clock, onBack, onEnd }: ConverseHeaderProps) {
       >
         <Text className="text-[15px] text-accent">‹</Text>
       </Pressable>
-      <Text className="font-serif text-[13px] text-ink/60">Валентина Сергеевна</Text>
+      <Text className="font-serif text-[13px] text-ink/60">Valentina Sergeevna</Text>
       <View className="flex-row items-center gap-[12px]">
         <Text className="font-mono-medium text-[10px] text-ink/40">{clock}</Text>
         <Pressable onPress={onEnd} hitSlop={{ top: 20, bottom: 20, left: 12, right: 20 }} accessibilityRole="button" accessibilityLabel="end">
