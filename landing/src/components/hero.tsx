@@ -102,14 +102,14 @@ export function Hero() {
               <p className="font-sans text-[11px] font-semibold tracking-[0.08em] text-accent uppercase">
                 Valentina · on the line
               </p>
-              <p className="mt-[9px] text-pretty font-sans text-[15px] leading-[1.5] font-medium text-ink">
-                «Ну наконе́ц-то! Ты же говори́л, соба́ка убежа́ла — нашли́?»
+              <p
+                key={showTranslation ? "en" : "ru"}
+                className="animate-lg-slide mt-[9px] text-pretty font-sans text-[15px] leading-[1.5] font-medium text-ink"
+              >
+                {showTranslation
+                  ? "Finally! You said the dog had run off — did you find her?"
+                  : "«Ну наконе́ц-то! Ты же говори́л, соба́ка убежа́ла — нашли́?»"}
               </p>
-              {showTranslation ? (
-                <p className="animate-lg-slide mt-[10px] text-pretty font-sans text-[13px] leading-[1.5] text-body">
-                  Finally! You said the dog had run off — did you find her?
-                </p>
-              ) : null}
               <div className="mt-[14px] flex items-center gap-[10px]">
                 <div className="flex h-[38px] items-center justify-center rounded-full bg-tint px-[13px]">
                   <MicMeter height={26} />
