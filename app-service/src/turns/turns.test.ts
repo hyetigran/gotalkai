@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 import { applySchema } from '../db/schema';
-import { markTurnRevealed, recordInterruption, recordTurn } from './turns';
+import { getTurnsForSession, markTurnRevealed, recordInterruption, recordTurn } from './turns';
 
 /** Runs against a REAL local Postgres instance, matching persona-memories.test.ts's own precedent. */
 describe('recordTurn / markTurnRevealed / recordInterruption', () => {
@@ -103,5 +103,41 @@ describe('recordTurn / markTurnRevealed / recordInterruption', () => {
   it('recordInterruption returns false for a nonexistent turn id', async () => {
     const result = await recordInterruption(pool, '00000000-0000-0000-0000-000000000000', 100);
     expect(result).toBe(false);
+  });
+
+  it('persists comprehension on a persona turn', async () => {
+    const sessionId = await makeSession();
+    const id = await recordTurn(pool, sessionId, { speaker: 'persona', content: 'Ах, конечно.', comprehension: 'not_understood' });
+
+    const stored = await pool.query<{ comprehension: string | null }>('SELECT comprehension FROM turns WHERE id = $1', [id]);
+    expect(stored.rows[0]?.comprehension).toBe('not_understood');
+  });
+
+  it('defaults comprehension to null when not sent (e.g. every learner turn)', async () => {
+    const sessionId = await makeSession();
+    const id = await recordTurn(pool, sessionId, { speaker: 'learner', content: 'Привет!' });
+
+    const stored = await pool.query<{ comprehension: string | null }>('SELECT comprehension FROM turns WHERE id = $1', [id]);
+    expect(stored.rows[0]?.comprehension).toBeNull();
+  });
+
+  describe('getTurnsForSession', () => {
+    it('returns every turn for a session, oldest first, with the fields the analyser/summary need', async () => {
+      const sessionId = await makeSession();
+      await recordTurn(pool, sessionId, { speaker: 'learner', content: 'Привет!' });
+      await recordTurn(pool, sessionId, { speaker: 'persona', content: 'Здравствуй!', comprehension: 'understood', revealed: true });
+
+      const turns = await getTurnsForSession(pool, sessionId);
+      expect(turns).toEqual([
+        { speaker: 'learner', content: 'Привет!', revealed: false, comprehension: null },
+        { speaker: 'persona', content: 'Здравствуй!', revealed: true, comprehension: 'understood' },
+      ]);
+    });
+
+    it('returns an empty array for a session with no turns', async () => {
+      const sessionId = await makeSession();
+      const turns = await getTurnsForSession(pool, sessionId);
+      expect(turns).toEqual([]);
+    });
   });
 });

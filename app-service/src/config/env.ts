@@ -105,6 +105,16 @@ const envSchema = z.object({
    * at boot, not produce forgeable tokens silently.
    */
   SESSION_TOKEN_SECRET: z.string().min(32, 'SESSION_TOKEN_SECRET must be at least 32 characters'),
+  /**
+   * The post-session analyser's own key (debrief/analyser.ts) — a
+   * separate Anthropic account/key from voice-service's own
+   * `ANTHROPIC_API_KEY` (voice-service/src/config/env.ts), same
+   * per-service-boundary reasoning `main.ts`'s own comment gives for why
+   * neither service imports the other. No default, same "a missing
+   * secret fails loud at boot, not with confusing 401s later" reasoning
+   * voice-service's own copy of this var documents.
+   */
+  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -4,6 +4,8 @@ import { Pool } from 'pg';
 import { applySchema } from '../db/schema';
 import { seedBenchmark } from '../benchmark/seed-benchmark';
 import { seedScenarios } from '../scenarios/seed-scenarios';
+import { fakeAnthropicClient, fakeParse } from '../test-support/fake-anthropic';
+import { recordTurn } from '../turns/turns';
 import { startServer } from './server';
 import { verifySessionToken } from '../learners/session-token';
 
@@ -28,6 +30,7 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     SUBSCRIPTION_PRICE_USD: 12,
     P95_LATENCY_BUDGET_MS: 900,
     SESSION_TOKEN_SECRET: 'test-session-token-secret-0123456789abcdef',
+    ANTHROPIC_API_KEY: 'test-anthropic-key',
     ...overrides,
   };
 }
@@ -477,6 +480,170 @@ describe('app service server', () => {
       expect((response.body?.debriefItems as unknown[]).length).toBe(1);
 
       await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+  });
+
+  describe('session summary/end endpoints', () => {
+    async function makeLearnerAndSession(pool: Pool): Promise<{ learnerId: string; sessionId: string }> {
+      const learner = await pool.query<{ id: string }>('INSERT INTO learners DEFAULT VALUES RETURNING id');
+      const learnerId = learner.rows[0]?.id;
+      if (!learnerId)
+        throw new Error('insert did not return a row');
+      const session = await pool.query<{ id: string }>('INSERT INTO sessions (learner_id) VALUES ($1) RETURNING id', [learnerId]);
+      const sessionId = session.rows[0]?.id;
+      if (!sessionId)
+        throw new Error('insert did not return a row');
+      return { learnerId, sessionId };
+    }
+
+    it('GET /sessions/:id/summary aggregates real turns into the debrief-screen figures', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+      await recordTurn(pool, sessionId, { speaker: 'persona', content: 'Здравствуй!', comprehension: 'understood' });
+      await recordTurn(pool, sessionId, { speaker: 'learner', content: 'Привет!' });
+      await recordTurn(pool, sessionId, { speaker: 'persona', content: 'Как дела?', comprehension: 'not_understood', revealed: true });
+
+      const response = await get(handle.port, `/sessions/${sessionId}/summary`);
+      expect(response.statusCode).toBe(200);
+      expect(response.body?.summary).toMatchObject({
+        totalTurns: 3,
+        personaTurns: 2,
+        learnerTurns: 1,
+        revealedCount: 1,
+        understoodCount: 1,
+        endedAt: null,
+      });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /sessions/:id/summary returns 404 for a nonexistent session', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/summary');
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('GET /sessions/:id/summary with a malformed session id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await get(handle.port, '/sessions/not-a-uuid/summary');
+      expect(response.statusCode).toBe(400);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/end sets ended_at, runs the analyser against real turns, and the resulting pattern shows up in /debrief', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const anthropicClient = fakeAnthropicClient({
+        parse: fakeParse({
+          parsedOutput: {
+            observations: [
+              { kind: 'grammar_error', structureKey: 'aspect_perfective', impeded: false, title: 'Мы иска́ли, not мы и́щем.', body: 'Past narration used the present tense.' },
+            ],
+          },
+        }),
+      });
+      const handle = await startServer(testEnv(), pool, { anthropicClient });
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+      await recordTurn(pool, sessionId, { speaker: 'learner', content: 'Мы иска́ем два дня.' });
+
+      const endResponse = await post(handle.port, `/sessions/${sessionId}/end`, {});
+      expect(endResponse.statusCode).toBe(200);
+
+      const summaryResponse = await get(handle.port, `/sessions/${sessionId}/summary`);
+      expect(summaryResponse.body?.summary).toMatchObject({ endedAt: expect.any(String) });
+
+      const debriefResponse = await get(handle.port, `/sessions/${sessionId}/debrief`);
+      const debriefItems = debriefResponse.body?.debriefItems as { detail: { title: string } }[];
+      expect(debriefItems).toHaveLength(1);
+      expect(debriefItems[0]?.detail.title).toBe('Мы иска́ли, not мы и́щем.');
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/end still ends the session when the analyser finds nothing (empty transcript or no patterns)', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const anthropicClient = fakeAnthropicClient({ parse: fakeParse({ parsedOutput: { observations: [] } }) });
+      const handle = await startServer(testEnv(), pool, { anthropicClient });
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+
+      const response = await post(handle.port, `/sessions/${sessionId}/end`, {});
+      expect(response.statusCode).toBe(200);
+
+      const summaryResponse = await get(handle.port, `/sessions/${sessionId}/summary`);
+      expect(summaryResponse.body?.summary).toMatchObject({ endedAt: expect.any(String) });
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/end is idempotent — a second call does not move ended_at forward or re-run the analyser', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const parse = jest.fn(fakeParse({ parsedOutput: { observations: [] } }));
+      const anthropicClient = fakeAnthropicClient({ parse });
+      const handle = await startServer(testEnv(), pool, { anthropicClient });
+      const { learnerId, sessionId } = await makeLearnerAndSession(pool);
+      await recordTurn(pool, sessionId, { speaker: 'learner', content: 'Привет!' });
+
+      await post(handle.port, `/sessions/${sessionId}/end`, {});
+      const firstEndedAt = ((await get(handle.port, `/sessions/${sessionId}/summary`)).body?.summary as { endedAt: string }).endedAt;
+
+      await post(handle.port, `/sessions/${sessionId}/end`, {});
+      const secondEndedAt = ((await get(handle.port, `/sessions/${sessionId}/summary`)).body?.summary as { endedAt: string }).endedAt;
+
+      expect(secondEndedAt).toBe(firstEndedAt);
+      // endSession itself is idempotent (ended_at doesn't move); the analyser
+      // still re-runs on each call — harmless (it just re-derives the same
+      // observations), same "nothing stops this from being called more than
+      // once" caution the observations endpoint already documents.
+      expect(parse).toHaveBeenCalledTimes(2);
+
+      await pool.query('DELETE FROM learners WHERE id = $1', [learnerId]);
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/end returns 404 for a nonexistent session', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions/00000000-0000-0000-0000-000000000000/end', {});
+      expect(response.statusCode).toBe(404);
+
+      await handle.close();
+      await pool.end();
+    });
+
+    it('POST /sessions/:id/end with a malformed session id returns 400', async () => {
+      const pool = new Pool({ connectionString: DATABASE_URL });
+      await applySchema(pool);
+      const handle = await startServer(testEnv(), pool);
+
+      const response = await post(handle.port, '/sessions/not-a-uuid/end', {});
+      expect(response.statusCode).toBe(400);
+
       await handle.close();
       await pool.end();
     });

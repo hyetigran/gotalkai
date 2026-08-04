@@ -1,13 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Pool } from 'pg';
 import type { Env } from '../config/env';
+import Anthropic from '@anthropic-ai/sdk';
 import { createServer as createHttpServer } from 'node:http';
 import { z } from 'zod';
 
 import { getAddressBookForLearner } from '../address-book/address-book';
-import { detectAndRecordAvoidance } from '../debrief/avoidance-detection';
+import { analyseSessionTranscript } from '../debrief/analyser';
 import { getBenchmarkTrend, getCurrentBenchmarkSet, InvalidBenchmarkAttemptError, submitBenchmarkAttempt, submitBenchmarkAttemptRequestSchema } from '../benchmark/benchmark';
-import { getDebriefForSession, rankAndPromoteDebrief, recordObservations } from '../debrief/debrief';
+import { getDebriefForSession, writeAndRankObservations } from '../debrief/debrief';
 import { parseUuidParam } from './id-params';
 import { recordMemoryRequestSchema } from '../memories/memories-request';
 import { recordObservationsRequestSchema } from '../debrief/observations-request';
@@ -17,9 +18,10 @@ import { deleteLearner, recordAudioSamplingConsent } from '../learners/privacy';
 import { getScenarioViewForSession } from '../scenarios/scenario-view';
 import { getSessionHistoryForLearner, sessionHistoryQuerySchema } from '../learners/session-history';
 import { DailySessionCapReachedError } from '../learners/session-cap';
+import { endSession, getLearnerIdForSession, getSessionSummary } from '../learners/session-summary';
 import { createLearner, createLearnerRequestSchema, createSession, createSessionRequestSchema, getLearner, updateCalibrationVariant, updateCalibrationVariantRequestSchema } from '../learners/sessions';
 import { issueSessionToken } from '../learners/session-token';
-import { markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from '../turns/turns';
+import { getTurnsForSession, markTurnRevealed, recordInterruption, recordInterruptionRequestSchema, recordTurn, recordTurnRequestSchema } from '../turns/turns';
 
 export type AppServiceHandle = {
   /** The port actually bound — matters when `env.PORT` is `0` (tests ask the OS for a free port). */
@@ -52,6 +54,8 @@ const SESSION_OBSERVATIONS_PATH = /^\/sessions\/([^/]+)\/observations$/;
 const SESSION_DEBRIEF_PATH = /^\/sessions\/([^/]+)\/debrief$/;
 const SESSION_SCENARIO_PATH = /^\/sessions\/([^/]+)\/scenario$/;
 const SESSION_TURNS_PATH = /^\/sessions\/([^/]+)\/turns$/;
+const SESSION_SUMMARY_PATH = /^\/sessions\/([^/]+)\/summary$/;
+const SESSION_END_PATH = /^\/sessions\/([^/]+)\/end$/;
 const TURN_REVEAL_PATH = /^\/turns\/([^/]+)\/reveal$/;
 const TURN_INTERRUPTION_PATH = /^\/turns\/([^/]+)\/interruption$/;
 const LEARNER_MEMORIES_PATH = /^\/learners\/([^/]+)\/memories$/;
@@ -63,7 +67,7 @@ const LEARNER_CALIBRATION_VARIANT_PATH = /^\/learners\/([^/]+)\/calibration-vari
 const LEARNER_BENCHMARK_ATTEMPTS_PATH = /^\/learners\/([^/]+)\/benchmark-attempts$/;
 const LEARNER_PATH = /^\/learners\/([^/]+)$/;
 
-async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env): Promise<void> {
+async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Pool, env: Env, anthropicClient: Anthropic): Promise<void> {
   // Ticket #34: split off the query string once, here — every route match below (`===`/regex `.exec`) targets the path alone, and `GET /learners/:id/callback?personaId=...` is the one place a query string exists at all.
   const [url = '', queryString] = (req.url ?? '').split('?');
 
@@ -174,13 +178,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
       return;
     }
     try {
-      await recordObservations(pool, sessionId, parsed.data.learnerId, parsed.data.observations);
-      // Ticket #23: runs after the analyser's own observations are
-      // written (so "was the target attempted" can be checked against
-      // this session's real data) and before ranking, so a detected
-      // avoidance is itself eligible for promotion into the debrief.
-      await detectAndRecordAvoidance(pool, sessionId, parsed.data.learnerId);
-      const debriefItems = await rankAndPromoteDebrief(pool, sessionId, parsed.data.learnerId);
+      const debriefItems = await writeAndRankObservations(pool, sessionId, parsed.data.learnerId, parsed.data.observations);
       sendJson(res, 201, { status: 'ok', debriefItems });
     }
     catch {
@@ -199,6 +197,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     try {
       const debriefItems = await getDebriefForSession(pool, sessionId);
       sendJson(res, 200, { status: 'ok', debriefItems });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const summaryMatch = SESSION_SUMMARY_PATH.exec(url);
+  if (req.method === 'GET' && summaryMatch) {
+    const sessionId = parseUuidParam(summaryMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
+    try {
+      const summary = await getSessionSummary(pool, sessionId);
+      if (!summary) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      sendJson(res, 200, { status: 'ok', summary });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -250,6 +269,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
     try {
       const id = await recordTurn(pool, sessionId, parsed.data);
       sendJson(res, 201, { status: 'ok', id });
+    }
+    catch {
+      sendJson(res, 503, { status: 'error', message: 'database unavailable' });
+    }
+    return;
+  }
+
+  const endMatch = SESSION_END_PATH.exec(url);
+  if (req.method === 'POST' && endMatch) {
+    const sessionId = parseUuidParam(endMatch[1] as string);
+    if (!sessionId) {
+      sendJson(res, 400, { status: 'error', message: 'invalid session id' });
+      return;
+    }
+    try {
+      const ended = await endSession(pool, sessionId);
+      if (!ended) {
+        sendJson(res, 404, { status: 'not found' });
+        return;
+      }
+      // The post-session analyser (debrief/analyser.ts), finally called
+      // for real rather than requiring a test harness to fabricate
+      // `observations`: reads this session's real turns, classifies them,
+      // and runs the same write→avoidance→rank pipeline the observations
+      // endpoint above does. Runs synchronously in this request — a real
+      // LLM call, so this response is slower than a plain "mark ended"
+      // would be, a deliberate simplicity tradeoff over a background job
+      // queue for this scope; the mobile client already shows a loading
+      // state on the Debrief screen it navigates to right after calling
+      // this. Failure here (a bad/missing learnerId, a DB error) still
+      // reports ended=true — the session genuinely did end, and losing
+      // the analysis for one session is not a reason to tell the client
+      // its "End" tap failed.
+      const learnerId = await getLearnerIdForSession(pool, sessionId);
+      if (learnerId) {
+        const transcript = await getTurnsForSession(pool, sessionId);
+        const observations = await analyseSessionTranscript(anthropicClient, transcript);
+        if (observations.length > 0)
+          await writeAndRankObservations(pool, sessionId, learnerId, observations);
+      }
+      sendJson(res, 200, { status: 'ok' });
     }
     catch {
       sendJson(res, 503, { status: 'error', message: 'database unavailable' });
@@ -612,6 +672,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  *   docs/adr/0022): the persistence link voice-service's turn
  *   orchestrator posts to after each learner/persona turn, the
  *   foundation every derived observability metric reads from.
+ * - `GET /sessions/:id/summary` — real turn counts, reveal/comprehension
+ *   figures, and session duration (session-summary.ts) for the Debrief
+ *   screen's top section — the counterpart to `/debrief`'s pattern
+ *   cards, for the summary copy above them.
+ * - `POST /sessions/:id/end` — marks the session ended (`ended_at`),
+ *   then runs the post-session analyser (debrief/analyser.ts) against
+ *   its real turns and feeds the result through the same
+ *   write→avoidance→rank pipeline `/observations` above uses — the
+ *   "post-session analyser, ticket #14+" every earlier comment in this
+ *   codebase disclosed as not-yet-built, finally called for real instead
+ *   of requiring a test harness to fabricate `observations`.
  * - `PATCH /turns/:id/reveal` — marks a turn's translation as revealed
  *   (ticket #29 AC #3: reveal-rate signal, needs no manual labelling).
  * - `POST /turns/:id/interruption` — records a barge-in's elapsed ms
@@ -652,10 +723,22 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, pool: Po
  * Everything else (auth, persona LLM output) is later ticket work
  * (ARCHITECTURE.md §3.2).
  */
-export function startServer(env: Env, pool: Pool): Promise<AppServiceHandle> {
+export type AppServiceDependencies = {
+  /**
+   * Injectable for tests (server.test.ts passes a fake so the
+   * `POST /sessions/:id/end` route's analyser call doesn't hit the real
+   * Anthropic API) — defaults to a real client built from
+   * `env.ANTHROPIC_API_KEY` right below when omitted, so main.ts (a
+   * real deployment) needs no changes to get a real client.
+   */
+  anthropicClient?: Anthropic;
+};
+
+export function startServer(env: Env, pool: Pool, dependencies: AppServiceDependencies = {}): Promise<AppServiceHandle> {
+  const anthropicClient = dependencies.anthropicClient ?? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   return new Promise((resolve, reject) => {
     const httpServer = createHttpServer((req, res) => {
-      handleRequest(req, res, pool, env).catch(() => {
+      handleRequest(req, res, pool, env, anthropicClient).catch(() => {
         sendJson(res, 500, { status: 'error', message: 'internal error' });
       });
     });

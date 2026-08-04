@@ -1,8 +1,10 @@
+import type { TurnComprehension } from './api';
 import type { ServerMessage, TurnTimestamps, VoiceConnectionState } from '@/lib/voice-service/voice-connection';
-import * as React from 'react';
 
+import * as React from 'react';
 import { configureConverseAudioSession } from '@/lib/audio/audio-session';
 import { VoiceConnection } from '@/lib/voice-service/voice-connection';
+import { useMarkTurnRevealed, useRecordTurn } from './api';
 import { useTtsPlayback } from './use-tts-playback';
 
 export type ConverseTurn = {
@@ -179,6 +181,61 @@ function useVoiceConnectionLifecycle(options: {
   return connectionRef;
 }
 
+/**
+ * docs/adr/0022's own disclosed gap, finally closed: "no mobile client
+ * calls [the turns write path] yet." Persists every learner/persona
+ * turn as it lands in `turns` — the Debrief screen's summary
+ * (session-summary.ts) and the post-session analyser both read this
+ * back later. `'system'` turns are skipped: `turns.speaker` has a real
+ * `CHECK (speaker IN ('persona', 'learner'))` constraint, and a safety
+ * escape-hatch line isn't a turn either side spoke.
+ *
+ * Watches `turns` itself (not the raw server-message stream) so the
+ * index a persisted id is stored under always matches
+ * `LiveTranscript`'s own array index — the same index its local
+ * `revealed` state and this hook's `markRevealed` both key off.
+ * `persistedCountRef` tracks how much of `turns` has already been sent,
+ * so a re-render never re-POSTs an earlier turn.
+ */
+function useTurnPersistence(sessionId: string, turns: ConverseTurn[]) {
+  const { mutate: recordTurn } = useRecordTurn();
+  const { mutate: markTurnRevealed } = useMarkTurnRevealed();
+  const persistedCountRef = React.useRef(0);
+  const turnIdsRef = React.useRef<Record<number, string>>({});
+
+  // Destructured to `.mutate` above specifically so it can sit in this
+  // effect's own deps array honestly — react-query's own `.mutate` is a
+  // stable reference across renders (unlike the mutation result object
+  // react-query-kit returns a new copy of each render), so listing it
+  // doesn't cause an extra run, and every dependency this effect reads
+  // is now real, with no `eslint-disable` needed to get there.
+  React.useEffect(() => {
+    for (let index = persistedCountRef.current; index < turns.length; index++) {
+      const turn = turns[index];
+      if (!turn || turn.speaker === 'system')
+        continue;
+      recordTurn(
+        {
+          sessionId,
+          speaker: turn.speaker,
+          content: turn.text,
+          comprehension: turn.speaker === 'persona' ? (turn.comprehension as TurnComprehension | undefined) : undefined,
+        },
+        { onSuccess: (result) => { turnIdsRef.current[index] = result.id; } },
+      );
+    }
+    persistedCountRef.current = turns.length;
+  }, [turns, sessionId, recordTurn]);
+
+  const markRevealed = React.useCallback((index: number) => {
+    const turnId = turnIdsRef.current[index];
+    if (turnId)
+      markTurnRevealed({ turnId });
+  }, [markTurnRevealed]);
+
+  return { markRevealed };
+}
+
 export function useLiveConverseSession({ url, token, learnerId, sessionId }: UseLiveConverseSessionOptions) {
   const [state, dispatch] = React.useReducer(converseReducer, INITIAL_STATE);
   const [mode, setMode] = React.useState<InputMode>('voice');
@@ -195,6 +252,7 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
   }, []);
 
   const connectionRef = useVoiceConnectionLifecycle({ url, token, learnerId, sessionId, dispatch, enqueueTts, stopTts });
+  const { markRevealed } = useTurnPersistence(sessionId, state.turns);
 
   /**
    * Ticket #32: the text-input path. Deliberately thin — everything that
@@ -232,5 +290,6 @@ export function useLiveConverseSession({ url, token, learnerId, sessionId }: Use
     setMode,
     submitText,
     sendAudioChunk,
+    markRevealed,
   };
 }
