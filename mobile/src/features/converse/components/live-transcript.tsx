@@ -60,6 +60,8 @@ type LiveTranscriptProps = {
   turns: ConverseTurn[];
   /** Her reply is generating — filler visible. Same signal `Transcript.tsx` uses, different phase enum (`LiveConversePhase` vs `ConversePhase`) — the screen maps it, this component just takes the boolean. */
   thinking: boolean;
+  /** `use-live-converse-session.ts`'s `markRevealed` — persists the real "you understood her without help" signal (ticket #29 AC #3) server-side. Optional so this component still works with no backing session; fired only on the false→true transition, never to un-reveal (the server-side flag is one-way). */
+  onReveal?: (index: number) => void;
 };
 
 /**
@@ -71,18 +73,26 @@ type LiveTranscriptProps = {
  * one), so the array index is a stable, correct list key, same
  * justification as `Transcript.tsx`'s own.
  */
-export function LiveTranscript({ turns, thinking }: LiveTranscriptProps) {
+export function LiveTranscript({ turns, thinking, onReveal }: LiveTranscriptProps) {
   const scrollRef = React.useRef<ScrollView>(null);
   // Local, UI-only state — which turns' translations are currently shown.
-  // Not threaded through use-live-converse-session.ts: a tap-to-reveal
-  // toggle has no bearing on the session/connection state machine, same
+  // Not threaded through use-live-converse-session.ts's state machine: a
+  // tap-to-reveal toggle has no bearing on `phase`/connection state, same
   // separation the scripted demo's own `revealed` (use-converse-session.ts)
   // doesn't quite make, but there it's driven by scripted content, not a
-  // live WS-connected hook.
+  // live WS-connected hook. `onReveal` (persisting the flag server-side,
+  // ticket #29 AC #3) is a separate, deliberately one-way side effect
+  // fired alongside this local toggle, not a replacement for it — the UI
+  // still needs to know what's currently shown regardless of network state.
   const [revealed, setRevealed] = React.useState<Record<number, boolean>>({});
   const toggleReveal = React.useCallback((index: number) => {
+    // Side effect kept out of the updater function itself (React can
+    // invoke that more than once, e.g. under StrictMode) — read the
+    // previous value from the state variable already in scope instead.
+    if (!revealed[index])
+      onReveal?.(index);
     setRevealed(prev => ({ ...prev, [index]: !prev[index] }));
-  }, []);
+  }, [revealed, onReveal]);
 
   React.useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });

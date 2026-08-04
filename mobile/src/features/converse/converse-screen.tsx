@@ -281,6 +281,14 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
     sendAudioChunk: live.sendAudioChunk,
   });
 
+  /**
+   * Navigates immediately — `POST /sessions/:id/end` (a real LLM call,
+   * not a quick "mark ended") is triggered by the Debrief screen itself
+   * once it lands and sees `summary.endedAt: null`, not awaited here.
+   * Debrief is what shows the resulting "analysing…" state, so it's the
+   * one that should own starting the wait, not Converse blocking on a
+   * call with nothing on this screen to show for it.
+   */
   const goToDebrief = React.useCallback(() => {
     router.replace(realParamsOrBarePath('/debrief', { sessionId, learnerId }));
   }, [router, sessionId, learnerId]);
@@ -299,7 +307,7 @@ function LiveConverseScreen({ learnerId, sessionId, voiceServiceToken }: LiveCon
         <PersonaPortrait3D background={<FrequencyBackground active={live.phase === 'speaking'} />} />
       </View>
 
-      <LiveTranscript turns={live.turns} thinking={live.phase === 'thinking'} />
+      <LiveTranscript turns={live.turns} thinking={live.phase === 'thinking'} onReveal={live.markRevealed} />
 
       {/*
         UAT: "the chat window appears to be a bit cutoff at the bottom" —

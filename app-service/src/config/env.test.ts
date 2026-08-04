@@ -4,6 +4,7 @@ describe('loadEnv', () => {
   const validBase = {
     DATABASE_URL: 'postgres://user:pass@localhost:5432/app_service',
     SESSION_TOKEN_SECRET: 'a'.repeat(32),
+    ANTHROPIC_API_KEY: 'test-anthropic-key',
   };
 
   it('accepts a minimal valid environment and applies defaults', () => {
@@ -61,6 +62,10 @@ describe('loadEnv', () => {
 
   it('rejects a SESSION_TOKEN_SECRET shorter than 32 characters', () => {
     expect(() => loadEnv({ ...validBase, SESSION_TOKEN_SECRET: 'too-short' })).toThrow(/SESSION_TOKEN_SECRET/);
+  });
+
+  it('rejects a missing ANTHROPIC_API_KEY', () => {
+    expect(() => loadEnv({ DATABASE_URL: validBase.DATABASE_URL, SESSION_TOKEN_SECRET: validBase.SESSION_TOKEN_SECRET })).toThrow(/ANTHROPIC_API_KEY/);
   });
 
   it('throws a readable message listing every issue, not a raw ZodError', () => {
