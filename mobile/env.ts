@@ -28,24 +28,24 @@ const EXPO_PUBLIC_APP_ENV = (process.env.EXPO_PUBLIC_APP_ENV
   ?? 'development') as z.infer<typeof envSchema>['EXPO_PUBLIC_APP_ENV'];
 
 const BUNDLE_IDS = {
-  development: 'com.mobile.development',
-  preview: 'com.mobile.preview',
-  production: 'com.mobile',
+  development: 'com.gotalkai.development',
+  preview: 'com.gotalkai.preview',
+  production: 'com.gotalkai',
 } as const;
 
 const PACKAGES = {
-  development: 'com.mobile.development',
-  preview: 'com.mobile.preview',
-  production: 'com.mobile',
+  development: 'com.gotalkai.development',
+  preview: 'com.gotalkai.preview',
+  production: 'com.gotalkai',
 } as const;
 
 const SCHEMES = {
-  development: 'mobile',
-  preview: 'mobile.preview',
-  production: 'mobile',
+  development: 'gotalkai',
+  preview: 'gotalkai.preview',
+  production: 'gotalkai',
 } as const;
 
-const NAME = 'mobile';
+const NAME = 'LingoAI';
 
 // Check if strict validation is required (before prebuild)
 const STRICT_ENV_VALIDATION = process.env.STRICT_ENV_VALIDATION === '1';
