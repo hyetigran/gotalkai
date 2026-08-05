@@ -2,7 +2,9 @@ import type { EntryStatus } from './address-book-fixture';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { tabBarClearance } from '@/components/ui/design-tokens';
 import { CAST_FIXTURE, ADDRESS_BOOK_COPY as copy, REACHED_COUNT } from './address-book-fixture';
 import { AddressBookEntry } from './components/address-book-entry';
 
@@ -22,6 +24,7 @@ function statusFor(index: number): EntryStatus {
  */
 export function AddressBookScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   // A set, not a single `number | null` — expanding one entry used to
   // collapse whichever other one was open, so both animated at once and
   // the list visibly jumped. Each entry now expands/collapses on its own.
@@ -39,7 +42,10 @@ export function AddressBookScreen() {
   }, []);
 
   return (
-    <View className="flex-1 bg-page px-[22px] pt-[60px] pb-[44px]">
+    <View
+      className="flex-1 bg-page px-[22px] pt-[60px]"
+      style={{ paddingBottom: insets.bottom + tabBarClearance }}
+    >
       {/* UAT: tabs restructuring — this is now the Home tab's root screen (src/app/(tabs)/_layout.tsx), reached by switching tabs, not pushed onto a stack, so there's no "back" screen for router.back() to return to any more. */}
       <View className="items-center">
         <Text className="font-sans-semibold text-[13px] text-ink/60">{copy.castHead}</Text>

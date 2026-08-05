@@ -42,17 +42,13 @@ export function useOpenCallbackLine(learnerId: string | undefined) {
  */
 export function useOpenAnswerHandler(options: {
   learnerId: string | undefined;
-  isFirstSession: boolean;
-  setIsFirstSession: (value: boolean) => void;
 }) {
-  const { learnerId, isFirstSession, setIsFirstSession } = options;
+  const { learnerId } = options;
   const hasRealLearner = Boolean(learnerId);
   const router = useRouter();
   const startSession = useStartSession();
 
   const handleAnswer = React.useCallback(() => {
-    if (isFirstSession)
-      setIsFirstSession(false);
     if (!hasRealLearner) {
       router.replace('/converse');
       return;
@@ -86,7 +82,7 @@ export function useOpenAnswerHandler(options: {
         },
       },
     );
-  }, [isFirstSession, setIsFirstSession, router, hasRealLearner, learnerId, startSession]);
+  }, [router, hasRealLearner, learnerId, startSession]);
 
   const isUnexpectedError = startSession.isError
     && !(startSession.error.response?.status === 429 && startSession.error.response.data.code === 'daily_cap_reached');

@@ -1,4 +1,5 @@
 import type { SessionSummary } from './api';
+import type { DebriefPattern } from './map-debrief-item';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
@@ -64,6 +65,52 @@ function SessionSummaryHeader({ figures }: { figures: SummaryFigures }) {
   );
 }
 
+/** The ranked pattern cards, plus their own loading/error states — split out purely to keep `DebriefScreen` itself under this repo's max-lines-per-function budget, same reasoning `SessionSummaryHeader` above documents. */
+function DebriefPatternList({ hasRealSession, needsFinishing, isLoading, isError, patterns }: {
+  hasRealSession: boolean;
+  needsFinishing: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  patterns: readonly DebriefPattern[];
+}) {
+  return (
+    <View className="mt-[26px] gap-[10px]">
+      {hasRealSession && needsFinishing && (
+        <Text className="text-[13px] text-ink/55">Finishing up your analysis…</Text>
+      )}
+      {hasRealSession && !needsFinishing && isLoading && (
+        <Text className="text-[13px] text-ink/55">Loading your patterns…</Text>
+      )}
+      {hasRealSession && !needsFinishing && isError && (
+        <Text className="text-[13px] text-ink/55">Couldn't load your patterns — check your connection and try again.</Text>
+      )}
+      {(!hasRealSession || (!needsFinishing && !isLoading && !isError)) && patterns.map(pattern => (
+        <View key={pattern.index} className="rounded-[16px] border border-ink/10 bg-card px-[17px] py-[16px]">
+          <View className="flex-row items-baseline gap-[10px]">
+            <Text className="font-mono-medium text-[10px] text-ink/40">{pattern.index}</Text>
+            <View className="flex-1">
+              <Text className="font-sans-semibold text-[17px] leading-[24px] text-ink">{pattern.title}</Text>
+              <Text className="mt-[7px] text-[13px] leading-[19px] text-ink/55">{pattern.body}</Text>
+              {pattern.tag && (
+                <Text className="font-mono-medium mt-[9px] text-[10px] text-accent">{pattern.tag}</Text>
+              )}
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** "‹ Back" to History, shown only when this screen was reached by browsing old sessions — split out purely to keep `DebriefScreen` itself under this repo's max-lines-per-function budget, same reasoning `SessionSummaryHeader` above documents. */
+function BackToHistoryButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Back" className="mb-[16px] self-start">
+      <Text className="text-[15px] text-accent">‹ Back</Text>
+    </Pressable>
+  );
+}
+
 /**
  * The Debrief screen. Layout and copy per
  * `Initial mockup request/design_handoff_conversation_loop/README.md`
@@ -96,8 +143,14 @@ export function DebriefScreen() {
   const router = useRouter();
   // Ticket #25: `learnerId` isn't used by this screen itself, only relayed onward to Tomorrow
   // (and from there back to Open) so the loop doesn't lose track of who the learner is.
-  const { sessionId, learnerId } = useLocalSearchParams<{ sessionId?: string; learnerId?: string }>();
+  const { sessionId, learnerId, viewedFromHistory } = useLocalSearchParams<{ sessionId?: string; learnerId?: string; viewedFromHistory?: string }>();
   const hasRealSession = Boolean(sessionId);
+  // Set only by `debrief-history-screen.tsx`'s row `onPress` (never by
+  // Converse's "End" → Debrief hop, the other way into this screen) —
+  // "browsing an old session" vs. "just finished this one." The former
+  // gets a way back to the list instead of "Tomorrow," which only makes
+  // sense as the next step in a loop this screen isn't currently in.
+  const isViewingFromHistory = viewedFromHistory === 'true';
   const { data: summary, isLoading: summaryLoading, isError: summaryError, refetch: refetchSummary } = useSessionSummary({
     variables: { sessionId: sessionId ?? '' },
     enabled: hasRealSession,
@@ -129,6 +182,7 @@ export function DebriefScreen() {
 
   return (
     <ScrollView className="flex-1 bg-page px-[22px] pt-[66px]" contentContainerClassName="pb-[44px]">
+      {isViewingFromHistory && <BackToHistoryButton onPress={() => router.back()} />}
       <Text className="font-mono-medium text-[10px] tracking-[0.12em] text-ink/42 uppercase">
         After the conversation
       </Text>
@@ -140,31 +194,13 @@ export function DebriefScreen() {
       )}
       {summaryFigures && <SessionSummaryHeader figures={summaryFigures} />}
 
-      <View className="mt-[26px] gap-[10px]">
-        {hasRealSession && needsFinishing && (
-          <Text className="text-[13px] text-ink/55">Finishing up your analysis…</Text>
-        )}
-        {hasRealSession && !needsFinishing && isLoading && (
-          <Text className="text-[13px] text-ink/55">Loading your patterns…</Text>
-        )}
-        {hasRealSession && !needsFinishing && isError && (
-          <Text className="text-[13px] text-ink/55">Couldn't load your patterns — check your connection and try again.</Text>
-        )}
-        {(!hasRealSession || (!needsFinishing && !isLoading && !isError)) && patterns.map(pattern => (
-          <View key={pattern.index} className="rounded-[16px] border border-ink/10 bg-white px-[17px] py-[16px]">
-            <View className="flex-row items-baseline gap-[10px]">
-              <Text className="font-mono-medium text-[10px] text-ink/40">{pattern.index}</Text>
-              <View className="flex-1">
-                <Text className="font-sans-semibold text-[17px] leading-[24px] text-ink">{pattern.title}</Text>
-                <Text className="mt-[7px] text-[13px] leading-[19px] text-ink/55">{pattern.body}</Text>
-                {pattern.tag && (
-                  <Text className="font-mono-medium mt-[9px] text-[10px] text-accent">{pattern.tag}</Text>
-                )}
-              </View>
-            </View>
-          </View>
-        ))}
-      </View>
+      <DebriefPatternList
+        hasRealSession={hasRealSession}
+        needsFinishing={needsFinishing}
+        isLoading={isLoading}
+        isError={isError}
+        patterns={patterns}
+      />
 
       {/*
         Fixture-only: a real detected avoidance isn't a separate summary
@@ -188,14 +224,16 @@ export function DebriefScreen() {
         </View>
       )}
 
-      <Pressable
-        onPress={() => router.replace(realParamsOrBarePath('/tomorrow', { sessionId, learnerId }))}
-        accessibilityRole="button"
-        accessibilityLabel="Tomorrow"
-        className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"
-      >
-        <Text className="font-sans-semibold text-[18px] text-page">Tomorrow</Text>
-      </Pressable>
+      {!isViewingFromHistory && (
+        <Pressable
+          onPress={() => router.replace(realParamsOrBarePath('/tomorrow', { sessionId, learnerId }))}
+          accessibilityRole="button"
+          accessibilityLabel="Tomorrow"
+          className="mt-[26px] items-center rounded-[16px] bg-accent py-[19px]"
+        >
+          <Text className="font-sans-semibold text-[18px] text-page">Tomorrow</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }

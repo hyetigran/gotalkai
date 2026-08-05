@@ -118,7 +118,18 @@ export function buildAnalyserRequest(transcript: TranscriptTurnForAnalysis[]) {
     // them benefits from thinking, unlike persona-turn.ts's dialogue
     // generation (ADR-0003 disables it there for exactly the opposite
     // reason — 1-2 sentence turns aren't reasoning-heavy).
-    thinking: { type: 'enabled' as const, budget_tokens: 1024 },
+    //
+    // `type: 'adaptive'`, not `'enabled'` + `budget_tokens`: this model
+    // rejects the old fixed-budget form outright ("thinking.type.enabled
+    // is not supported for this model") when `output_config.effort` is
+    // also set — the two are meant to be used together, `effort` is what
+    // now controls how much the model thinks. This was a 100%-repro
+    // BadRequestError on every single analyser call (silently swallowed
+    // by the catch below, which is *why* every session's Debrief showed
+    // zero real patterns regardless of transcript content — verified by
+    // grepping the server's own logs for "[analyser] session analysis
+    // failed", 2026-08-04).
+    thinking: { type: 'adaptive' as const },
     output_config: {
       effort: EFFORT,
       format: zodOutputFormat(analyserOutputSchema),

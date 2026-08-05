@@ -1,5 +1,6 @@
+import type { LayoutChangeEvent } from 'react-native';
 import * as React from 'react';
-import Svg, { Defs, Pattern, Rect } from 'react-native-svg';
+import { View } from 'react-native';
 
 type PortraitHatchProps = {
   stop1: string;
@@ -14,27 +15,48 @@ type PortraitHatchProps = {
  * stripeWidth stripeWidth*2)`). "Replace with the persona portrait image"
  * per the mockup — this is deliberately a placeholder, not final art.
  *
- * Used by the Open screen's portrait area (`colors.portraitHatch`, 7px).
+ * Plain rotated `View` strips, not `react-native-svg`'s `Pattern` (the
+ * prior implementation): `fill="url(#hatch)")` never resolved on-device —
+ * the `Defs`/`Pattern` didn't throw, but painted zero pixels, leaving the
+ * whole portrait area flat. Measuring via `onLayout` and overlaying
+ * oversized rotated strips, clipped by the parent's `overflow: hidden`,
+ * sidesteps `Pattern` entirely.
+ *
+ * Used by the Open screen's portrait area (`colorsDark.portraitHatch`, 7px).
  * The Address book's discs used a 6px variant of this same texture before
  * they had real portraits (`CAST_PORTRAITS`, cast-assets.ts) to show.
  */
 export function PortraitHatch({ stop1, stop2, stripeWidth }: PortraitHatchProps) {
-  const tile = stripeWidth * 2 * Math.SQRT2;
+  const [size, setSize] = React.useState({ width: 0, height: 0 });
+
+  const onLayout = React.useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setSize({ width, height });
+  }, []);
+
+  // Oversized square covering the box regardless of rotation, so strips
+  // never leave a gap at the corners once clipped by `overflow: hidden`.
+  const diagonal = Math.ceil(Math.sqrt(size.width ** 2 + size.height ** 2)) + stripeWidth * 2;
+  const stripeCount = size.width > 0 && size.height > 0 ? Math.ceil(diagonal / stripeWidth) : 0;
+
   return (
-    <Svg width="100%" height="100%">
-      <Defs>
-        <Pattern
-          id="hatch"
-          patternUnits="userSpaceOnUse"
-          width={tile}
-          height={tile}
-          patternTransform="rotate(135)"
-        >
-          <Rect width={tile} height={tile} fill={stop2} />
-          <Rect width={tile / 2} height={tile} fill={stop1} />
-        </Pattern>
-      </Defs>
-      <Rect width="100%" height="100%" fill="url(#hatch)" />
-    </Svg>
+    <View onLayout={onLayout} style={{ flex: 1, overflow: 'hidden', backgroundColor: stop2 }}>
+      {Array.from({ length: stripeCount }, (_, i) => i)
+        .filter(i => i % 2 === 0)
+        .map(i => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              top: -diagonal / 2 + size.height / 2,
+              left: i * stripeWidth - diagonal / 2 + size.width / 2,
+              width: stripeWidth,
+              height: diagonal,
+              backgroundColor: stop1,
+              transform: [{ rotate: '135deg' }],
+            }}
+          />
+        ))}
+    </View>
   );
 }

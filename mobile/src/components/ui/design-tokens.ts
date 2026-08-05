@@ -48,6 +48,38 @@ export const colors = {
 } as const;
 
 /**
+ * Dark-mode counterpart to `colors` above, values mirrored verbatim from
+ * `global.css`'s `.dark` class block — the sibling object this file's own
+ * header comment asks for once a raw (non-Tailwind-class) call site needs
+ * to be dark-aware. First consumer: the native tab bar's `iconColor` in
+ * `app/(tabs)/_layout.tsx`, a `NativeTabs` prop that takes a resolved
+ * `ColorValue`, not a CSS variable — `useUniwind()`'s `theme` is what
+ * picks between this and `colors` at that call site.
+ */
+export const colorsDark = {
+  page: '#131129',
+  band: '#191634',
+  card: '#211E40',
+  tint: '#2A2650',
+  line: '#332E5F',
+  ink: '#F2F0FF',
+  body: '#ADA6CC',
+  muted: '#928BB4',
+  nav: '#B7B1D4',
+  accent: '#A99BFF',
+  accentDeep: '#C9BEFF',
+  shadow: 'rgba(0,0,0,.55)',
+  /**
+   * Open screen's portrait placeholder hatch, dark counterpart —
+   * `tint`/`line` (not a bespoke pair) so the stripes read as this same
+   * palette rather than the old cream/terracotta system's leftover
+   * `colors.portraitHatch`, which visibly clashed once the rest of the
+   * card switched to the purple/Poppins redesign.
+   */
+  portraitHatch: { stop1: '#2A2650', stop2: '#332E5F' },
+} as const;
+
+/**
  * Brand colors — identical in both themes (spec §02). Text on `yellow`/
  * `green` is always the paired dark on-color (`onYellow`/`onGreen`), never
  * white.
@@ -104,6 +136,21 @@ export const inkAlphaScale = {
 
 /** 4px base spacing scale (spec §04 layout: "Scale: 4·6·9·13·16·20·26·34·44·56"). */
 export const spacing = [4, 6, 9, 13, 16, 20, 26, 34, 44, 56] as const;
+
+/**
+ * `(tabs)/_layout.tsx`'s `NativeTabs` renders iOS 26's floating "Liquid
+ * Glass" tab bar, which *overlays* screen content rather than reserving
+ * its own layout row — `expo-router/unstable-native-tabs` exposes no
+ * `useBottomTabBarHeight`-style hook to size around it. Measured on an
+ * iPhone 16 Pro simulator (screenshot pixel-diffing the tab bar's top
+ * edge against the device's safe-area bottom inset): the bar's own
+ * height above the safe area is ~70pt. Screens inside the tabs group
+ * (Open/Address book/Debrief history) that pin content to the bottom
+ * edge should pad by `useSafeAreaInsets().bottom + tabBarClearance`, not
+ * a flat constant — a flat value (e.g. the old `pb-[44px]`) is exactly
+ * what let the Open screen's "Pick up" CTA render underneath the bar.
+ */
+export const tabBarClearance = 70;
 
 /** Corner radii by shape category (spec §04). */
 export const radii = {
@@ -293,23 +340,12 @@ export const typography: Record<string, TypographyRole> = {
   },
 };
 
-/** Suggestion-chip decaying-contrast scaffold (§6.3), by chip index. */
-export const chipOpacityLadder = [1, 0.6, 0.36, 0.2] as const;
-
 /**
- * Motion timings, in milliseconds. The level-meter values already matched
- * the new spec's bar-animation formula exactly before this reskin
- * (`0.62 + (i%4)×0.16s` duration, `i×0.07s` stagger — spec §05 Level
- * meter) — both systems apparently derive from the same source, so these
- * three carry over unchanged. The rest are UI-feel timings the spec
- * doesn't define; kept at their prior values.
+ * Motion timings, in milliseconds — UI-feel timings the spec doesn't
+ * define; kept at their prior values.
  */
 export const motion = {
-  barLoopMinMs: 620,
-  barLoopMaxMs: 1100,
-  barLoopStaggerMs: 70,
   buttonFadeInMs: 320,
   castExpandMs: 280,
   fillerBlinkMs: 1100,
-  meterTransitionMs: 200,
 } as const;

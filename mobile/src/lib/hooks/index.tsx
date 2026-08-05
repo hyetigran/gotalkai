@@ -1,5 +1,4 @@
 /* eslint-disable react-refresh/only-export-components */
-export * from './use-is-first-session';
 export * from './use-is-first-time';
 export * from './use-learner-id';
 export * from './use-selected-theme';
